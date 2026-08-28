@@ -1,0 +1,116 @@
+# Contract and deployment-manifest checks.
+#
+# Three things that can rot silently because nothing compiles them:
+#
+#   * openapi   — the source spec must lint, and the committed bundle and
+#                 generated Go must be reproducible from it. `make api-check`
+#                 regenerates both and fails if either differs, which is the
+#                 only way a hand-edit of gen/ gets caught.
+#   * helm      — the chart must render. Linted against the committed
+#                 ci/*-values.yaml, because the chart legitimately requires
+#                 values: a bare `helm lint` fails its own values.schema.json
+#                 by design, so linting without values would prove nothing.
+#   * terraform — fmt and validate, via OpenTofu.
+#
+# Runners: GitHub-hosted `ubuntu-latest`. Every workflow in this repository
+# uses hosted runners, deliberately. A public repository must not name
+# self-hosted labels: no fork can schedule them, so a contributor's run would
+# queue forever, and untrusted fork code must never execute on private
+# infrastructure. Hosted minutes are free for public repositories.
+
+name: Contract
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  openapi:
+    name: openapi lint + generated-code drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node
+        # `make api-lint` / `api-bundle` shell out to a version-pinned
+        # @redocly/cli through npx.
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "20"
+
+      - name: Lint the OpenAPI contract
+        run: make api-lint
+
+      - name: Check bundle and generated code are current
+        run: make api-check
+
+  helm:
+    name: helm lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Set up Helm
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+
+      - name: Lint the chart against each committed values set
+        run: |
+          rc=0
+          for values in deployments/helm/opentams/ci/*.yaml; do
+            echo "::group::helm lint --values $values"
+            helm lint deployments/helm/opentams --values "$values" || rc=1
+            echo "::endgroup::"
+          done
+          exit $rc
+
+  terraform:
+    name: tofu fmt + validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Set up OpenTofu
+        uses: opentofu/setup-opentofu@9d84900f3238fab8cd84ce47d658d25dd008be2f # v1.0.8
+        with:
+          tofu_wrapper: false
+
+      - name: tofu fmt
+        run: tofu fmt -check -recursive deployments/terraform
+
+      - name: tofu validate
+        # -backend=false: validation must not need credentials or reach a
+        # remote state backend.
+        # -lockfile=readonly where a lock file is committed, so this verifies
+        # the committed provider pins instead of quietly rewriting them. Only
+        # root modules carry a lock file; child modules under modules/ do not.
+        run: |
+          rc=0
+          for dir in $(find deployments/terraform -name '*.tf' -exec dirname {} \; | sort -u); do
+            echo "::group::tofu validate $dir"
+            lock=""
+            [ -f "$dir/.terraform.lock.hcl" ] && lock="-lockfile=readonly"
+            ( cd "$dir" && tofu init -backend=false -input=false $lock >/dev/null && tofu validate ) || rc=1
+            echo "::endgroup::"
+          done
+          exit $rc

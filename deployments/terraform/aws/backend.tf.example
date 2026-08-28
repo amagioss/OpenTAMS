@@ -1,0 +1,25 @@
+# Remote state on S3 with native locking (team/shared use). Optional —
+# default is local state, which is fine for a single operator.
+#
+# Requires OpenTofu >= 1.8 or Terraform >= 1.10 for use_lockfile.
+#
+# Enable:
+#   1. Create the state bucket once (globally-unique name, versioning on):
+#        aws s3api create-bucket --bucket <YOUR_BUCKET> --region <REGION>
+#        aws s3api put-bucket-versioning --bucket <YOUR_BUCKET> \
+#          --versioning-configuration Status=Enabled
+#   2. cp backend.tf.example backend.tf
+#   3. Init and migrate the existing local state to S3:
+#        tofu init -migrate-state \
+#          -backend-config="bucket=<YOUR_BUCKET>" \
+#          -backend-config="key=opentams/aws/terraform.tfstate" \
+#          -backend-config="region=<REGION>"
+#
+# bucket/key/region are omitted here on purpose (partial config) so nothing
+# account-specific is committed — you pass them at init time.
+terraform {
+  backend "s3" {
+    encrypt      = true
+    use_lockfile = true
+  }
+}

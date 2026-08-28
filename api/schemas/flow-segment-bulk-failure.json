@@ -1,0 +1,56 @@
+{
+    "title": "Failed Segments",
+    "description": "List of Segments that have failed to register",
+    "type": "object",
+    "required": [
+        "failed_segments"
+    ],
+    "properties": {
+        "failed_segments": {
+            "description": "The list of Segments which have failed to register with the service instance. Returned with HTTP 200 when at least one Segment in the batch succeeded and the remaining failures are non-overlap per-segment errors (e.g. missing required field, invalid timerange syntax). Overlap failures are NOT reported here — any overlap rejects the whole batch with HTTP 422 ProblemDetails.",
+            "type": "array",
+            "items": {
+                "description": "Failed Segment details",
+                "type": "object",
+                "required": [
+                    "object_id",
+                    "error"
+                ],
+                "properties": {
+                    "object_id": {
+                        "description": "The Object ID of the Segment which has failed to register with the service instance",
+                        "type": "string"
+                    },
+                    "timerange": {
+                        "description": "The timerange of the Segment that has failed, as described by the [TimeRange](#/schemas/timerange) type",
+                        "$ref": "timerange.json"
+                    },
+                    "error": {
+                        "description": "Per-segment failure metadata. Embedded RFC 9457 Problem Details subset matching the OpenTAMS ProblemDetails schema used elsewhere in this API. Parent-level fields (status, instance, request_id) are NOT repeated here — they live on the enclosing HTTP 200 response context.",
+                        "type": "object",
+                        "required": [
+                            "type",
+                            "title",
+                            "detail"
+                        ],
+                        "properties": {
+                            "type": {
+                                "description": "RFC 7807 type URI from the OpenTAMS problem catalogue, e.g. https://github.com/amagioss/opentams/problems/schema-validation",
+                                "type": "string",
+                                "format": "uri"
+                            },
+                            "title": {
+                                "description": "Short, human-readable summary of the problem type. Matches the title of the corresponding top-level ProblemDetails type.",
+                                "type": "string"
+                            },
+                            "detail": {
+                                "description": "Human-readable explanation specific to this segment failure.",
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

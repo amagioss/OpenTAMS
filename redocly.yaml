@@ -1,0 +1,31 @@
+# Redocly configuration for the OpenTAMS API contract.
+#
+# `api/opentams-api-v1.yaml` is the source of truth. `api/opentams-api-bundled.yaml`
+# is derived from it by `make api-bundle` and is committed so that consumers (Redoc
+# rendering, oapi-codegen) do not need the schema tree resolved at build time.
+#
+# Run `make api-lint` before committing a spec change.
+
+apis:
+  opentams:
+    root: api/opentams-api-v1.yaml
+
+extends:
+  - recommended
+
+rules:
+  # The TAMS v8.0 specification defines the service root as `/tams/v1/`, with the
+  # trailing slash. Dropping it would change the API surface and break conformant
+  # clients, so this rule is disabled rather than "fixed".
+  no-path-trailing-slash: off
+
+  # `/healthz`, `/readyz`, and `/metrics` are unauthenticated liveness surfaces that
+  # answer 200 or nothing at all. They have no 4xx to document.
+  operation-4xx-response: warn
+
+  # The vendored BBC schemas under `api/schemas/` are expressed in the JSON Schema
+  # dialect that OpenAPI 3.0.3 requires (`exclusiveMinimum: true` + `minimum: 0`).
+  # Redocly's example validator reads them as 2020-12, where `exclusiveMinimum` takes
+  # a number, and reports every numeric bound as an error. The schemas are correct for
+  # the declared OpenAPI version; the validator is not.
+  no-invalid-media-type-examples: off

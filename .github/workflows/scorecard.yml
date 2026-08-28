@@ -1,0 +1,72 @@
+# OpenSSF Scorecard supply-chain risk assessment.
+#
+# Scorecard scores the project against ~18 security practices (branch
+# protection, signed releases, pinned dependencies, dangerous workflow
+# patterns, etc.) and uploads results both to the OpenSSF API (powering
+# the README badge) and to GitHub's Security tab as a SARIF report.
+#
+# Cadence:
+#   - Weekly cron (Mondays 06:00 UTC) to keep the badge fresh.
+#   - On every push to main so regressions surface in PR review.
+#   - Manual workflow_dispatch for ad-hoc audits.
+#
+# Permissions are deliberately scoped per-job: token write for the
+# OpenSSF API publish, security-events write for the SARIF upload,
+# id-token write for keyless signing of the published score.
+#
+# Runners: GitHub-hosted `ubuntu-latest`. Every workflow in this repository
+# uses hosted runners, deliberately. A public repository must not name
+# self-hosted labels: no fork can schedule them, so a contributor's run would
+# queue forever, and untrusted fork code must never execute on private
+# infrastructure. Hosted minutes are free for public repositories.
+name: Scorecard
+
+on:
+  branch_protection_rule:
+  schedule:
+    - cron: "0 6 * * 1"
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: read-all
+
+jobs:
+  analysis:
+    name: Scorecard analysis
+    runs-on: ubuntu-latest
+    permissions:
+      # Required for uploading the SARIF report to GitHub's Security tab.
+      security-events: write
+      # Required for OpenSSF Scorecard's keyless signing of the result.
+      id-token: write
+      contents: read
+      actions: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Run analysis
+        uses: ossf/scorecard-action@62b2cac7ed8198b15735ed49ab1e5cf35480ba46 # v2.4.0
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          # publish_results=true sends the score to api.securityscorecards.dev
+          # which powers the README badge and the public scorecard.dev site.
+          # Disable if you ever fork this workflow into a private mirror.
+          publish_results: true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: SARIF file
+          path: results.sarif
+          retention-days: 5
+
+      - name: Upload to code-scanning
+        uses: github/codeql-action/upload-sarif@6f5948dfacef28e207b48d0905cf90c03365536d # v3.37.9
+        with:
+          sarif_file: results.sarif

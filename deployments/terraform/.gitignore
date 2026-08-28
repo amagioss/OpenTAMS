@@ -1,0 +1,10 @@
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+*.auto.tfvars
+crash.log
+*.slv.yaml
+override.tf
+override.tf.json

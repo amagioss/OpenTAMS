@@ -1,0 +1,55 @@
+name: Feature request
+description: Propose a new capability, an extension to an existing one, or a behavioural change.
+title: "[feature] "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement.
+
+        Before you file: please skim [`docs/requirements.md`](https://github.com/amagioss/opentams/blob/main/docs/requirements.md) and the latest [BBC TAMS spec](https://bbc.github.io/tams/) to check whether the behaviour you want is already specified somewhere — that saves us round-trips later.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do that is currently hard, impossible, or surprising? Describe the user scenario, not the implementation.
+      placeholder: |
+        Operators running OpenTAMS behind an internal CA need to point the Postgres driver at their own root certificate. Today DB_SSLMODE=verify-full doesn't expose a way to override the trust roots.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Sketch how you'd want this to work — config knob, API endpoint, library function, etc. Concrete is better than abstract; we'll iterate on the details together.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What else did you look at, and why is the proposal above better? Often there is an existing config or library workaround — call it out so we can discuss whether the new feature is justified.
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: TAMS spec relationship
+      description: How does this interact with the BBC TAMS specification?
+      options:
+        - Implements an existing TAMS feature OpenTAMS hasn't shipped yet
+        - Clarifies a TAMS feature whose semantics OpenTAMS gets wrong
+        - OpenTAMS-specific extension (operational / deployment / observability)
+        - Not applicable / unsure
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: |
+        Links to upstream discussions, related projects that solve this differently, requirements spec IDs (`REQ-...`), or anything else that helps us evaluate. If you'd like to take a stab at implementing this yourself, say so — we'll help you scope it.

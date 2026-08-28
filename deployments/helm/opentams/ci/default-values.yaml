@@ -1,0 +1,12 @@
+# Minimal values for CI lint/template/install (ct, helm test).
+secrets:
+  existingSecret: opentams-secrets
+database:
+  host: postgres.default.svc
+objectStore:
+  bucket: opentams-ci
+  region: us-east-1
+auth:
+  external:
+    issuerURL: https://issuer.example.com/
+    audience: opentams

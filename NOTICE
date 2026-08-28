@@ -1,0 +1,49 @@
+OpenTAMS
+Copyright 2026 Amagi Media Labs Ltd. and the OpenTAMS contributors
+
+This product includes software developed at Amagi Media Labs Ltd.
+(https://www.amagi.com).
+
+Licensed under the Apache License, Version 2.0. See the LICENSE file for the
+full terms.
+
+--------------------------------------------------------------------------------
+BBC TAMS specification
+--------------------------------------------------------------------------------
+
+OpenTAMS implements the Time-addressable Media Store (TAMS) API specification
+published by the British Broadcasting Corporation at
+https://github.com/bbc/tams, which is licensed under the Apache License,
+Version 2.0.
+
+The JSON Schema files under api/schemas/ are derived from that specification at
+tag 8.0 (commit b386c43f97f05274d838066c62eb1d9dad351ea6). They are MODIFIED
+copies, not an upstream mirror: 17 of the 41 vendored files differ from
+upstream, and one file has no upstream counterpart. Every modification is
+catalogued in api/schemas/README.md.
+
+OpenTAMS is an independent implementation. Its TAMS conformance is
+self-assessed and documented, with its known gaps, in docs/conformance.md.
+
+Amagi thanks the BBC for publishing TAMS as an open specification.
+
+--------------------------------------------------------------------------------
+Trademarks
+--------------------------------------------------------------------------------
+
+"Amagi" and the Amagi logo are trademarks of Amagi Media Labs Ltd. Apache
+License 2.0 section 6 grants no trademark rights. This licence permits you to
+use, modify, and redistribute the software; it does not permit you to use the
+Amagi name or logo to name your fork, to brand a derived product or service, or
+to suggest that Amagi endorses it.
+
+Other names and logos referenced in this repository are the property of their
+respective owners.
+
+--------------------------------------------------------------------------------
+Third-party dependencies
+--------------------------------------------------------------------------------
+
+OpenTAMS links against third-party Go modules under the Apache 2.0, MIT, BSD
+3-Clause, and ISC licences. The full list, with versions and licences, is in
+docs/third-party-notices.md.

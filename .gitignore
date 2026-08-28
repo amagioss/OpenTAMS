@@ -1,0 +1,42 @@
+# Local dev scratch — not for commit
+local/
+
+# Build output
+/opentams
+/tamsctl
+/opentamsassemble
+/loader
+/loadgen
+/bench
+/dist/
+coverage.out
+coverage.html
+*.test
+output.file
+
+# Local dev secrets — never commit
+deployments/docker/.env
+
+# Terraform / OpenTofu working state. State files carry live resource
+# attributes and, for some providers, generated credentials — gitleaks
+# flags them. Nothing under here is ever committed or exported.
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+.terraformrc
+terraform.rc
+crash.log
+crash.*.log
+
+# Internal tooling output that names internal infrastructure
+deployments/terraform/**/*_cli_log.txt
+
+# Editor / agent scratch that is not part of the project
+.claude/
+.cursor/
+.cursorrules
+.mcp.json
+.DS_Store
+

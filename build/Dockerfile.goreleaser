@@ -1,0 +1,21 @@
+# Goreleaser-driven release Dockerfile.
+#
+# Used by .goreleaser.yml's `dockers:` section, which hands the
+# pre-built `opentams` binary to docker via the build context. This
+# image NEVER invokes the Go toolchain — that's why it's small and
+# fast. It is intentionally separate from build/Dockerfile, which is
+# the buildx-cross-compile entry point used by the `Build` workflow for
+# PR verification.
+#
+# OCI labels are applied by goreleaser via --label build flags rather
+# than baked in here; that keeps version/revision/created accurate
+# across releases without touching this file.
+
+FROM gcr.io/distroless/static-debian12:nonroot
+
+COPY opentams /opentams
+
+EXPOSE 8080
+USER nonroot:nonroot
+ENTRYPOINT ["/opentams"]
+CMD ["serve"]

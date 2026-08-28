@@ -1,0 +1,71 @@
+# Justified suppressions for `trivy fs --scanners misconfig`.
+#
+# Every entry states why the finding does not apply. An entry without a reason
+# is not a suppression, it is a hidden defect — do not add one.
+
+misconfigurations:
+  - id: AWS-0176
+    paths:
+      - "deployments/terraform/aws/main.tf"
+    statement: >-
+      RDS IAM database authentication is deliberately not enabled. OpenTAMS
+      authenticates to Postgres with a password sourced from AWS Secrets Manager,
+      and the pgx connection pool holds long-lived connections that IAM auth's
+      15-minute token lifetime does not fit without a token-refresh layer the
+      driver does not provide. Revisit if that changes.
+
+  - id: KSV-01010
+    paths:
+      - "deployments/kubernetes/configmap.yaml"
+    statement: >-
+      False positive. The ConfigMap holds only non-sensitive settings —
+      APP_ENV, SERVER_PORT, DB_PORT, DB_SSLMODE, STORAGE_BACKEND_PROVIDER.
+      Every credential lives in the Secret, which the deployment reads via
+      secretRef.
+
+  - id: KSV-0013
+    paths:
+      - "deployments/kubernetes/deployment.yaml"
+      - "deployments/kubernetes/migrate-job.yaml"
+      - "deployments/helm/opentams/examples/internal-client.yaml"
+    statement: >-
+      These are reference manifests, not deployable ones. The image reference
+      is the placeholder `your-registry/...:latest`, which does not resolve;
+      each is annotated in place telling the operator to substitute a
+      digest-pinned image.
+
+  - id: KSV-0125
+    paths:
+      - "deployments/kubernetes/deployment.yaml"
+      - "deployments/kubernetes/migrate-job.yaml"
+      - "deployments/helm/opentams/examples/internal-client.yaml"
+    statement: >-
+      Same placeholder images as KSV-0013. The trusted-registry list is a
+      property of the operator's cluster policy, not of a reference manifest.
+
+  - id: DS-0026
+    paths:
+      - "build/Dockerfile"
+      - "build/Dockerfile.goreleaser"
+    statement: >-
+      No HEALTHCHECK by design. The image is distroless and contains no shell
+      or curl to run one, and the runtime targets — Kubernetes and ECS — probe
+      /healthz and /readyz over HTTP rather than through the container runtime.
+
+  - id: AWS-0133
+    paths:
+      - "deployments/terraform/aws/main.tf"
+    statement: >-
+      RDS Performance Insights is exposed as `db_performance_insights` and
+      defaults to false because it is not supported on `db.t3.micro`, the
+      instance class a dev stack uses. Operators enable it per environment.
+
+  - id: AWS-0089
+    paths:
+      - "deployments/terraform/aws/main.tf"
+    statement: >-
+      S3 server access logging is intentionally not configured by this module.
+      It requires a second bucket with its own lifecycle and cost, and the
+      access pattern here is presigned PUT/GET driven by the application, which
+      already logs every object operation with a request id. Operators who need
+      bucket-level audit trails should enable CloudTrail data events.

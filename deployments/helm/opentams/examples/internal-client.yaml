@@ -1,0 +1,80 @@
+# Static reference manifest — NOT rendered by Helm and NOT part of the chart.
+#
+# Demonstrates how an in-cluster service-to-service CLIENT obtains a token that
+# OpenTAMS will accept on its INTERNAL auth issuer. Copy and adapt for your own
+# workload (your own image, your own lifecycle).
+#
+# Prerequisites on the OpenTAMS server (chart values):
+#   auth.internal.enabled: true
+#   auth.internal.issuerURL: <cluster's PUBLISHED OIDC issuer>   # e.g. EKS/GKE/AKS managed issuer
+#   auth.internal.audience:  opentams-internal
+#   auth.internal.allowedSubjects:                               # REQUIRED; fails closed
+#     - system:serviceaccount:<namespace>:example-internal-client
+#
+# The ServiceAccount's token carries sub=system:serviceaccount:<ns>:<name>. That
+# exact value MUST appear in auth.internal.allowedSubjects, or the server rejects
+# the call with 403 Forbidden even though the token is otherwise valid.
+#
+# CAVEAT: the in-cluster issuer https://kubernetes.default.svc will NOT work —
+# the JWKS fetch uses the default HTTP client (no cluster CA, no auth). Use the
+# cloud provider's published OIDC issuer.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: example-internal-client
+  namespace: opentams
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: example-internal-client
+  template:
+    metadata:
+      labels:
+        app: example-internal-client
+    spec:
+      serviceAccountName: example-internal-client
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: client
+          # Replace with your own image, pinned to an immutable digest.
+          # `:latest` here is a placeholder that will not resolve.
+          image: your-registry/your-client:latest
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          # The client reads the token and sends it as:
+          #   Authorization: Bearer $(cat /var/run/secrets/tokens/opentams-token/token)
+          volumeMounts:
+            - name: opentams-token
+              mountPath: /var/run/secrets/tokens/opentams-token
+              readOnly: true
+      volumes:
+        - name: opentams-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: opentams-internal   # MUST equal the server's AUTH_INTERNAL_AUDIENCE
+                  expirationSeconds: 3600
+                  path: token
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: example-internal-client
+  namespace: opentams

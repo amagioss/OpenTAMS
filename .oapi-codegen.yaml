@@ -1,0 +1,36 @@
+package: api
+generate:
+  gin-server: true
+  strict-server: true
+  models: true
+  # embedded-spec emits GetSwagger() (*openapi3.T, error) into
+  # gen/api/opentams.gen.go. Consumed at startup by internal/server's
+  # OapiRequestValidator middleware (BR-SRV-14) so request validation
+  # (required, pattern, enum, min/max) is enforced uniformly from the
+  # spec rather than hand-rolled per handler. Adds ~30-50KB to the
+  # binary; promotes kin-openapi from indirect to runtime dep.
+  embedded-spec: true
+output: gen/api/opentams.gen.go
+output-options:
+  skip-prune: true
+  # Three operations are intentionally excluded from codegen so the M14 server
+  # package can mount them on a *public* (unauthenticated) Gin route group
+  # without colliding with RegisterHandlersWithOptions, which would otherwise
+  # register them under the authenticated group. The OpenAPI spec still
+  # defines all three — external API docs remain accurate.
+  #
+  # - GetMetrics:  served by prometheus/client_golang's promhttp handler;
+  #                strict response objects provide no *http.Request at Visit
+  #                time, which breaks promhttp's Accept negotiation. See
+  #                docs/design/internal-httpx-metrics/.
+  # - GetHealthz:  trivial liveness probe (always 200, no body, no params).
+  #                Implemented directly in internal/httpx/health/endpoints.go.
+  # - GetReadyz:   readiness probe (200/503 from health.Checker.Ready). Same
+  #                package as Healthz. See internal-httpx-health/.
+  #
+  # /health/details REMAINS in codegen — it is authenticated and its response
+  # body is non-trivial, so the strict response-object ceremony has value.
+  exclude-operation-ids:
+    - GetMetrics
+    - GetHealthz
+    - GetReadyz

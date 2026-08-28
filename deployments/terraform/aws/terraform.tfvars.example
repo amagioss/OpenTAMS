@@ -1,0 +1,106 @@
+# Copy to terraform.tfvars and fill in.
+
+region           = "us-east-1"
+eks_cluster_name = "my-eks-cluster"
+
+# Cluster access (laptop kubeconfig)
+kubeconfig_path = "~/.kube/config"
+kube_context    = "" # empty = current-context
+
+# IRSA: set create_oidc_provider=true the first time if the cluster has no IAM
+# OIDC provider yet; otherwise pass the existing one.
+create_oidc_provider       = false
+existing_oidc_provider_arn = "arn:aws:iam::111122223333:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/EXAMPLE"
+
+# RDS networking — same VPC as the cluster nodes.
+db_subnet_ids                 = ["subnet-aaaa", "subnet-bbbb"]
+db_ingress_security_group_ids = ["sg-nodegroup"] # EKS node SG that should reach Postgres
+
+# RDS sizing (optional — defaults shown)
+# db_instance_class    = "db.t3.micro"   # use db.r7g.xlarge or larger for production
+# db_allocated_storage = 20              # GB; use 100+ for production
+# db_storage_type      = "gp3"           # gp3 recommended
+# db_multi_az            = true          # default; set false for a cheap dev stack
+# db_skip_final_snapshot = false         # default; set true only for a dev stack you will destroy
+
+# Object store
+bucket_name = "my-org-opentams-media"
+
+# Tags stamped on every AWS resource (cost allocation, ownership).
+# Defaults to { ManagedBy = "terraform", Project = "opentams" }.
+# default_tags = {
+#   ManagedBy = "terraform"
+#   Project   = "opentams"
+#   Owner     = "platform-team"
+# }
+
+# ---------------------------------------------------------------------------
+# Secrets — choose one of the three scenarios below.
+# ---------------------------------------------------------------------------
+#
+# Install SLV for the first time (operator not yet on the cluster):
+#
+#   use_slv              = true
+#   slv_install_operator = true
+#   slv_env_public_key   = "SLV_EPK_..."
+#   # Pass the secret key out-of-band; never commit it:
+#   export TF_VAR_slv_env_secret_key='SLV_ESK_...'
+#
+# Use an existing SLV operator:
+#
+#   use_slv              = true
+#   slv_install_operator = false
+#   slv_env_public_key   = "SLV_EPK_..."   # ask the operator owner for the EPK
+#   # slv_env_secret_key not needed
+#
+# Manage the Kubernetes Secret yourself (no SLV):
+#
+#   use_slv = false
+#   # Pre-create the secret before running tofu apply, for example:
+#   #
+#   #   kubectl create secret generic opentams-secrets -n opentams \
+#   #     --from-literal=DB_PASSWORD=<password>
+#   #
+#   # Other tools that can manage this secret:
+#   #   - External Secrets Operator (ESO) syncing from AWS Secrets Manager / Vault
+#   #   - AWS Secrets Manager CSI driver (secrets-store-csi-driver)
+#   #   - Sealed Secrets (Bitnami)
+#   #   - Manual kubectl / CI pipeline secret injection
+#
+use_slv              = true
+slv_install_operator = true
+slv_env_public_key   = "SLV_EPK_..."
+slv_env_secret_key   = "" # pass via TF_VAR_slv_env_secret_key or a *.auto.tfvars in .gitignore
+
+# Auth — your existing OIDC issuer
+auth_external_issuer_url = "https://issuer.example.com/"
+auth_external_audience   = "opentams"
+
+# Namespace labels — add labels to match your Prometheus serviceMonitorNamespaceSelector.
+# kube-prometheus-stack default: { "monitoring" = "true" }
+# namespace_labels = { "monitoring" = "true" }
+
+# Optional Helm overrides (ingress, tolerations, serviceMonitor, ...)
+# extra_values = <<-EOT
+#   image:
+#     repository: ghcr.io/amagioss/opentams
+#     tag: latest
+#   ingress:
+#     enabled: true
+#     className: nginx
+#     annotations:
+#       nginx.ingress.kubernetes.io/rewrite-target: /$2
+#       nginx.ingress.kubernetes.io/use-regex: "true"
+#     hosts:
+#       - host: tams.example.com
+#         paths:
+#           - path: /opentams(/|$)(.*)
+#             pathType: ImplementationSpecific
+#   serviceMonitor:
+#     enabled: true
+#   tolerations:
+#     - effect: NoSchedule
+#       key: my-node-taint
+#       operator: Equal
+#       value: "true"
+# EOT
