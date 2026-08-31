@@ -49,7 +49,7 @@ stays useful long after the feature ships.
 | [0034](0034-image-only-release-with-attestation.md) | Release the server as a signed image only, and `tamsctl` as archives | accepted |
 | [0035](0035-ci-on-hosted-runners-with-pinned-actions.md) | Run CI on GitHub-hosted runners, with every action pinned by commit SHA | accepted |
 | [0036](0036-rate-limiting-is-the-operators-responsibility.md) | Leave rate limiting to the operator | accepted |
-| [0037](0037-object-garbage-collection.md) | Reclaim Object storage from a separate worker | accepted |
+| [0037](0037-object-garbage-collection.md) | Reclaim Object storage from a separate worker | proposed |
 
 <!-- Add a row per ADR, in number order. Keep the status column in sync with the file's front matter. -->
 
@@ -62,6 +62,11 @@ stays useful long after the feature ships.
 3. Open it as `proposed` in the pull request that implements or precedes the decision,
    so the rationale is reviewed alongside the change.
 4. On merge, set the status to `accepted` and add a row to the index above.
+5. An ADR whose design is agreed but whose code has not landed stays `proposed` after
+   merge, and moves to `accepted` in the pull request that implements it. This is the one
+   case where a merged ADR is not `accepted`.
+6. If the decision is not taken, set the status to `rejected` and keep the file. The
+   number is not reused, and the rejected alternative stays on the record.
 
 ## Rules
 
