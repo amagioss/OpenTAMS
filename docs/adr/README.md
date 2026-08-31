@@ -13,9 +13,43 @@ stays useful long after the feature ships.
 | ADR | Title | Status |
 |---|---|---|
 | [0000](0000-use-madr-for-decision-records.md) | Use MADR for architecture decision records | accepted |
-| [0001](0024-whole-batch-reject-on-segment-overlap.md) | Reject the whole batch when Flow Segments overlap | accepted |
-| [0002](0023-rfc9457-problem-details-for-per-segment-failures.md) | Report per-segment failures as an RFC 9457 Problem Details subset | accepted |
-| [0003](0005-vendored-tams-schemas-are-modified.md) | Vendor the TAMS JSON schemas as a modified copy | accepted |
+| [0001](0001-cloud-agnostic-substrate.md) | Target a cloud-agnostic substrate | accepted |
+| [0002](0002-server-outside-the-media-path.md) | Keep the server out of the media path | accepted |
+| [0003](0003-pkg-holds-context-agnostic-libraries.md) | Reserve `pkg/` for context-agnostic libraries | accepted |
+| [0004](0004-single-go-module.md) | Ship the server, the CLI, and the tools as one Go module | accepted |
+| [0005](0005-vendored-tams-schemas-are-modified.md) | Vendor the TAMS JSON schemas as a modified copy | accepted |
+| [0006](0006-openapi-303-source-spec-with-committed-bundle.md) | Author the contract at OpenAPI 3.0.3 and commit the bundled document | accepted |
+| [0007](0007-strict-server-code-generation.md) | Generate the server from the OpenAPI contract in strict-server mode | accepted |
+| [0008](0008-commit-generated-code.md) | Commit the generated code and pin the generator through `go.mod` | accepted |
+| [0009](0009-union-marshalling-bridge.md) | Restore union marshalling with a generated bridge file | accepted |
+| [0010](0010-spec-driven-request-validation.md) | Validate requests from the embedded spec with kin-openapi | accepted |
+| [0011](0011-health-and-metrics-outside-codegen.md) | Keep `/healthz`, `/readyz`, and `/metrics` in the spec but out of codegen | accepted |
+| [0012](0012-postgresql-as-the-metadata-store.md) | Use PostgreSQL as the metadata store | accepted |
+| [0013](0013-pgx-without-database-sql.md) | Use pgx directly rather than through `database/sql` | accepted |
+| [0014](0014-timerange-stored-as-string-and-bounds.md) | Store a timerange as its wire string plus normalised integer bounds | accepted |
+| [0015](0015-gist-exclusion-constraint.md) | Enforce Segment non-overlap with a GiST exclusion constraint | accepted |
+| [0016](0016-keyset-pagination.md) | Paginate with opaque keyset cursors, never with `OFFSET` | accepted |
+| [0017](0017-expand-contract-schema-evolution.md) | Evolve the schema expand-contract, and treat the required version as a minimum | accepted |
+| [0018](0018-migrations-as-an-explicit-step.md) | Apply migrations as an explicit step, never at server startup | accepted |
+| [0019](0019-lazy-object-registration.md) | Register an Object lazily, when the first Segment references it | accepted |
+| [0020](0020-gc-owns-object-lifetime.md) | Give the garbage collector sole ownership of Object lifetime | accepted |
+| [0021](0021-s3-compatible-object-store-interface.md) | Reach media storage through an S3-compatible interface | accepted |
+| [0022](0022-rfc9457-as-the-single-error-contract.md) | Serve every error as an RFC 9457 Problem Details document | accepted |
+| [0023](0023-rfc9457-problem-details-for-per-segment-failures.md) | Report per-segment failures as an RFC 9457 Problem Details subset | accepted |
+| [0024](0024-whole-batch-reject-on-segment-overlap.md) | Reject the whole batch when Flow Segments overlap | accepted |
+| [0025](0025-idempotency-keys-in-postgres.md) | Require an idempotency key on Segment registration, backed by PostgreSQL | accepted |
+| [0026](0026-get-urls-projected-in-the-handler.md) | Project `get_urls` in the handler | accepted |
+| [0027](0027-two-type-families.md) | Keep wire types and domain types apart, with one adapter between them | accepted |
+| [0028](0028-gin-with-split-route-groups.md) | Use Gin, and split routing into a public group and an authenticated group | accepted |
+| [0029](0029-authentication-behind-a-provider-interface.md) | Put authentication behind a `Provider` interface | accepted |
+| [0030](0030-configuration-from-the-environment-only.md) | Configure from the environment only, and validate everything at startup | accepted |
+| [0031](0031-liveness-separate-from-readiness.md) | Separate liveness from readiness | accepted |
+| [0032](0032-zap-and-a-private-metrics-registry.md) | Log with zap, and hold metrics in a private registry | accepted |
+| [0033](0033-distroless-static-image.md) | Ship a distroless static image, running as a non-root user | accepted |
+| [0034](0034-image-only-release-with-attestation.md) | Release the server as a signed image only, and `tamsctl` as archives | accepted |
+| [0035](0035-ci-on-hosted-runners-with-pinned-actions.md) | Run CI on GitHub-hosted runners, with every action pinned by commit SHA | accepted |
+| [0036](0036-rate-limiting-is-the-operators-responsibility.md) | Leave rate limiting to the operator | accepted |
+| [0037](0037-object-garbage-collection.md) | Reclaim Object storage from a separate worker, and ship without it | accepted |
 
 <!-- Add a row per ADR, in number order. Keep the status column in sync with the file's front matter. -->
 
