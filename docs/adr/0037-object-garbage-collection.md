@@ -6,7 +6,7 @@ consulted: OpenTAMS maintainers
 informed: OpenTAMS contributors
 ---
 
-# Reclaim Object storage from a separate worker, and ship without it
+# Reclaim Object storage from a separate worker
 
 ## Context and Problem Statement
 
@@ -18,7 +18,7 @@ interruptible, and it must never compete with request handling for a connection 
 also has a race to handle: an Object whose reference count is zero can gain a reference
 again while the sweep is deciding to delete it.
 
-Where does reclamation run, and what does a release ship?
+Where does reclamation run?
 
 ## Considered Options
 
@@ -47,12 +47,6 @@ The design is settled and the database supports it:
   1000 IDs, and classifying failures as `ErrTransient`, `ErrAuth`, or `ErrInvalidInput` so a
   sweep knows which rows to reap and which to retry.
 
-**The worker itself is not implemented.** `opentams gc` returns
-`"gc worker is not yet implemented (M16)"`. `GC_POLL_INTERVAL` and `GC_BATCH_SIZE` are
-parsed, validated, and ignored. This is stated in the README, in
-[`../conformance.md`](../conformance.md), and in [`../configuration.md`](../configuration.md),
-so an operator meets it before deploying rather than after.
-
 Object-store lifecycle rules are explicitly not a substitute. A lifecycle rule sees one
 object's age. It cannot see that a Segment on another Flow still references those bytes, so
 it deletes live data. `../configuration.md` warns against this directly.
@@ -67,12 +61,15 @@ it deletes live data. `../configuration.md` warns against this directly.
   without touching the servers.
 * Good, because shipping it as a subcommand of the same binary keeps one image and one
   version.
-* Bad, because every deployment today leaks storage. Deleting a Flow frees no bytes, and an
-  operator must reconcile by hand or accept the growth.
-* Bad, because the gap is not obvious from the API. A `DELETE` returns success, and nothing
-  in the response says the bytes remain.
-* Bad, because the sweep will read a table that grows with the Object count, and its cost
-  at scale is unmeasured until the worker exists.
+* Bad, because reclamation is only as timely as the sweep schedule. Storage is freed on the
+  worker's interval, not when a client deletes a Flow.
+* Bad, because a `DELETE` that returns success says nothing about the bytes, so an operator
+  cannot see reclamation progress from the API.
+* Bad, because the sweep reads a table that grows with the Object count, and its cost at
+  scale is a property of the deployment rather than of the design.
+
+Delivery state, and what an operator must plan for until the worker ships, is tracked in
+[`../conformance.md`](../conformance.md) and [`../configuration.md`](../configuration.md).
 
 ## More Information
 

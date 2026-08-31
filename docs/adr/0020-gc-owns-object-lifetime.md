@@ -49,10 +49,6 @@ and two partial indexes, `objects_gc_claim_idx` for the claim path and
 BYOS Objects are outside this entirely. OpenTAMS records where the bytes are and never
 assumes ownership of them, so GC skips them.
 
-**The GC worker is not implemented.** `opentams gc` exits with an error, the `GC_*`
-configuration is parsed and unused, and zero-reference Objects accumulate in the object
-store. See [ADR-0037](0037-object-garbage-collection.md).
-
 ### Consequences
 
 * Good, because `DELETE` latency depends on the metadata transaction alone, not on how
@@ -63,9 +59,9 @@ store. See [ADR-0037](0037-object-garbage-collection.md).
 * Good, because there is one deletion path to audit rather than one per request handler.
 * Bad, because bytes outlive their metadata. Storage cost does not fall at the moment a
   client deletes a Flow.
-* Bad, because the guarantee is only as good as the worker, and today there is no worker.
-  Every deployment leaks storage, which is documented in the README and in
-  [`../conformance.md`](../conformance.md).
+* Bad, because the guarantee is only as good as the worker that carries it out. See
+  [ADR-0037](0037-object-garbage-collection.md) for the worker's design and its delivery
+  state.
 * Bad, because an operator who needs space back has to reconcile the object store against
   the `objects` table by hand.
 
