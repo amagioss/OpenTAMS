@@ -173,7 +173,7 @@ Before opening a PR, get oriented:
 - **[`docs/development/codebase.md`](docs/development/codebase.md)** — package boundaries, extension points, and a "where to start reading" guide.
 - **[`docs/conformance.md`](docs/conformance.md)** — what's implemented today vs. deferred. Tells you whether your idea is "extending an existing surface" or "building a deferred surface" — the review path for the two is different.
 - **[`docs/configuration.md`](docs/configuration.md)** — full env-var reference if your change touches configuration.
-- **[`examples/`](examples/)** — two minimal Go programs that exercise the API end-to-end. Useful as a reference when adding new client-facing surface.
+- **[`examples/`](examples/)** — runnable client programs against the live API. Useful as a reference when adding new client-facing surface.
 
 Looking for a first contribution? Some entry points that don't require deep TAMS knowledge:
 

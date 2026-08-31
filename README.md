@@ -126,12 +126,13 @@ For the wider TAMS conceptual model — flows, sources, segments, time-ranges, t
 
 ## Examples
 
-Two minimal Go programs exercise the API end-to-end against a local stack:
+Runnable programs that show what a time-addressable media store does that a file-based workflow cannot:
 
-- [`examples/write-segment/`](examples/write-segment/) — creates a Source → creates a Flow → allocates storage → registers a Segment.
-- [`examples/read-segments/`](examples/read-segments/) — lists segments on a Flow filtered by a TAMS time-range.
+- [`examples/regional-blackout/`](examples/regional-blackout/) — withhold a time window from one region. Same media on disk, two Flows, **0 bytes written**.
 
-Each is a single `main.go` using only the Go standard library — no generated client, no SDK — so the wire protocol is obvious. Run with `go run ./examples/write-segment` against the Docker Compose stack from [Quickstart](#quickstart). See [`examples/README.md`](examples/README.md) for the prerequisites and the conventions deliberately omitted (auth complexity, retries, pagination, etc.).
+A rights deal says one region must not receive six seconds of a programme. The usual answer is a second package: run the packager again, write a second set of segment files, ship a second manifest. In TAMS a Segment is a reference to an immutable Media Object, so the regional Flow lists the same `object_id`s and omits the ones it must not carry. Because a Flow's segment list is the only path to a presigned URL, the restricted media is not hidden from the regional client — it is unreachable by it.
+
+Each example is a single `main.go` using only the Go standard library — no generated client, no SDK — so the wire protocol is obvious. See [`examples/README.md`](examples/README.md) for prerequisites and what is deliberately left out.
 
 ---
 
