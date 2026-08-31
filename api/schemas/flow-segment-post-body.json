@@ -1,0 +1,11 @@
+{
+    "title": "Flow Segment Post Body",
+    "oneOf": [
+        { "$ref": "flow-segment-post.json" },
+        {
+            "type": "array",
+            "maxItems": 1000,
+            "items": { "$ref": "flow-segment-post.json" }
+        }
+    ]
+}

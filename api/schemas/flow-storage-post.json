@@ -1,0 +1,37 @@
+{
+    "title": "Flow Storage Post",
+    "description": "Post data for the Flow storage endpoint. Exactly one of `limit` or `object_ids` must be provided — omitting both returns 400, providing both also returns 400.",
+    "type": "object",
+    "properties": {
+        "limit": {
+            "description": "Allocate this many new Media Objects, with server-generated identifiers. The server may apply its own maximum; if the requested limit exceeds the maximum, the server allocates up to its maximum and the client must page for more.",
+            "type": "integer"
+        },
+        "object_ids": {
+            "description": "Array of client-specified object_ids to allocate. Maximum 1000 per request. The supplied object_ids must not already exist in this TAMS service instance. A 400 response is returned if any supplied object_id already exists. Clients may re-request an object_id that was previously allocated but has not yet been registered as a segment (e.g. after a presigned URL expired).",
+            "type": "array",
+            "maxItems": 1000,
+            "items": {
+                "type": "string"
+            }
+        },
+        "storage_id": {
+            "description": "The Storage Backend to allocate storage in. A Storage Backend identifier as advertised at the [/service/storage-backends](#/operations/GET_storage-backends) endpoint. If not set the default, as advertised at the [/service/storage-backends](#/operations/GET_storage-backends) endpoint, will be used if available. An invalid Storage Backend identifier will result in a 400 error.",
+            "$ref": "uuid.json"
+        }
+    },
+    "not": {
+        "allOf": [
+            {
+                "required": [
+                    "limit"
+                ]
+            },
+            {
+                "required": [
+                    "object_ids"
+                ]
+            }
+        ]
+    }
+}

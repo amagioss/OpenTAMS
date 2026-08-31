@@ -1,0 +1,190 @@
+# Release pipeline for OpenTAMS.
+#
+# Release policy: ghcr-only image, no binary archives, full supply chain
+# (cosign signature on the manifest, image SBOM via
+# syft attached to the registry as a cosign attestation, SLSA build
+# provenance via GitHub's attest-build-provenance action).
+#
+# Trigger contract:
+#   * Tag push matching `v*` (semver) — production releases.
+#   * Manual `workflow_dispatch` — rehearses the pipeline end to end
+#     against the ref selected in the Actions UI. It takes no ref input:
+#     a caller-supplied ref could name `refs/pull/N/head`, which would run
+#     fork-authored code with this workflow's publish scopes. The dispatch
+#     path does NOT publish (goreleaser snapshot mode); only a tag push
+#     produces a real GitHub Release and a real `:vX.Y.Z` image tag.
+#
+# Pre-release detection is automatic from the tag suffix
+# (`v0.1.0-rc.1` / `-beta.1` / `-alpha.1` are flagged Pre-release on
+# the GitHub Release page; the `:latest` and `:X.Y` floating tags are
+# suppressed by goreleaser for those tags).
+#
+# Runners: GitHub-hosted `ubuntu-latest`. Every workflow in this repository
+# uses hosted runners, deliberately. A public repository must not name
+# self-hosted labels: no fork can schedule them, so a contributor's run would
+# queue forever, and untrusted fork code must never execute on private
+# infrastructure. Hosted minutes are free for public repositories.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+# Least privilege: read-only by default. The publish scopes are granted to
+# the release job alone, which runs behind the `release` environment.
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false   # never cancel a release in flight
+
+jobs:
+  release:
+    name: goreleaser
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # Protected environment: configure required reviewers and a tag-only
+    # deployment branch rule on it so a release cannot be published without
+    # a second pair of eyes.
+    environment: release
+    permissions:
+      contents: write       # create the GitHub Release, upload changelog
+      packages: write       # push images to ghcr.io
+      id-token: write       # cosign keyless OIDC + SLSA provenance signing
+      attestations: write   # actions/attest-build-provenance writes here
+    outputs:
+      # Exposed for the downstream attest job. Set even on snapshot
+      # builds so the workflow can be exercised end-to-end on dispatch.
+      image_digests: ${{ steps.image-digests.outputs.digests }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # goreleaser uses git history to compute the changelog and
+          # PreviousTag template variable.
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up QEMU
+        # Required so the amd64 runner can build linux/arm64 images via
+        # docker buildx.
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
+        with:
+          platforms: arm64
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3.9.1
+        with:
+          # Pin cosign to a known release for reproducibility. Like
+          # golangci-lint, cosign updates can subtly change attestation
+          # output and we want bumps to be deliberate.
+          cosign-release: v2.4.1
+
+      - name: Install syft
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          syft-version: v1.18.1
+
+      - name: Log in to ghcr.io
+        # Skipped for workflow_dispatch (snapshot) builds — no push.
+        if: github.event_name == 'push'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run goreleaser (release)
+        if: github.event_name == 'push'
+        uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6.4.0
+        with:
+          # Pinned to an exact version for reproducible releases; keep this in
+          # lock-step with GORELEASER_VERSION in the Makefile.
+          distribution: goreleaser
+          version: "v2.11.0"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run goreleaser (snapshot, dispatch only)
+        if: github.event_name == 'workflow_dispatch'
+        uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6.4.0
+        with:
+          distribution: goreleaser
+          version: "v2.11.0"
+          args: release --snapshot --clean --skip=publish,sign
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Capture pushed manifest digest
+        id: image-digests
+        if: github.event_name == 'push'
+        run: |
+          # All three published manifest tags (:vX.Y.Z, :X.Y, :latest)
+          # point to the same OCI manifest digest. We pull the immutable
+          # version-tagged manifest entry from dist/artifacts.json and
+          # use its sha256 digest as the single subject for both the
+          # SBOM attestation and the SLSA provenance attestation. (Tag
+          # refs are mutable and not what attest-build-provenance wants
+          # — it expects `sha256:...`.)
+          digest=$(jq -r '
+            [.[]
+             | select(.type == "Docker Manifest")
+             | select(.name | test("^ghcr\\.io/amagioss/opentams:v[0-9]"))
+             | .extra.Digest
+            ] | unique | .[0] // empty
+          ' dist/artifacts.json)
+          if [ -z "$digest" ]; then
+            echo "::error::no manifest digest found in dist/artifacts.json (goreleaser run may have skipped docker_manifests)"
+            exit 1
+          fi
+          echo "Manifest digest: $digest"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      # ---------------------------------------------------------------
+      # Image SBOM via syft, attached to the registry as a cosign
+      # attestation (SPDX predicate). One attestation against the
+      # manifest digest covers all three tag pointers automatically —
+      # cosign attestations are looked up by digest, not by tag.
+      # ---------------------------------------------------------------
+      - name: Generate + attest image SBOM
+        if: github.event_name == 'push'
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+        run: |
+          set -euo pipefail
+          ref="ghcr.io/amagioss/opentams@${{ steps.image-digests.outputs.digest }}"
+          echo "Attesting SBOM against $ref"
+          syft -o spdx-json="sbom-spdx.json" "$ref"
+          cosign attest \
+            --yes \
+            --predicate sbom-spdx.json \
+            --type spdxjson \
+            "$ref"
+
+      # ---------------------------------------------------------------
+      # SLSA build provenance against the same manifest digest.
+      # `push-to-registry: true` writes the attestation to ghcr.io as
+      # a discoverable OCI referrer; consumers verify with
+      #   cosign verify-attestation --type slsaprovenance1 ghcr.io/...
+      # ---------------------------------------------------------------
+      - name: Attest build provenance
+        if: github.event_name == 'push'
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-name: ghcr.io/amagioss/opentams
+          subject-digest: ${{ steps.image-digests.outputs.digest }}
+          push-to-registry: true

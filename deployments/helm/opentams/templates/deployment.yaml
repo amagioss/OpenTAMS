@@ -1,0 +1,117 @@
+{{- include "opentams.validate" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "opentams.fullname" . }}
+  labels:
+    {{- include "opentams.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      {{- include "opentams.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "opentams.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "opentams.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: {{ include "opentams.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["serve"]
+          ports:
+            - name: http
+              containerPort: {{ .Values.server.port }}
+              protocol: TCP
+          env:
+            {{- include "opentams.env" . | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.probes.liveness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.probes.readiness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+          {{- if .Values.probes.startup.enabled }}
+          startupProbe:
+            httpGet:
+              path: {{ .Values.probes.startup.path }}
+              port: http
+            periodSeconds: {{ .Values.probes.startup.periodSeconds }}
+            failureThreshold: {{ .Values.probes.startup.failureThreshold }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            {{- if .Values.server.tls.enabled }}
+            - name: tls
+              mountPath: /etc/opentams/tls
+              readOnly: true
+            {{- end }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- if .Values.server.tls.enabled }}
+        - name: tls
+          secret:
+            secretName: {{ .Values.server.tls.existingSecret }}
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}

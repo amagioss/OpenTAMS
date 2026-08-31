@@ -1,0 +1,191 @@
+# -- Container image
+image:
+  repository: ghcr.io/amagioss/opentams
+  tag: ""                 # defaults to .Chart.AppVersion when empty
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+# -- Replicas (ignored if autoscaling.enabled)
+replicaCount: 2
+
+# -- ServiceAccount (Workload Identity lives here)
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}         # e.g. eks.amazonaws.com/role-arn, iam.gke.io/gcp-service-account
+  # The OpenTAMS server never calls the kube API (it validates JWTs via JWKS over
+  # HTTP), so it does not need its SA token mounted. IRSA / GKE WI inject their own
+  # projected token regardless of this flag.
+  automountServiceAccountToken: false
+
+# -- App / logging
+app:
+  env: production         # APP_ENV: production|development
+  logLevel: info          # debug|info|warn|error
+
+# -- Server
+server:
+  port: 8080              # SERVER_PORT (containerPort + Service targetPort)
+  tls:                    # optional server-level TLS (ingress-less escape hatch)
+    enabled: false
+    existingSecret: ""    # kubernetes.io/tls secret; mounts tls.crt/tls.key
+    certPath: /etc/opentams/tls/tls.crt   # -> SERVER_TLS_CERT_FILE
+    keyPath: /etc/opentams/tls/tls.key    # -> SERVER_TLS_KEY_FILE
+
+# -- Database (Postgres) — external
+database:
+  host: ""                # DB_HOST (required)
+  port: 5432
+  name: opentams          # DB_NAME
+  user: opentams          # DB_USER
+  sslMode: require        # DB_SSLMODE
+  pool:
+    min: 2
+    max: 10
+  # password sourced from secret (see `secrets` block)
+
+# -- Object store (S3-compatible) — external
+objectStore:
+  bucket: ""              # OBJECT_STORE_BUCKET (required)
+  region: ""              # OBJECT_STORE_REGION (required)
+  endpoint: ""            # OBJECT_STORE_ENDPOINT (empty = AWS S3)
+  presignExpiry: 1h
+  backend:
+    provider: s3          # STORAGE_BACKEND_PROVIDER (required)
+    product: s3           # STORAGE_BACKEND_PRODUCT
+
+# -- Auth
+auth:
+  external:               # required when app.env != development
+    issuerURL: ""         # AUTH_EXTERNAL_ISSUER_URL
+    audience: ""          # AUTH_EXTERNAL_AUDIENCE
+  internal:               # disabled by default; both-or-neither
+    enabled: false
+    issuerURL: ""         # AUTH_INTERNAL_ISSUER_URL (must be a PUBLISHED issuer; see README)
+    audience: ""          # AUTH_INTERNAL_AUDIENCE
+    # Allowlist of exact "sub" claims permitted on internal-issuer tokens, e.g.
+    # Kubernetes ServiceAccount subjects. REQUIRED when internal auth is enabled
+    # (fails closed). AUTH_INTERNAL_ALLOWED_SUBJECTS (joined comma-separated).
+    allowedSubjects: []   # e.g. ["system:serviceaccount:opentams:loader"]
+
+# -- Secrets strategy: the chart NEVER creates a Secret.
+# Provision it via IaC / ESO / Vault / SealedSecrets BEFORE installing.
+# The chart only references it by name. Required keys (verbatim):
+#   DB_PASSWORD                    (required)
+#   OBJECT_STORE_ACCESS_KEY_ID     (optional — omit under Workload Identity)
+#   OBJECT_STORE_SECRET_ACCESS_KEY (optional — omit under Workload Identity)
+secrets:
+  existingSecret: ""      # REQUIRED. Must already exist.
+
+# -- Migration pre-deploy hook
+migration:
+  enabled: true
+  backoffLimit: 3
+  activeDeadlineSeconds: 300
+  resources:
+    requests:
+      cpu: 100m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+# -- Service
+service:
+  type: ClusterIP
+  port: 80
+  annotations: {}
+
+# -- Ingress (TLS terminated here by default)
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: opentams.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []                 # [{secretName: opentams-tls, hosts: [opentams.example.com]}]
+
+# -- Autoscaling
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: null
+
+# -- PodDisruptionBudget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# -- Prometheus Operator ServiceMonitor
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  scrapeTimeout: 10s
+  labels: {}
+
+# -- NetworkPolicy (default-deny ingress except from ingress controller + scrapers)
+networkPolicy:
+  enabled: false
+  ingressNamespaceSelector: {}      # namespace of the ingress controller
+  monitoringNamespaceSelector: {}   # namespace of Prometheus/scrapers
+
+# -- Pod scheduling / overhead
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+topologySpreadConstraints: []
+priorityClassName: ""
+
+# -- Security contexts (do not loosen)
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# -- Probes (overridable)
+probes:
+  liveness:
+    path: /healthz
+    initialDelaySeconds: 15
+    periodSeconds: 30
+    failureThreshold: 3
+  readiness:
+    path: /readyz
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    failureThreshold: 3
+  startup:
+    enabled: true
+    path: /readyz
+    periodSeconds: 5
+    failureThreshold: 30
+
+extraEnv: []              # [{name, value}] / [{name, valueFrom}]
+extraVolumes: []
+extraVolumeMounts: []

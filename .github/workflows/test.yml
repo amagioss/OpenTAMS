@@ -1,0 +1,134 @@
+# Unit-test, integration-test, and build verification.
+#
+# Runs on every PR targeting main and on every push to main. Coverage is
+# computed and printed in the job log; it is deliberately not uploaded to
+# any third-party service.
+#
+# Two jobs, both required:
+#
+#   * `test`        — untagged tests only, plus the vulnerability gate. No
+#                     Docker required: every suite that needs a container is
+#                     behind the `integration` build tag. Fast feedback.
+#   * `integration` — `-tags=integration`. Boots Postgres and MinIO via
+#                     testcontainers. Kept on the PR gate deliberately:
+#                     the persistence layer is where the interesting bugs
+#                     are, and leaving it to a nightly job let two real
+#                     failures sit in `main` unnoticed.
+#
+# The nightly `Integration` workflow is the broader matrix — it runs the
+# same tagged suite plus the `perf` budgets.
+#
+# Runners: GitHub-hosted `ubuntu-latest`. Every workflow in this repository
+# uses hosted runners, deliberately. A public repository must not name
+# self-hosted labels: no fork can schedule them, so a contributor's run would
+# queue forever, and untrusted fork code must never execute on private
+# infrastructure. Hosted minutes are free for public repositories.
+
+name: Test
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: build + vet + race + coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Vulnerability gate
+        # Fails on any advisory govulncheck can trace from OpenTAMS code that
+        # is not justified in .govulncheck-allow.yaml. Runs before the tests
+        # so a newly-disclosed advisory is not buried under test output.
+        # Needs no Docker; `make vuln` prints the unfiltered report.
+        run: make vuln-gate
+
+      - name: Unit tests (race + coverage)
+        # Scope mirrors CONTRIBUTING.md: skip ./gen/... since generated code
+        # is not the target of unit testing and inflates coverage noise.
+        # No build tag, so container-backed suites are excluded — see the
+        # `integration` job below.
+        run: |
+          go test -race -count=1 -coverprofile=coverage.out \
+            ./pkg/... ./internal/... ./cmd/...
+
+      - name: Coverage summary
+        run: |
+          echo "::group::Per-package coverage"
+          go tool cover -func=coverage.out
+          echo "::endgroup::"
+          total=$(go tool cover -func=coverage.out | awk '/^total:/ {print $3}')
+          echo "Total coverage: $total"
+          echo "TOTAL_COVERAGE=$total" >> "$GITHUB_ENV"
+
+      - name: Upload coverage profile (artifact, not Codecov)
+        # Keep the profile available for download in the run UI for ad-hoc
+        # inspection, but no third-party upload.
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: coverage-${{ github.run_id }}
+          path: coverage.out
+          retention-days: 14
+          if-no-files-found: error
+
+  integration:
+    name: integration (testcontainers)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Verify Docker is available
+        run: docker version
+
+      - name: Integration tests
+        env:
+          # SCN-SEG-CONC-02 asserts a 5s wall-clock budget on 100
+          # concurrent registrations. That budget was written for an
+          # unloaded, non-race run; under `-race` with the rest of the
+          # suite in parallel it is not a correctness signal and flakes.
+          # Timing budgets belong to the `perf` suite, which the nightly
+          # job runs unmodified — this only relaxes the one budget that
+          # sits on a correctness test.
+          OPENTAMS_PERF_SEG_CONC_DISJOINT_MS: "60000"
+        run: |
+          go test -tags=integration -race -count=1 -timeout=30m ./...

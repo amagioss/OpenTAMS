@@ -1,0 +1,85 @@
+# Nightly integration + performance matrix.
+#
+# The `integration`-tagged suite also runs on every PR (see test.yml) --
+# it is the persistence layer and belongs on the gate. This workflow is
+# the broader, slower run: the same tagged suite plus the `perf` budgets,
+# which are too machine-sensitive to gate a PR on but rot silently if
+# nothing ever executes them.
+#
+# Runs:
+#   * On a daily schedule against `main`.
+#   * On manual `workflow_dispatch` against any branch.
+#
+# Unlike the PR job, timing budgets are NOT relaxed here -- that is the
+# point of running them.
+#
+# Runners: GitHub-hosted `ubuntu-latest`. Every workflow in this repository
+# uses hosted runners, deliberately. A public repository must not name
+# self-hosted labels: no fork can schedule them, so a contributor's run would
+# queue forever, and untrusted fork code must never execute on private
+# infrastructure. Hosted minutes are free for public repositories.
+#
+# Caveat: hosted runners are shared hardware, so the `perf` budgets below see
+# more run-to-run variance than a dedicated machine. Treat a single breach as
+# a signal to investigate, not proof of a regression, and recalibrate the
+# budgets against observed hosted-runner numbers rather than loosening them
+# case by case.
+
+name: Integration
+
+on:
+  schedule:
+    # 05:00 UTC daily — picked to land before EU/US working hours.
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch, tag, or SHA to run integration tests against"
+        required: false
+        default: "main"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: integration-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  integration:
+    name: integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download modules
+        run: go mod download
+
+      # GitHub-hosted ubuntu-latest runners include Docker, which is what
+      # testcontainers needs. No extra setup required.
+      - name: Verify Docker is available
+        run: docker version
+
+      - name: Integration tests
+        run: |
+          go test -tags=integration -race -count=1 -timeout=20m ./...
+
+      - name: Performance budgets
+        # No -race: the budgets are calibrated for an unraced binary, and
+        # the race detector's overhead would make every one of them
+        # meaningless. Run even if the step above failed, so a perf
+        # regression is not masked by an unrelated integration failure.
+        if: always()
+        run: |
+          go test -tags=perf -count=1 -timeout=20m ./...

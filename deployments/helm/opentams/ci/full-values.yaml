@@ -1,0 +1,89 @@
+# All toggles on, for lint/template coverage.
+secrets:
+  existingSecret: opentams-secrets
+
+replicaCount: 3
+
+database:
+  host: postgres.default.svc
+  port: 5432
+  name: opentams
+  user: opentams
+  sslMode: verify-full
+  pool:
+    min: 4
+    max: 20
+
+objectStore:
+  bucket: opentams-full
+  region: eu-west-1
+  endpoint: https://minio.default.svc:9000
+  presignExpiry: 30m
+  backend:
+    provider: s3
+    product: minio
+
+auth:
+  external:
+    issuerURL: https://issuer.example.com/
+    audience: opentams
+  internal:
+    enabled: true
+    issuerURL: https://oidc.eks.eu-west-1.amazonaws.com/id/EXAMPLE
+    audience: opentams-internal
+    allowedSubjects:
+      - system:serviceaccount:opentams:loadgen
+
+serviceAccount:
+  create: true
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/opentams
+
+server:
+  tls:
+    enabled: true
+    existingSecret: opentams-tls
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+  hosts:
+    - host: opentams.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: opentams-ingress-tls
+      hosts:
+        - opentams.example.com
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+serviceMonitor:
+  enabled: true
+  labels:
+    release: prometheus
+
+networkPolicy:
+  enabled: true
+  ingressNamespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: ingress-nginx
+  monitoringNamespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: monitoring
+
+extraEnv:
+  - name: AUTH_JWKS_TTL
+    value: "5m"

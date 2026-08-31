@@ -1,0 +1,134 @@
+# Secret and misconfiguration scanning.
+#
+# Four independent gates, each failing the job directly rather than
+# uploading SARIF. That is deliberate: SARIF upload writes to GitHub code
+# scanning, which needs Advanced Security on a private repository. Failing
+# in-job keeps these gates working now and after the repository goes public.
+#
+# gitleaks replaces the check that used to live in the export script. The
+# export script was removed when this repository became the development home;
+# the secret scan it performed is the part worth keeping.
+#
+# Runners: GitHub-hosted `ubuntu-latest`. Every workflow in this repository
+# uses hosted runners, deliberately. A public repository must not name
+# self-hosted labels: no fork can schedule them, so a contributor's run would
+# queue forever, and untrusted fork code must never execute on private
+# infrastructure. Hosted minutes are free for public repositories.
+
+name: Security
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gitleaks:
+    name: gitleaks (secrets)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # Full history so the scan covers every commit reachable from the
+          # ref, not just the tip snapshot.
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        # The gitleaks binary is MIT-licensed and free. The gitleaks-action
+        # wrapper is not: for a repository owned by an organisation it fails
+        # with "is an organization. License key is required." Running the
+        # binary directly avoids a paid dependency for a check the project
+        # needs, and pins the exact version and checksum rather than trusting
+        # a mutable release asset.
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          set -euo pipefail
+          url="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL "$url" -o /tmp/gitleaks.tar.gz
+          echo "${GITLEAKS_SHA256}  /tmp/gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          sudo install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      - name: Scan git history for secrets
+        # `gitleaks git` walks commits, which is what we want: `gitleaks dir`
+        # scans the working tree and would also flag untracked local build
+        # artefacts (a Terraform provider cache, for instance) that are not
+        # part of the repository at all.
+        run: gitleaks git . --no-banner --redact --config .gitleaks.toml
+
+  trivy-fs:
+    name: trivy (secrets in tree)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Trivy filesystem scan
+        # Secrets only, deliberately. Go dependency vulnerabilities are
+        # govulncheck's job (see `make vuln-gate` in the Test workflow):
+        # govulncheck does reachability analysis and the project justifies
+        # unreachable advisories in .govulncheck-allow.yaml. Trivy has no
+        # reachability analysis, so enabling its `vuln` scanner here would
+        # re-report those same justified advisories as failures, giving two
+        # conflicting sources of truth and a permanently red gate.
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: secret
+          exit-code: "1"
+          trivyignores: .trivyignore.yaml
+
+  trivy-config:
+    name: trivy (IaC misconfiguration)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Trivy config scan
+        # Covers the Dockerfiles, Kubernetes manifests, Helm chart, and
+        # Terraform under deployments/. Deliberately insecure examples are
+        # excluded through .trivyignore.yaml, not by weakening the gate.
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: .
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          trivyignores: .trivyignore.yaml
+
+  dependency-review:
+    name: dependency review
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Only meaningful on pull requests, and the dependency graph it reads is
+    # unavailable on a private repository without Advanced Security. The
+    # condition makes this a no-op until the repository is public, rather
+    # than a permanently red required check.
+    if: github.event_name == 'pull_request' && github.event.repository.visibility == 'public'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Dependency review
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+          # Apache-2.0 project: flag copyleft licences arriving through a PR.
+          deny-licenses: GPL-2.0, GPL-3.0, AGPL-3.0, LGPL-3.0

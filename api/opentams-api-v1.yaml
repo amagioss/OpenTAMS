@@ -1,0 +1,2457 @@
+#
+# OpenTAMS — Phase 1 Interface Spec
+#
+# Cloud-agnostic implementation of BBC TAMS v8.0 API.
+# This file covers Phase 1 scope only. Phase 2 features (webhooks,
+# /objects, async flow-delete-requests, POST /service) are omitted.
+#
+# Schema $refs point to the BBC TAMS v8.0 schema files in ./schemas/.
+# Do not edit those files — they are the upstream reference.
+#
+openapi: 3.0.3
+
+info:
+  title: OpenTAMS — Time-Addressable Media Store
+  description: |
+    OpenTAMS is an open-source, cloud-agnostic server implementing the BBC TAMS v8.0 API
+    specification. This document describes the surface OpenTAMS actually serves; surfaces
+    the TAMS specification defines but OpenTAMS does not implement are omitted. See
+    `docs/conformance.md` in the repository for the endpoint-by-endpoint status.
+
+    ## Base URL
+    All TAMS API endpoints are served under `/tams/v1`. Health endpoints are served at the root
+    with no version prefix — they are not part of the versioned TAMS API.
+
+    ## Authentication
+    All TAMS API endpoints require a JWT Bearer token:
+    ```
+    Authorization: Bearer <token>
+    ```
+    External JWT validation is always active and mandatory for all deployments (Docker, VM, Kubernetes):
+    - **External clients** — JWTs from a configured external OIDC issuer, validated against `AUTH_EXTERNAL_ISSUER_URL` (required)
+
+    Internal JWT validation is optional and enabled only when configured:
+    - **Internal services** — Kubernetes ServiceAccount JWTs, validated against `AUTH_INTERNAL_ISSUER_URL` (optional). When `AUTH_INTERNAL_ISSUER_URL` is not set, internal JWT validation is disabled. Both `AUTH_INTERNAL_ISSUER_URL` and `AUTH_INTERNAL_AUDIENCE` must either both be set or both be absent.
+
+    See the [Requirements Specification](./requirements.md) Section 11 for the full
+    configuration reference including all `AUTH_*` environment variables, defaults, and valid values.
+
+    Health probe endpoints (`/healthz`, `/readyz`) require no authentication.
+    `/health/details` requires authentication.
+
+    ## Request Correlation
+    Include `X-Request-ID` on any request for log correlation. The server echoes it in the response
+    and includes it in all structured log lines for that request. If absent, the server generates one.
+    The `request_id` field in all error responses always contains this value.
+
+    ## TLS
+    TLS is terminated at the ingress layer by default. For standalone deployments without an ingress
+    (e.g., Docker), the server supports HTTPS directly via `SERVER_TLS_CERT_FILE` and
+    `SERVER_TLS_KEY_FILE`. When neither is set, the server serves HTTP only.
+
+    ## Rate Limiting
+    All endpoints are rate-limited. On limit exceeded the server returns `429 Too Many Requests`
+    with a `Retry-After` header indicating seconds to wait before retrying.
+
+    ## Error Format
+    All error responses use RFC 9457 Problem Details (`application/problem+json`). The `request_id` field
+    correlates the error with server logs.
+
+    ## Timestamps
+    All timestamps in this API use **TAI (International Atomic Time)**, not UTC. TAI and UTC differ
+    by a fixed number of leap seconds (currently 37 seconds as of 2017). For example, the UTC instant
+    `2023-09-11T10:46:50.0Z` corresponds to TAI timestamp `1694429247:0` (Unix TAI seconds and
+    nanoseconds), not the same value as UTC Unix time.
+
+    Timestamp format: `<seconds>:<nanoseconds>` where seconds is a signed integer (TAI epoch) and
+    nanoseconds is 0–999999999. Timeranges combine two timestamps with bracket notation:
+    `[start_end)` where `[`/`]` = inclusive and `(`/`)` = exclusive.
+
+    Do not use standard UTC Unix timestamps directly — convert to TAI first. The TAMS specification
+    includes conversion guidance and the [BBC/tams repository](https://github.com/bbc/tams) provides
+    reference conversion utilities.
+
+  version: "8.0.0"
+  contact:
+    name: OpenTAMS
+    url: https://github.com/amagioss/opentams
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+servers:
+  - url: "{scheme}://{host}"
+    description: An OpenTAMS deployment. Paths below already carry the `/tams/v1` prefix.
+    variables:
+      scheme:
+        default: https
+        enum: [https, http]
+        description: Use `http` only for local development.
+      host:
+        default: localhost:8080
+        description: Host and port of the OpenTAMS server.
+
+security:
+  - bearer_auth: []
+
+tags:
+  - name: Health
+    description: Liveness, readiness, and detailed health status endpoints. Not part of the versioned TAMS API.
+  - name: Metrics
+    description: Prometheus metrics exposition endpoint. Not part of the versioned TAMS API. Served directly by the prometheus/client_golang handler; not routed through the generated strict server interface.
+  - name: Service
+    description: Service root and instance metadata.
+  - name: Sources
+    description: |
+      Sources represent an individual piece of media independent of encoding or packaging.
+    externalDocs:
+      url: https://specs.amwa.tv/ms-04/releases/v1.0.0/docs/2.2._Explanation_-_Source.html
+  - name: Flows
+    description: |
+      Flows represent Sources rendered to a specific encoding and packaging format.
+    externalDocs:
+      url: https://specs.amwa.tv/ms-04/releases/v1.0.0/docs/2.3._Explanation_-_Flow.html
+  - name: FlowSegments
+    description: A timerange Segment of a Flow that references a Media Object.
+  - name: MediaStorage
+    description: Storage allocation for Media Objects referenced by Flow Segments.
+  - name: FlowDeleteRequests
+    description: |
+      Monitoring resource for Flow and Segment deletion requests.
+      In Phase 1, deletion is always synchronous and this list will always be empty.
+      Reserved for future async deletion support.
+
+paths:
+
+  # ---------------------------------------------------------------------------
+  # Health — no auth, no version prefix
+  # ---------------------------------------------------------------------------
+
+  /healthz:
+    get:
+      summary: Liveness Probe
+      description: |
+        Returns 200 if the server process is alive. Performs no external dependency checks.
+        Intended for use as a Kubernetes liveness probe.
+      operationId: GetHealthz
+      tags: [Health]
+      security: []
+      responses:
+        "200":
+          description: Service process is alive.
+
+  /readyz:
+    get:
+      summary: Readiness Probe
+      description: |
+        Returns 200 if the service is ready to accept traffic (metadata store reachable).
+        Returns 503 if a critical dependency is unavailable.
+        Intended for use as a Kubernetes readiness probe.
+
+        Response body is intentionally empty. Kubernetes readiness probes evaluate HTTP status only;
+        response body is ignored. For per-dependency health breakdown, use `/health/details`.
+      operationId: GetReadyz
+      tags: [Health]
+      security: []
+      responses:
+        "200":
+          description: Service is ready to accept traffic.
+        "503":
+          description: Service is not ready. Metadata store or critical dependency unavailable.
+
+  /health/details:
+    get:
+      summary: Detailed Health Status
+      description: |
+        Returns detailed health status for all service components.
+        Intended for monitoring dashboards, not Kubernetes probes.
+      operationId: GetHealthDetails
+      tags: [Health]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "200":
+          description: Detailed component health status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthDetails'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+
+  /metrics:
+    get:
+      summary: Prometheus Metrics
+      description: |
+        Exposes service metrics in Prometheus text exposition format.
+        Intended for scraping by a Prometheus server or compatible collector.
+        Not part of the versioned TAMS API.
+
+        **Path label constraint:** The `path` label on HTTP metrics uses the route template
+        (e.g., `/tams/v1/flows/{flowId}`) not the actual request path, to prevent high-cardinality
+        label explosion from resource IDs.
+      operationId: GetMetrics
+      tags: [Metrics]
+      security: []
+      responses:
+        "200":
+          description: Prometheus metrics in text exposition format (version 0.0.4).
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: |
+                # HELP opentams_http_requests_total Total HTTP requests by method, path template, and status code.
+                # TYPE opentams_http_requests_total counter
+                opentams_http_requests_total{method="GET",path="/tams/v1/flows/{flowId}",status_code="200"} 42
+
+  # ---------------------------------------------------------------------------
+  # Service
+  # ---------------------------------------------------------------------------
+
+  /tams/v1/:
+    head:
+      summary: List Root Endpoints
+      description: Return root path headers.
+      operationId: HeadRoot
+      tags: [Service]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "200":
+          $ref: '#/components/responses/ResourceListingHead'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    get:
+      summary: List Root Endpoints
+      description: List of paths available from this API.
+      operationId: GetRoot
+      tags: [Service]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "200":
+          description: List of available API paths.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+              example:
+                - service
+                - flows
+                - sources
+                - flow-delete-requests
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+
+  /tams/v1/service:
+    head:
+      summary: Service Information
+      description: Return service path headers.
+      operationId: HeadService
+      tags: [Service]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "200":
+          $ref: '#/components/responses/ResourceInfoHead'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    get:
+      summary: Service Information
+      description: |
+        Provides information about the service instance including storage backend type,
+        supported event stream mechanisms, and object timeout values.
+      operationId: GetService
+      tags: [Service]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "200":
+          description: Service instance metadata.
+          content:
+            application/json:
+              schema:
+                $ref: schemas/service.json
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+
+  /tams/v1/service/storage-backends:
+    head:
+      summary: Storage Backends
+      description: Return storage backends path headers.
+      operationId: HeadStorageBackends
+      tags: [Service]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "200":
+          $ref: '#/components/responses/ResourceListingHead'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    get:
+      summary: Storage Backends
+      description: List the storage backends configured on this service instance.
+      operationId: GetStorageBackends
+      tags: [Service]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "200":
+          description: List of configured storage backends.
+          content:
+            application/json:
+              schema:
+                $ref: schemas/storage-backends-list.json
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+
+  # ---------------------------------------------------------------------------
+  # Sources
+  # ---------------------------------------------------------------------------
+
+  /tams/v1/sources:
+    head:
+      summary: List Sources
+      description: Return sources path headers.
+      operationId: HeadSources
+      tags: [Sources]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/SourceLabel'
+        - $ref: '#/components/parameters/SourceFormat'
+        - $ref: '#/components/parameters/SourceTagFilter'
+        - $ref: '#/components/parameters/SourceTagExists'
+        - $ref: '#/components/parameters/PageKey'
+        - $ref: '#/components/parameters/PageLimit'
+      responses:
+        "200":
+          $ref: '#/components/responses/PagedListingHead'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    get:
+      summary: List Sources
+      description: List the Sources registered in this TAMS service instance.
+      operationId: GetSources
+      tags: [Sources]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/SourceLabel'
+        - $ref: '#/components/parameters/SourceFormat'
+        - $ref: '#/components/parameters/SourceTagFilter'
+        - $ref: '#/components/parameters/SourceTagExists'
+        - $ref: '#/components/parameters/PageKey'
+        - $ref: '#/components/parameters/PageLimit'
+      responses:
+        "200":
+          description: List of Sources.
+          headers:
+            Link:
+              $ref: '#/components/headers/PagingLink'
+            X-Paging-Limit:
+              $ref: '#/components/headers/PagingLimit'
+            X-Paging-NextKey:
+              $ref: '#/components/headers/PagingNextKey'
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: schemas/source.json
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+
+  /tams/v1/sources/{sourceId}:
+    parameters:
+      - $ref: '#/components/parameters/SourceId'
+    head:
+      summary: Source Details
+      operationId: HeadSource
+      tags: [Sources]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "200":
+          $ref: '#/components/responses/ResourceInfoHead'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    get:
+      summary: Source Details
+      description: Get the details of a specific Source.
+      operationId: GetSource
+      tags: [Sources]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "200":
+          description: Source details.
+          content:
+            application/json:
+              schema:
+                $ref: schemas/source.json
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+
+  /tams/v1/sources/{sourceId}/tags:
+    parameters:
+      - $ref: '#/components/parameters/SourceId'
+    head:
+      summary: Source Tags
+      operationId: HeadSourceTags
+      tags: [Sources]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "200":
+          $ref: '#/components/responses/ResourceInfoHead'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    get:
+      summary: Source Tags
+      description: List all tags on a Source.
+      operationId: GetSourceTags
+      tags: [Sources]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "200":
+          description: Source tags dictionary.
+          content:
+            application/json:
+              schema:
+                $ref: schemas/tags.json
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+
+  /tams/v1/sources/{sourceId}/tags/{name}:
+    parameters:
+      - $ref: '#/components/parameters/SourceId'
+      - $ref: '#/components/parameters/TagName'
+    head:
+      summary: Source Tag Value
+      operationId: HeadSourceTag
+      tags: [Sources]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "200":
+          $ref: '#/components/responses/ResourceInfoHead'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    get:
+      summary: Source Tag Value
+      description: Return the value of a specific tag on a Source.
+      operationId: GetSourceTag
+      tags: [Sources]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "200":
+          description: Tag value. A tag value is either a string or an array of strings.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - type: string
+                  - type: array
+                    items:
+                      type: string
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    put:
+      summary: Create or Update Source Tag
+      operationId: PutSourceTag
+      tags: [Sources]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              anyOf:
+                - type: string
+                - type: array
+                  items:
+                    type: string
+      responses:
+        "204":
+          description: Tag created or updated.
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    delete:
+      summary: Delete Source Tag
+      operationId: DeleteSourceTag
+      tags: [Sources]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "204":
+          description: Tag deleted.
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+
+  /tams/v1/sources/{sourceId}/description:
+    parameters:
+      - $ref: '#/components/parameters/SourceId'
+    head:
+      summary: Source Description
+      operationId: HeadSourceDescription
+      tags: [Sources]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "200":
+          $ref: '#/components/responses/ResourceInfoHead'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    get:
+      summary: Source Description
+      description: Returns the human-readable description of a Source.
+      operationId: GetSourceDescription
+      tags: [Sources]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "200":
+          description: Source description string.
+          content:
+            application/json:
+              schema:
+                type: string
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    put:
+      summary: Create or Update Source Description
+      operationId: PutSourceDescription
+      tags: [Sources]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: string
+      responses:
+        "204":
+          description: Description created or updated.
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    delete:
+      summary: Delete Source Description
+      operationId: DeleteSourceDescription
+      tags: [Sources]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "204":
+          description: Description deleted.
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+
+  /tams/v1/sources/{sourceId}/label:
+    parameters:
+      - $ref: '#/components/parameters/SourceId'
+    head:
+      summary: Source Label
+      operationId: HeadSourceLabel
+      tags: [Sources]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "200":
+          $ref: '#/components/responses/ResourceInfoHead'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    get:
+      summary: Source Label
+      description: Returns the short human-readable label of a Source.
+      operationId: GetSourceLabel
+      tags: [Sources]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "200":
+          description: Source label string.
+          content:
+            application/json:
+              schema:
+                type: string
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    put:
+      summary: Create or Update Source Label
+      operationId: PutSourceLabel
+      tags: [Sources]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: string
+      responses:
+        "204":
+          description: Label created or updated.
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    delete:
+      summary: Delete Source Label
+      operationId: DeleteSourceLabel
+      tags: [Sources]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "204":
+          description: Label deleted.
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+
+  # ---------------------------------------------------------------------------
+  # Flows
+  # ---------------------------------------------------------------------------
+
+  /tams/v1/flows:
+    head:
+      summary: List Flows
+      description: Return flows path headers.
+      operationId: HeadFlows
+      tags: [Flows]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/FlowSourceId'
+        - $ref: '#/components/parameters/FlowTimerange'
+        - $ref: '#/components/parameters/FlowFormat'
+        - $ref: '#/components/parameters/FlowCodec'
+        - $ref: '#/components/parameters/FlowLabel'
+        - $ref: '#/components/parameters/FlowTagFilter'
+        - $ref: '#/components/parameters/FlowTagExists'
+        - $ref: '#/components/parameters/FlowFrameWidth'
+        - $ref: '#/components/parameters/FlowFrameHeight'
+        - $ref: '#/components/parameters/PageKey'
+        - $ref: '#/components/parameters/PageLimit'
+      responses:
+        "200":
+          $ref: '#/components/responses/PagedListingHead'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    get:
+      summary: List Flows
+      description: List the Flows registered in this TAMS service instance.
+      operationId: GetFlows
+      tags: [Flows]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/FlowSourceId'
+        - $ref: '#/components/parameters/FlowTimerange'
+        - $ref: '#/components/parameters/FlowFormat'
+        - $ref: '#/components/parameters/FlowCodec'
+        - $ref: '#/components/parameters/FlowLabel'
+        - $ref: '#/components/parameters/FlowTagFilter'
+        - $ref: '#/components/parameters/FlowTagExists'
+        - $ref: '#/components/parameters/FlowFrameWidth'
+        - $ref: '#/components/parameters/FlowFrameHeight'
+        - $ref: '#/components/parameters/PageKey'
+        - $ref: '#/components/parameters/PageLimit'
+      responses:
+        "200":
+          description: List of Flows.
+          headers:
+            Link:
+              $ref: '#/components/headers/PagingLink'
+            X-Paging-Limit:
+              $ref: '#/components/headers/PagingLimit'
+            X-Paging-NextKey:
+              $ref: '#/components/headers/PagingNextKey'
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: schemas/flow.json
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+
+  /tams/v1/flows/{flowId}:
+    parameters:
+      - $ref: '#/components/parameters/FlowId'
+    head:
+      summary: Flow Details
+      operationId: HeadFlow
+      tags: [Flows]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "200":
+          $ref: '#/components/responses/ResourceInfoHead'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    get:
+      summary: Flow Details
+      description: |
+        Get the details of a Flow. Optionally filter the returned timerange or include
+        the current timerange of registered segments.
+      operationId: GetFlow
+      tags: [Flows]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - name: include_timerange
+          in: query
+          description: If true, include the timerange covered by registered segments in the response.
+          schema:
+            type: boolean
+        - name: timerange
+          in: query
+          description: |
+            Limit the returned timerange to this range. Only meaningful when
+            `include_timerange=true`. When both are set, the returned `timerange` field is the
+            intersection of the registered segment span and this filter. Ignored when
+            `include_timerange` is false or omitted.
+          schema:
+            $ref: schemas/timerange.json
+      responses:
+        "200":
+          description: Flow details.
+          content:
+            application/json:
+              schema:
+                $ref: schemas/flow.json
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    put:
+      summary: Create or Replace Flow
+      description: |
+        Create or replace a Flow. Returns 201 on creation, 204 on update.
+
+        Once a Flow has segments registered, `codec` and `essence_parameters` are immutable.
+        Attempting to change them returns 400.
+
+        Writes to a Flow marked `read_only` return 403.
+
+        **Tag replacement:** The `tags` field is fully replaced on every PUT. Omitting `tags`
+        resets all tags to an empty object. Clients updating a Flow MUST include all existing
+        tags they wish to retain. To update individual tags without affecting others, use the
+        `PUT /flows/{flowId}/tags/{name}` sub-resource endpoints instead.
+
+        **Implicit source creation:** If the `source_id` in the request body does not refer to an
+        existing Source, the server automatically creates a Source with `id = source_id` and
+        `format = flow.format`. This is idempotent — if the Source already exists it is left
+        unchanged. Sources cannot be created directly; they are always created as a side-effect
+        of Flow creation.
+
+        **Server-managed fields:** The fields `created`, `metadata_updated`, `segments_updated`,
+        `timerange`, and `collected_by` are server-managed and must be omitted from PUT requests.
+        If included, they are silently ignored.
+      operationId: PutFlow
+      tags: [Flows]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: schemas/flow.json
+            examples:
+              video_flow:
+                summary: Create a video Flow (H.264, 1080p25)
+                value:
+                  id: "550e8400-e29b-41d4-a716-446655440001"
+                  source_id: "550e8400-e29b-41d4-a716-446655440000"
+                  format: "urn:x-nmos:format:video"
+                  codec: "video/H264"
+                  container: "video/mp2t"
+                  label: "Main camera — 1080p25 H.264"
+                  essence_parameters:
+                    frame_width: 1920
+                    frame_height: 1080
+                    frame_rate:
+                      numerator: 25
+                      denominator: 1
+              audio_flow:
+                summary: Create an audio Flow (AAC stereo)
+                value:
+                  id: "550e8400-e29b-41d4-a716-446655440002"
+                  source_id: "550e8400-e29b-41d4-a716-446655440000"
+                  format: "urn:x-nmos:format:audio"
+                  codec: "audio/aac"
+                  label: "Main audio — AAC stereo"
+                  essence_parameters:
+                    sample_rate: 48000
+                    channels: 2
+      responses:
+        "201":
+          description: Flow created.
+          content:
+            application/json:
+              schema:
+                $ref: schemas/flow.json
+        "204":
+          description: Flow updated.
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    delete:
+      summary: Delete Flow
+      description: |
+        Delete a Flow and all its Segments. Media Objects referenced only by this Flow are also deleted.
+
+        Returns 204 when deletion completes synchronously (Phase 1 behaviour).
+        Returns 202 when deletion is accepted for async processing — follow the `Location` header
+        to monitor progress via `/tams/v1/flow-delete-requests/{requestId}`.
+        Note: 202 is reserved for future use. Phase 1 always returns 204.
+      operationId: DeleteFlow
+      tags: [Flows]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "202":
+          description: |
+            Deletion accepted for async processing.
+            Reserved for future use — Phase 1 always returns 204.
+          headers:
+            Location:
+              description: URL of the deletion request to monitor progress.
+              schema:
+                type: string
+                example: /tams/v1/flow-delete-requests/{requestId}
+          content:
+            application/json:
+              schema:
+                $ref: schemas/deletion-request.json
+        "204":
+          description: Flow deleted.
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+
+  /tams/v1/flows/{flowId}/tags:
+    parameters:
+      - $ref: '#/components/parameters/FlowId'
+    head:
+      summary: Flow Tags
+      operationId: HeadFlowTags
+      tags: [Flows]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "200":
+          $ref: '#/components/responses/ResourceInfoHead'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    get:
+      summary: Flow Tags
+      description: List all tags on a Flow.
+      operationId: GetFlowTags
+      tags: [Flows]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "200":
+          description: Flow tags dictionary.
+          content:
+            application/json:
+              schema:
+                $ref: schemas/tags.json
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+
+  /tams/v1/flows/{flowId}/tags/{name}:
+    parameters:
+      - $ref: '#/components/parameters/FlowId'
+      - $ref: '#/components/parameters/TagName'
+    head:
+      summary: Flow Tag Value
+      operationId: HeadFlowTag
+      tags: [Flows]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "200":
+          $ref: '#/components/responses/ResourceInfoHead'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    get:
+      summary: Flow Tag Value
+      description: Return the value of a specific tag on a Flow.
+      operationId: GetFlowTag
+      tags: [Flows]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "200":
+          description: Tag value. A tag value is either a string or an array of strings.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - type: string
+                  - type: array
+                    items:
+                      type: string
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    put:
+      summary: Create or Update Flow Tag
+      operationId: PutFlowTag
+      tags: [Flows]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              anyOf:
+                - type: string
+                - type: array
+                  items:
+                    type: string
+      responses:
+        "204":
+          description: Tag created or updated.
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    delete:
+      summary: Delete Flow Tag
+      operationId: DeleteFlowTag
+      tags: [Flows]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "204":
+          description: Tag deleted.
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+
+  /tams/v1/flows/{flowId}/description:
+    parameters:
+      - $ref: '#/components/parameters/FlowId'
+    head:
+      summary: Flow Description
+      operationId: HeadFlowDescription
+      tags: [Flows]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "200":
+          $ref: '#/components/responses/ResourceInfoHead'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    get:
+      summary: Flow Description
+      operationId: GetFlowDescription
+      tags: [Flows]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "200":
+          description: Flow description string.
+          content:
+            application/json:
+              schema:
+                type: string
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    put:
+      summary: Create or Update Flow Description
+      operationId: PutFlowDescription
+      tags: [Flows]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: string
+      responses:
+        "204":
+          description: Description created or updated.
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    delete:
+      summary: Delete Flow Description
+      operationId: DeleteFlowDescription
+      tags: [Flows]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "204":
+          description: Description deleted.
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+
+  /tams/v1/flows/{flowId}/label:
+    parameters:
+      - $ref: '#/components/parameters/FlowId'
+    head:
+      summary: Flow Label
+      operationId: HeadFlowLabel
+      tags: [Flows]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "200":
+          $ref: '#/components/responses/ResourceInfoHead'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    get:
+      summary: Flow Label
+      operationId: GetFlowLabel
+      tags: [Flows]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "200":
+          description: Flow label string.
+          content:
+            application/json:
+              schema:
+                type: string
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    put:
+      summary: Create or Update Flow Label
+      operationId: PutFlowLabel
+      tags: [Flows]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: string
+      responses:
+        "204":
+          description: Label created or updated.
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    delete:
+      summary: Delete Flow Label
+      operationId: DeleteFlowLabel
+      tags: [Flows]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "204":
+          description: Label deleted.
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+
+  /tams/v1/flows/{flowId}/read_only:
+    parameters:
+      - $ref: '#/components/parameters/FlowId'
+    head:
+      summary: Flow Read-Only Status
+      operationId: HeadFlowReadOnly
+      tags: [Flows]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "200":
+          $ref: '#/components/responses/ResourceInfoHead'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    get:
+      summary: Flow Read-Only Status
+      description: Returns the read-only flag of the Flow.
+      operationId: GetFlowReadOnly
+      tags: [Flows]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "200":
+          description: Read-only status.
+          content:
+            application/json:
+              schema:
+                type: boolean
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    put:
+      summary: Set Flow Read-Only Status
+      description: |
+        Set the read-only flag. When true, all write operations on this Flow return 403.
+      operationId: PutFlowReadOnly
+      tags: [Flows]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: boolean
+      responses:
+        "204":
+          description: Read-only status updated.
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+
+  /tams/v1/flows/{flowId}/flow_collection:
+    parameters:
+      - $ref: '#/components/parameters/FlowId'
+    head:
+      summary: Flow Collection
+      operationId: HeadFlowCollection
+      tags: [Flows]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "200":
+          $ref: '#/components/responses/ResourceInfoHead'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    get:
+      summary: Flow Collection
+      description: Get the flow_collection property — Flows collected together by this Flow.
+      operationId: GetFlowCollection
+      tags: [Flows]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "200":
+          description: Flow collection.
+          content:
+            application/json:
+              schema:
+                $ref: schemas/flow-collection.json
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    put:
+      summary: Create or Update Flow Collection
+      operationId: PutFlowCollection
+      tags: [Flows]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: schemas/flow-collection.json
+      responses:
+        "204":
+          description: Flow collection created or updated.
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    delete:
+      summary: Delete Flow Collection
+      operationId: DeleteFlowCollection
+      tags: [Flows]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "204":
+          description: Flow collection deleted.
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+
+  /tams/v1/flows/{flowId}/max_bit_rate:
+    parameters:
+      - $ref: '#/components/parameters/FlowId'
+    head:
+      summary: Flow Maximum Bit Rate
+      operationId: HeadFlowMaxBitRate
+      tags: [Flows]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "200":
+          $ref: '#/components/responses/ResourceInfoHead'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    get:
+      summary: Flow Maximum Bit Rate
+      description: The maximum bit rate of Flow Segments in 1000 bits/second.
+      operationId: GetFlowMaxBitRate
+      tags: [Flows]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "200":
+          description: Maximum bit rate value.
+          content:
+            application/json:
+              schema:
+                type: integer
+                minimum: 0
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    put:
+      summary: Set Flow Maximum Bit Rate
+      operationId: PutFlowMaxBitRate
+      tags: [Flows]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: integer
+              minimum: 0
+      responses:
+        "204":
+          description: Maximum bit rate updated.
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    delete:
+      summary: Delete Flow Maximum Bit Rate
+      operationId: DeleteFlowMaxBitRate
+      tags: [Flows]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "204":
+          description: Maximum bit rate property deleted.
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+
+  /tams/v1/flows/{flowId}/avg_bit_rate:
+    parameters:
+      - $ref: '#/components/parameters/FlowId'
+    head:
+      summary: Flow Average Bit Rate
+      operationId: HeadFlowAvgBitRate
+      tags: [Flows]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "200":
+          $ref: '#/components/responses/ResourceInfoHead'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    get:
+      summary: Flow Average Bit Rate
+      description: The average bit rate of Flow Segments in 1000 bits/second.
+      operationId: GetFlowAvgBitRate
+      tags: [Flows]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "200":
+          description: Average bit rate value.
+          content:
+            application/json:
+              schema:
+                type: integer
+                minimum: 0
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    put:
+      summary: Set Flow Average Bit Rate
+      operationId: PutFlowAvgBitRate
+      tags: [Flows]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: integer
+              minimum: 0
+      responses:
+        "204":
+          description: Average bit rate updated.
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    delete:
+      summary: Delete Flow Average Bit Rate
+      operationId: DeleteFlowAvgBitRate
+      tags: [Flows]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "204":
+          description: Average bit rate property deleted.
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+
+  # ---------------------------------------------------------------------------
+  # Flow Segments
+  # ---------------------------------------------------------------------------
+
+  /tams/v1/flows/{flowId}/segments:
+    parameters:
+      - $ref: '#/components/parameters/FlowId'
+    head:
+      summary: List Flow Segments
+      description: Return Flow Segments path headers.
+      operationId: HeadFlowSegments
+      tags: [FlowSegments]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/SegmentObjectId'
+        - $ref: '#/components/parameters/SegmentTimerange'
+        - $ref: '#/components/parameters/SegmentReverseOrder'
+        - $ref: '#/components/parameters/SegmentVerboseStorage'
+        - $ref: '#/components/parameters/SegmentAcceptGetUrls'
+        - $ref: '#/components/parameters/SegmentAcceptStorageIds'
+        - $ref: '#/components/parameters/SegmentPresigned'
+        - $ref: '#/components/parameters/SegmentIncludeObjectTimerange'
+        - $ref: '#/components/parameters/PageKey'
+        - $ref: '#/components/parameters/PageLimit'
+      responses:
+        "200":
+          description: Segment listing headers.
+          headers:
+            Link:
+              $ref: '#/components/headers/PagingLink'
+            X-Paging-Limit:
+              $ref: '#/components/headers/PagingLimit'
+            X-Paging-NextKey:
+              $ref: '#/components/headers/PagingNextKey'
+            X-Paging-Timerange:
+              $ref: '#/components/headers/PagingTimerange'
+            X-Paging-Count:
+              $ref: '#/components/headers/PagingCount'
+            X-Paging-Reverse-Order:
+              $ref: '#/components/headers/PagingReverseOrder'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    get:
+      summary: List Flow Segments
+      description: |
+        Returns Flow Segments, optionally filtered by timerange and other criteria.
+        A request for Segments from a non-existent Flow returns 404 `not-found` — this is a
+        deliberate OpenTAMS divergence from TAMS v8 (REQ-BEH-16, which specifies 200 + `[]`).
+        Rationale: making missing-flow visible at this endpoint matches the behaviour of every
+        other Flow-scoped route (`GET /flows/{flowId}`, `DELETE /flows/{flowId}/segments`) and
+        avoids silently returning empty pages when a typo or stale ID would otherwise be hidden.
+        See `docs/conformance.md` ("Deliberate divergences on this path") for the
+        full rationale. 200 + `[]` is returned only when the Flow exists but no Segments match
+        the filters.
+      operationId: GetFlowSegments
+      tags: [FlowSegments]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/SegmentObjectId'
+        - $ref: '#/components/parameters/SegmentTimerange'
+        - $ref: '#/components/parameters/SegmentReverseOrder'
+        - $ref: '#/components/parameters/SegmentVerboseStorage'
+        - $ref: '#/components/parameters/SegmentAcceptGetUrls'
+        - $ref: '#/components/parameters/SegmentAcceptStorageIds'
+        - $ref: '#/components/parameters/SegmentPresigned'
+        - $ref: '#/components/parameters/SegmentIncludeObjectTimerange'
+        - $ref: '#/components/parameters/PageKey'
+        - $ref: '#/components/parameters/PageLimit'
+      responses:
+        "200":
+          description: List of Flow Segments.
+          headers:
+            Link:
+              $ref: '#/components/headers/PagingLink'
+            X-Paging-Limit:
+              $ref: '#/components/headers/PagingLimit'
+            X-Paging-NextKey:
+              $ref: '#/components/headers/PagingNextKey'
+            X-Paging-Timerange:
+              $ref: '#/components/headers/PagingTimerange'
+            X-Paging-Count:
+              $ref: '#/components/headers/PagingCount'
+            X-Paging-Reverse-Order:
+              $ref: '#/components/headers/PagingReverseOrder'
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: schemas/flow-segment.json
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    post:
+      summary: Register Flow Segments
+      description: |
+        Register one or more Flow Segments. Accepts a single Segment object or an array of
+        up to 1000 Segments. Arrays exceeding 1000 items return 400.
+
+        Segments must not overlap. The service detects overlap from two sources:
+        (a) within the submitted batch (two segments in the same array overlapping each
+        other), and (b) against existing segments already registered on the Flow. **Any
+        overlap from either source rejects the entire batch with 422 — no segments are
+        persisted.** This is a deliberate OpenTAMS extension to the TAMS specification:
+        TAMS specifies first-wins ordering within a batch, but OpenTAMS treats overlap as
+        a caller-side error and surfaces it loudly via whole-batch reject so the client
+        can correct its input. The 422 response is RFC 9457 Problem Details with
+        `type=".../segment-overlap"` and a `detail` citing the first detected colliding
+        pair; no `failed_segments` array is returned on the 422 path.
+
+        Status codes:
+        - 201 — all submitted Segments registered successfully; no response body.
+        - 200 — one or more Segments failed for non-overlap per-segment reasons such as a
+          missing or invalid field, whether or not any Segment succeeded. Response body
+          uses the `flow-segment-bulk-failure` schema listing only failed Segments;
+          successfully registered Segments are not echoed. A batch in which every Segment
+          failed this way is still a 200: the request itself was well-formed, and the body
+          reports each failure.
+        - 400 — the request could not be processed at all: unparseable body, missing
+          `X-Idempotency-Key`, or an array longer than 1000.
+        - 422 — any overlap detected (within-batch or against-existing); whole batch
+          rejected; no segments persisted.
+
+        The `X-Idempotency-Key` header is required on all requests to this endpoint. Use the
+        same key on retries of the same logical write operation.
+
+        **Error formats:** HTTP-level errors (400, 401, 403, 409, 422, 429) use RFC 9457 Problem Details
+        (`ProblemDetails` schema). Per-segment failures within a 200 partial-success response use the
+        `flow-segment-bulk-failure` schema, where each failed segment's `error` field is an embedded
+        RFC 9457 Problem Details subset (`type`, `title`, `detail`). Parent-level fields (`status`,
+        `instance`, `request_id`) are NOT repeated per segment — they live on the enclosing HTTP 200
+        response context. This unifies the error shape with every other error path on the API.
+      operationId: PostFlowSegments
+      tags: [FlowSegments]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: schemas/flow-segment-post-body.json
+            examples:
+              single_segment:
+                summary: Register a single segment
+                value:
+                  object_id: "obj-live-segment-001"
+                  timerange: "[0:0_2:0)"
+              bulk_segments:
+                summary: Register multiple segments in one request
+                value:
+                  - object_id: "obj-live-segment-001"
+                    timerange: "[0:0_2:0)"
+                  - object_id: "obj-live-segment-002"
+                    timerange: "[2:0_4:0)"
+              segment_with_ts_offset:
+                summary: Segment with timestamp offset (media file starts at different time)
+                value:
+                  object_id: "obj-live-segment-003"
+                  timerange: "[3600:0_3602:0)"
+                  ts_offset: "-3600:0"
+                  object_timerange: "[0:0_2:0)"
+      responses:
+        "200":
+          description: Partial success. Some Segments failed — see response body for details.
+          content:
+            application/json:
+              schema:
+                $ref: schemas/flow-segment-bulk-failure.json
+              example:
+                failed_segments:
+                  - object_id: "obj-live-segment-002"
+                    timerange: "[2:0_4:0)"
+                    error:
+                      type: "https://github.com/amagioss/opentams/problems/schema-validation"
+                      title: "Schema Validation"
+                      detail: "object_id is empty"
+        "201":
+          description: All Segments registered successfully.
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "409":
+          description: |
+            Idempotency conflict. Either a request with the same `X-Idempotency-Key` is still
+            in-flight, or a completed request exists with the same key but a different body.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        "422":
+          description: |
+            Segment overlap. One or more submitted Segments overlap an existing Segment on
+            this Flow, or overlap another Segment within the same batch.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: "https://github.com/amagioss/opentams/problems/segment-overlap"
+                title: "Segment Overlap"
+                status: 422
+                detail: "Segment [2:0_4:0) overlaps existing segment [1:0_3:0)"
+                instance: "/flows/abc-123/segments"
+                request_id: "550e8400-e29b-41d4-a716-446655440000"
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    delete:
+      summary: Delete Flow Segments
+      description: |
+        Delete Flow Segments within the given timerange.
+
+        Returns 204 when deletion completes synchronously (Phase 1 behaviour).
+        Returns 202 when deletion is accepted for async processing — follow the `Location` header
+        to monitor progress via `/tams/v1/flow-delete-requests/{requestId}`.
+        Note: 202 is reserved for future use. Phase 1 always returns 204.
+
+        Media Objects referenced by other Segments are not deleted.
+
+        The DELETE timerange filter uses strict containment: only segments whose entire timerange
+        falls within the filter are removed. This differs from `GET /flows/{flowId}/segments`,
+        which uses overlap semantics and returns any segment that intersects the filter. The
+        asymmetry is intentional — DELETE uses strict containment as a safety measure so that
+        boundary segments are not accidentally removed. A "read then delete with the same
+        timerange" pattern is deliberately conservative: partial-overlap segments appear in the
+        GET response but DELETE will not touch them.
+      operationId: DeleteFlowSegments
+      tags: [FlowSegments]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - name: timerange
+          in: query
+          description: Delete only Segments completely covered by this timerange. Defaults to all (`_`).
+          schema:
+            default: "_"
+            $ref: schemas/timerange.json
+        - name: object_id
+          in: query
+          description: Further filter deletions to Segments referencing this Object identifier.
+          schema:
+            type: string
+      responses:
+        "202":
+          description: |
+            Deletion accepted for async processing.
+            Reserved for future use — Phase 1 always returns 204.
+          headers:
+            Location:
+              description: URL of the deletion request to monitor progress.
+              schema:
+                type: string
+                example: /tams/v1/flow-delete-requests/{requestId}
+          content:
+            application/json:
+              schema:
+                $ref: schemas/deletion-request.json
+        "204":
+          description: Segments deleted.
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+
+  # ---------------------------------------------------------------------------
+  # Media Storage
+  # ---------------------------------------------------------------------------
+
+  /tams/v1/flows/{flowId}/storage:
+    parameters:
+      - $ref: '#/components/parameters/FlowId'
+    post:
+      summary: Allocate Flow Storage
+      description: |
+        Allocate storage locations for writing Media Objects. Returns PUT URLs for uploading content.
+
+        Exactly one of `limit` or `object_ids` must be provided in the request body. Omitting
+        both, or providing both, returns 400.
+
+        After uploading, clients must register a Flow Segment via `POST /flows/{flowId}/segments`.
+        Unused allocations are garbage collected after the `min_object_timeout` advertised by
+        the `/service` endpoint.
+
+        If a presigned upload URL expires before upload completes, call this endpoint again.
+        In `object_ids` mode, the same object_id may be re-requested provided it has not yet
+        been registered as a segment.
+
+        Each `put_url` includes a `content-type` field set to the flow's `codec` value. Clients
+        MUST include this exact `Content-Type` header when uploading; uploads with a mismatched
+        Content-Type will be rejected by the object store.
+      operationId: PostFlowStorage
+      tags: [MediaStorage]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: schemas/flow-storage-post.json
+            examples:
+              limit_mode:
+                summary: Allocate 2 objects (server assigns IDs)
+                value:
+                  limit: 2
+              object_ids_mode:
+                summary: Allocate specific client-chosen IDs
+                value:
+                  object_ids:
+                    - "obj-live-segment-001"
+                    - "obj-live-segment-002"
+      responses:
+        "201":
+          description: Storage allocated. Contains PUT URLs for uploading Media Objects.
+          content:
+            application/json:
+              schema:
+                $ref: schemas/flow-storage.json
+              example:
+                media_objects:
+                  - object_id: "obj-live-segment-001"
+                    put_url:
+                      url: "https://bucket.s3.amazonaws.com/obj-live-segment-001?X-Amz-Signature=..."
+                      content-type: "video/mp2t"
+                  - object_id: "obj-live-segment-002"
+                    put_url:
+                      url: "https://bucket.s3.amazonaws.com/obj-live-segment-002?X-Amz-Signature=..."
+                      content-type: "video/mp2t"
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+
+  # ---------------------------------------------------------------------------
+  # Flow Delete Requests
+  # ---------------------------------------------------------------------------
+
+  /tams/v1/flow-delete-requests:
+    head:
+      summary: List Flow Delete Requests
+      description: Return flow-delete-requests path headers.
+      operationId: HeadFlowDeleteRequests
+      tags: [FlowDeleteRequests]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "200":
+          $ref: '#/components/responses/ResourceListingHead'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    get:
+      summary: List Flow Delete Requests
+      description: |
+        List deletion requests currently being processed.
+        In Phase 1 this list is always empty — deletion is synchronous and completes before
+        returning 204. Reserved for future async deletion support.
+      operationId: GetFlowDeleteRequests
+      tags: [FlowDeleteRequests]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "200":
+          description: List of active deletion requests.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: schemas/deletion-request.json
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+
+  /tams/v1/flow-delete-requests/{requestId}:
+    parameters:
+      - name: requestId
+        in: path
+        required: true
+        description: The deletion request identifier.
+        schema:
+          type: string
+    head:
+      summary: Flow Delete Request Details
+      operationId: HeadFlowDeleteRequest
+      tags: [FlowDeleteRequests]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "200":
+          $ref: '#/components/responses/ResourceInfoHead'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+    get:
+      summary: Flow Delete Request Details
+      description: |
+        Get the status of a deletion request.
+        In Phase 1 this always returns a completed status since deletion is synchronous.
+        Reserved for future async deletion support.
+      operationId: GetFlowDeleteRequest
+      tags: [FlowDeleteRequests]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        "200":
+          description: Deletion request status.
+          content:
+            application/json:
+              schema:
+                $ref: schemas/deletion-request.json
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+
+# =============================================================================
+# Components
+# =============================================================================
+
+components:
+
+  # ---------------------------------------------------------------------------
+  # Schemas
+  # ---------------------------------------------------------------------------
+
+  schemas:
+
+    ProblemDetails:
+      title: Problem Details
+      description: RFC 9457 problem details object. Used for all error responses.
+      type: object
+      properties:
+        type:
+          type: string
+          format: uri
+          description: |
+            URI identifying the problem type. Omitted when no specific problem type is defined (RFC 9457 §3.1: absent `type` is equivalent to `about:blank`). Clients SHOULD NOT dereference this URI.
+        title:
+          type: string
+          description: Short, human-readable summary of the problem type.
+        status:
+          type: integer
+          description: HTTP status code.
+        detail:
+          type: string
+          description: Human-readable explanation specific to this occurrence of the problem.
+        instance:
+          type: string
+          format: uri
+          description: URI identifying the specific occurrence of the problem.
+        request_id:
+          type: string
+          description: |
+            Opaque request identifier for correlating this error with server logs.
+            Echoes the X-Request-ID request header value.
+
+    HealthDetails:
+      title: Health Details
+      description: Detailed health status for all service components.
+      type: object
+      required: [status, version, components]
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+          description: Overall service health — worst status across all components.
+        version:
+          type: string
+          description: Running service version string.
+        components:
+          type: object
+          description: Per-component health status, keyed by component name.
+          additionalProperties:
+            $ref: '#/components/schemas/HealthComponentStatus'
+
+    HealthComponentStatus:
+      title: Health Component Status
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+          description: Health status of this component.
+        latency_ms:
+          type: integer
+          description: Round-trip latency to this component in milliseconds. Optional.
+
+  # ---------------------------------------------------------------------------
+  # Parameters
+  # ---------------------------------------------------------------------------
+
+  parameters:
+
+    RequestId:
+      name: X-Request-ID
+      in: header
+      required: false
+      description: |
+        Client-supplied identifier for log correlation. Echoed in the response `X-Request-ID`
+        header and included in all structured log lines for this request. If absent, the server
+        generates one. Always appears as `request_id` in error response bodies.
+      schema:
+        type: string
+
+    IdempotencyKey:
+      name: X-Idempotency-Key
+      in: header
+      required: true
+      description: |
+        Client-generated unique key to make this request idempotent. Required on all POST /segments
+        requests. Generate a new UUID per logical write operation and reuse the same key on retries
+        of that operation. Missing key returns 400.
+      schema:
+        type: string
+
+    PageKey:
+      name: page
+      in: query
+      description: |
+        Opaque cursor for accessing a specific page of results. Read from the `X-Paging-NextKey`
+        response header or the `Link` header with `rel=next`. Omit to access the first page.
+      schema:
+        type: string
+
+    PageLimit:
+      name: limit
+      in: query
+      description: |
+        Maximum number of results per page. Default: 100. Range: [1, 1000].
+        Values outside this range are rejected with 400 schema-validation by the OpenAPI
+        validator. The effective limit applied to the response is reflected in the
+        `X-Paging-Limit` response header.
+      schema:
+        type: integer
+        default: 100
+        minimum: 1
+        maximum: 1000
+
+    SourceId:
+      name: sourceId
+      in: path
+      required: true
+      description: Source identifier (UUID).
+      schema:
+        $ref: schemas/uuid.json
+
+    FlowId:
+      name: flowId
+      in: path
+      required: true
+      description: Flow identifier (UUID).
+      schema:
+        $ref: schemas/uuid.json
+
+    TagName:
+      name: name
+      in: path
+      required: true
+      description: Tag name. URL-encode if the name contains special characters.
+      schema:
+        type: string
+
+    FlowSourceId:
+      name: source_id
+      in: query
+      description: Filter Flows by Source identifier.
+      schema:
+        $ref: schemas/uuid.json
+
+    FlowTimerange:
+      name: timerange
+      in: query
+      description: |
+        Filter Flows whose computed `timerange` field (the span of registered Segments)
+        overlaps the given timerange. Flows with no Segments have no computed timerange
+        and are excluded from results when this filter is applied. Defaults to `_` (all).
+      schema:
+        default: "_"
+        $ref: schemas/timerange.json
+
+    FlowFormat:
+      name: format
+      in: query
+      description: Filter Flows by format URN.
+      schema:
+        $ref: schemas/content-format.json
+
+    FlowCodec:
+      name: codec
+      in: query
+      description: Filter Flows by codec MIME type.
+      schema:
+        $ref: schemas/mime-type.json
+
+    FlowLabel:
+      name: label
+      in: query
+      description: Filter Flows by exact label match.
+      schema:
+        type: string
+
+    FlowTagFilter:
+      name: tag.{name}
+      in: query
+      description: |
+        Filter Flows by tag value. `{name}` is the tag name (URL-encode if needed).
+        Value is a comma-separated list; at least one value must match.
+      schema:
+        $ref: schemas/url-tag-list.json
+
+    FlowTagExists:
+      name: tag_exists.{name}
+      in: query
+      description: |
+        Filter Flows by tag presence. `{name}` is the tag name (URL-encode if needed).
+        `true` filters for presence, `false` for absence.
+      schema:
+        type: boolean
+
+    FlowFrameWidth:
+      name: frame_width
+      in: query
+      description: Filter video Flows by frame width in pixels.
+      schema:
+        type: integer
+
+    FlowFrameHeight:
+      name: frame_height
+      in: query
+      description: Filter video Flows by frame height in pixels.
+      schema:
+        type: integer
+
+    SourceLabel:
+      name: label
+      in: query
+      description: Filter Sources by exact label match.
+      schema:
+        type: string
+
+    SourceFormat:
+      name: format
+      in: query
+      description: Filter Sources by format URN.
+      schema:
+        $ref: schemas/content-format.json
+
+    SourceTagFilter:
+      name: tag.{name}
+      in: query
+      description: |
+        Filter Sources by tag value. `{name}` is the tag name (URL-encode if needed).
+        Value is a comma-separated list; at least one value must match.
+      schema:
+        $ref: schemas/url-tag-list.json
+
+    SourceTagExists:
+      name: tag_exists.{name}
+      in: query
+      description: |
+        Filter Sources by tag presence. `{name}` is the tag name (URL-encode if needed).
+        `true` filters for presence, `false` for absence.
+      schema:
+        type: boolean
+
+    SegmentObjectId:
+      name: object_id
+      in: query
+      description: Filter Segments by Media Object identifier.
+      schema:
+        type: string
+
+    SegmentTimerange:
+      name: timerange
+      in: query
+      description: Return only Segments that partially or wholly overlap this timerange.
+      schema:
+        $ref: schemas/timerange.json
+
+    SegmentReverseOrder:
+      name: reverse_order
+      in: query
+      description: Return Segments in reverse time order.
+      schema:
+        type: boolean
+        default: false
+
+    SegmentVerboseStorage:
+      name: verbose_storage
+      in: query
+      description: |
+        Include full storage metadata in `get_urls`.
+        When false, only `url`, `presigned`, and `label` are included.
+      schema:
+        type: boolean
+        default: false
+
+    SegmentAcceptGetUrls:
+      name: accept_get_urls
+      in: query
+      description: |
+        Comma-separated list of `get_urls` labels to include. Omit for no filtering.
+        Empty string returns no `get_urls` in the response.
+      schema:
+        $ref: schemas/url-label-list.json
+
+    SegmentAcceptStorageIds:
+      name: accept_storage_ids
+      in: query
+      description: |
+        Comma-separated list of storage backend IDs to filter `get_urls` by.
+        Omit or supply empty for no filtering.
+      schema:
+        $ref: schemas/uuid-list.json
+
+    SegmentPresigned:
+      name: presigned
+      in: query
+      description: |
+        Filter `get_urls` by presigned status.
+        `true` returns only presigned URLs. `false` returns only non-presigned URLs.
+        Omit to return both.
+      schema:
+        type: boolean
+
+    SegmentIncludeObjectTimerange:
+      name: include_object_timerange
+      in: query
+      description: |
+        If true, include the underlying Media Object's timerange in each Segment response
+        when it differs from the Segment's own timerange.
+      schema:
+        type: boolean
+
+  # ---------------------------------------------------------------------------
+  # Headers
+  # ---------------------------------------------------------------------------
+
+  headers:
+
+    PagingLink:
+      description: |
+        Cursor link for pagination. Contains a `rel=next` link to the next page.
+        Absent when this is the last page.
+      schema:
+        type: string
+
+    PagingLimit:
+      description: Effective paging limit applied to this response. May differ from the requested limit.
+      schema:
+        type: integer
+
+    PagingNextKey:
+      description: Opaque cursor for the next page. Supply as the `page` query parameter.
+      schema:
+        type: string
+
+    PagingTimerange:
+      description: Timerange covered by this page of Segments.
+      schema:
+        $ref: schemas/timerange.json
+
+    PagingCount:
+      description: Number of items in this page of results.
+      schema:
+        type: integer
+
+    PagingReverseOrder:
+      description: Whether items in this page are returned in reverse time order.
+      schema:
+        type: boolean
+
+    RetryAfter:
+      description: Seconds to wait before retrying after a rate limit response.
+      schema:
+        type: integer
+
+  # ---------------------------------------------------------------------------
+  # Responses
+  # ---------------------------------------------------------------------------
+
+  responses:
+
+    ResourceListingHead:
+      description: Resource listing headers returned for HEAD requests on collection endpoints.
+
+    ResourceInfoHead:
+      description: Resource info headers returned for HEAD requests on individual resource endpoints.
+
+    PagedListingHead:
+      description: Paged listing headers returned for HEAD requests on paginated collection endpoints.
+      headers:
+        Link:
+          $ref: '#/components/headers/PagingLink'
+        X-Paging-Limit:
+          $ref: '#/components/headers/PagingLimit'
+        X-Paging-NextKey:
+          $ref: '#/components/headers/PagingNextKey'
+
+    BadRequest:
+      description: |
+        Bad request. Invalid input, missing required fields, unsupported parameters,
+        or a constraint violation (e.g. modifying immutable fields, overlapping Segments).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+
+    Unauthorized:
+      description: Unauthorized. A valid JWT Bearer token is required.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+
+    Forbidden:
+      description: |
+        Forbidden. The authenticated identity does not have permission for this operation,
+        or the Flow is marked read-only.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+
+    NotFound:
+      description: Not found. The requested resource does not exist.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+
+    TooManyRequests:
+      description: Too many requests. Rate limit exceeded. Retry after the indicated delay.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+
+  # ---------------------------------------------------------------------------
+  # Security Schemes
+  # ---------------------------------------------------------------------------
+
+  securitySchemes:
+
+    bearer_auth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT Bearer token authentication. Both token types use the same header format:
+        ```
+        Authorization: Bearer <token>
+        ```
+        External issuer (always active):
+        - **External clients** — JWTs from a configured external OIDC issuer, validated against `AUTH_EXTERNAL_ISSUER_URL`
+
+        Internal issuer (optional — enabled only when `AUTH_INTERNAL_ISSUER_URL` is set):
+        - **Internal services** — Kubernetes ServiceAccount JWTs, validated against `AUTH_INTERNAL_ISSUER_URL`

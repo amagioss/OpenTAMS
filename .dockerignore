@@ -1,0 +1,38 @@
+# The build context is the repo root and the builder stage does `COPY . .`.
+# Everything the compiler does not need is excluded: it keeps the context
+# small, keeps unrelated file changes from busting the layer cache, and keeps
+# internal material out of the builder layer.
+
+.git
+.github
+.githooks
+.claude
+.cursor
+.cursorrules
+.mcp.json
+
+# Internal-only material — never belongs in an image layer.
+docs/
+memory/
+skills/
+
+# Local state and build output
+local/
+dist/
+**/.terraform/
+*.tfstate
+*.tfstate.*
+deployments/docker/.env
+coverage.out
+coverage.html
+*.test
+
+# Not needed to compile the server
+deployments/
+examples/
+scripts/
+build/
+Makefile
+*.md
+!go.mod
+!go.sum

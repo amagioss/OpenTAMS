@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "opentams.fullname" . }}
+  labels:
+    {{- include "opentams.labels" . | nindent 4 }}
+  {{- if or .Values.service.annotations (not .Values.serviceMonitor.enabled) }}
+  annotations:
+    {{- with .Values.service.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- if not .Values.serviceMonitor.enabled }}
+    prometheus.io/scrape: "true"
+    prometheus.io/port: {{ .Values.server.port | quote }}
+    prometheus.io/path: /metrics
+    {{- end }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: {{ .Values.server.port }}
+      protocol: TCP
+  selector:
+    {{- include "opentams.selectorLabels" . | nindent 4 }}

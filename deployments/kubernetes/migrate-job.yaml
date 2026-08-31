@@ -1,0 +1,43 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: opentams-migrate
+  namespace: opentams
+spec:
+  ttlSecondsAfterFinished: 300
+  activeDeadlineSeconds: 300
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          # Pin to an immutable digest in production. `:latest` here is a
+          # placeholder that will not resolve — replace registry, tag, and
+          # digest before applying:
+          #   image: ghcr.io/amagioss/opentams:v0.1.0@sha256:<digest>
+          image: your-registry/opentams:latest
+          command: ["/opentams", "migrate", "up"]
+          envFrom:
+            - configMapRef:
+                name: opentams
+            - secretRef:
+                name: opentams
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi

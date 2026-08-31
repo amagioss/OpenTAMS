@@ -1,0 +1,100 @@
+name: Bug report
+description: Something is behaving differently from what the spec or docs say it should.
+title: "[bug] "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report.
+
+        **Before you submit:**
+        - For **security vulnerabilities**, do not file a public issue. See [SECURITY.md](https://github.com/amagioss/opentams/blob/main/SECURITY.md) for the private reporting channels.
+        - Search [existing issues](https://github.com/amagioss/opentams/issues?q=is%3Aissue) to avoid duplicates.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One or two sentences. What happened, and what did you expect to happen instead?
+      placeholder: |
+        POST /flows/{flowId}/segments returned 409 Conflict on a retry with the same X-Idempotency-Key after a 5xx, instead of replaying the original error.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: |
+        Minimal steps that produce the bug. A `curl` command, a request payload, or a test snippet is ideal. Include any environment variables that influence the outcome.
+      placeholder: |
+        1. `docker compose -f deployments/docker/docker-compose.yml up -d`
+        2. `curl -X POST http://localhost:8080/flows/... -H 'X-Idempotency-Key: abc'` → 503
+        3. `curl -X POST http://localhost:8080/flows/... -H 'X-Idempotency-Key: abc'` → 409 (expected: 503 replay)
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: What did you observe? Include the response body, error message, or stack trace verbatim where relevant.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+      description: What should have happened? Cite the requirements spec, OpenAPI, or BBC TAMS spec section if you can.
+      placeholder: |
+        REQ-IDEM-04 says transient errors must release the idempotency key so that retries either succeed or surface the same error. A 409 is only correct for cached deterministic errors.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: OpenTAMS version
+      description: An image tag, release tag, or commit SHA.
+      placeholder: "sha-abc1234 / main@e86e3be / docker tag v0.1.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment
+      description: How is OpenTAMS running?
+      options:
+        - Docker Compose (deployments/docker/)
+        - Kubernetes (deployments/kubernetes/)
+        - Bare binary (`go run` / `opentams serve`)
+        - Other (describe in Additional context)
+    validations:
+      required: true
+
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: |
+        Anything else relevant: OS, Go version (`go version`), Postgres version, S3 implementation (real S3 / MinIO / Ceph / …), reverse proxy, auth provider.
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Server logs around the failure (please redact secrets, request IDs are useful). Trim to the relevant lines.
+      render: shell
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Anything else that might help — links to upstream issues, screenshots, suspected commits, hypotheses.

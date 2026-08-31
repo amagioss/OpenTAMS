@@ -1,0 +1,35 @@
+{
+    "title": "Flow",
+    "description": "Describes a Flow. Use the `format` field to determine the concrete Flow type.",
+    "type": "object",
+    "discriminator":
+    {
+        "propertyName": "format",
+        "mapping":
+        {
+            "urn:x-nmos:format:video": "flow-video.json",
+            "urn:x-nmos:format:audio": "flow-audio.json",
+            "urn:x-tam:format:image": "flow-image.json",
+            "urn:x-nmos:format:data": "flow-data.json",
+            "urn:x-nmos:format:multi": "flow-multi.json"
+        }
+    },
+    "oneOf":
+    [
+        {
+            "$ref": "flow-video.json"
+        },
+        {
+            "$ref": "flow-audio.json"
+        },
+        {
+            "$ref": "flow-image.json"
+        },
+        {
+            "$ref": "flow-data.json"
+        },
+        {
+            "$ref": "flow-multi.json"
+        }
+    ]
+}

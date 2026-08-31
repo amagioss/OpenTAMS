@@ -1,0 +1,67 @@
+# CodeQL static analysis for Go.
+#
+# CodeQL writes its results to GitHub code scanning, which requires Advanced
+# Security on a private repository. Every job is therefore gated on the
+# repository being public: while private this workflow is a no-op rather than
+# a permanently failing required check. Nothing else needs changing when the
+# repository is published — the gate opens on its own.
+#
+# Runners: GitHub-hosted `ubuntu-latest`. Every workflow in this repository
+# uses hosted runners, deliberately. A public repository must not name
+# self-hosted labels: no fork can schedule them, so a contributor's run would
+# queue forever, and untrusted fork code must never execute on private
+# infrastructure. Hosted minutes are free for public repositories.
+
+name: CodeQL
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    # Weekly, so a newly-published query rule surfaces without waiting for
+    # the next pull request.
+    - cron: "0 7 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: analyze (go)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: github.event.repository.visibility == 'public'
+    permissions:
+      contents: read
+      security-events: write   # upload the CodeQL SARIF
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Initialise CodeQL
+        uses: github/codeql-action/init@6f5948dfacef28e207b48d0905cf90c03365536d # v3.37.9
+        with:
+          languages: go
+          queries: security-and-quality
+
+      - name: Build
+        # Explicit build rather than autobuild: the module has build-tagged
+        # files and generated code, and autobuild has no reason to guess right.
+        run: go build ./...
+
+      - name: Analyse
+        uses: github/codeql-action/analyze@6f5948dfacef28e207b48d0905cf90c03365536d # v3.37.9
+        with:
+          category: "/language:go"

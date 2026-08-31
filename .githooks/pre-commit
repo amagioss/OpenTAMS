@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# OpenTAMS pre-commit hook.
+#
+# Runs `golangci-lint` against the strict `.golangci.yml` config in the
+# repo root, restricted to NEW findings vs the merge base with `main`.
+# Mirrors the `Lint` GitHub Actions workflow locally so contributors
+# (human or AI) cannot introduce new lint findings without immediately
+# noticing.
+#
+# Activation: this hook is wired up automatically the first time a
+# contributor runs `make tools-install` (which sets git's `core.hooksPath`
+# config to point at `.githooks/`). See the `tools-install` target in
+# the repo `Makefile`.
+#
+# Bypass (use sparingly, e.g. WIP commits):
+#   git commit --no-verify
+
+set -euo pipefail
+
+# Skip the hook when no Go files are staged. Cheap exit so non-Go
+# commits (docs, configs, schemas) aren't gated by this hook.
+if ! git diff --cached --name-only --diff-filter=ACMR | grep -qE '\.go$'; then
+    exit 0
+fi
+
+# Refuse to run if golangci-lint isn't on PATH. The error message points
+# at the standard install path (Makefile target), so the contributor has
+# a one-line fix.
+if ! command -v golangci-lint >/dev/null 2>&1; then
+    cat >&2 <<'EOF'
+pre-commit: golangci-lint is not on PATH.
+
+Install it once with:
+    make tools-install
+
+…or bypass this hook for the current commit (use sparingly):
+    git commit --no-verify
+EOF
+    exit 1
+fi
+
+# Run only on NEW findings vs the merge base with `main`. Rationale:
+#   - A commit that fixes existing legacy issues is not blocked by other
+#     unrelated legacy issues elsewhere in the tree.
+#   - A commit that adds a new violation IS blocked.
+#   - On `main` itself, the merge-base is HEAD so no diff is computed
+#     and the hook passes through silently.
+exec golangci-lint run \
+    --new-from-merge-base=main \
+    --timeout=2m \
+    ./...

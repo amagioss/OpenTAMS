@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/amagioss/opentams/security/advisories/new
+    about: Report a vulnerability privately. Do NOT open a public issue for security findings.
+  - name: Discussion / open question
+    url: https://github.com/amagioss/opentams/discussions
+    about: For questions, design discussions, or "is this in scope?" — open a Discussion rather than an issue.
+  - name: Code of Conduct concern
+    url: mailto:conduct@amagi.com
+    about: Reach the conduct contact directly. See CODE_OF_CONDUCT.md for what to expect.

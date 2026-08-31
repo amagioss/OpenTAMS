@@ -1,0 +1,231 @@
+# golangci-lint configuration for OpenTAMS.
+#
+# Linter selection is deliberately strict: core correctness checks, plus a
+# security/correctness-focused tier
+# (gosec, bodyclose, noctx, errorlint, wastedassign, prealloc).
+#
+# Style-shaping linters (revive, gocritic, misspell) are present but tuned
+# to "warn, don't gatekeep" — we'd rather merge the right behaviour than
+# litigate variable names.
+#
+# Generated code under `gen/` is excluded wholesale via
+# `linters.exclusions.paths` (see below); test files relax the
+# security/perf linters that fire heavily on harmless test patterns,
+# but errcheck still runs in tests so a `db.Exec(...)` without an `_, _ =`
+# or explicit error check is still flagged.
+
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: none
+  enable:
+    # Core correctness — non-negotiable
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck     # in v2, absorbed gosimple + stylecheck checks
+    - unused
+
+    # Style / clarity
+    - revive
+    - gocritic
+    - misspell
+    - unconvert
+
+    # Strict tier (per `lint:strict`)
+    - gosec
+    - bodyclose
+    - noctx
+    - errorlint
+    - wastedassign
+    - prealloc
+
+    # Architectural boundaries — INV-CONV-10 / INV-HTTP-11.
+    # depguard enforces what packages may import; the symbol-level
+    # backstop (no `api.As*`/`api.From*` outside conversion) lives in
+    # SCN-CONV-16 and SCN-HTTP-41 runtime tests.
+    - depguard
+
+  exclusions:
+    # Wholesale-skip generated code. The OpenAPI generator owns the style
+    # of files under `gen/`, and reviewers are not the right audience for
+    # those issues. Using `paths` (regex, matched against the file's repo-
+    # relative path) skips ALL enabled linters for matching files, which
+    # matches the intent expressed in the header comment. The previous
+    # form listed eight linters explicitly, which silently let bodyclose,
+    # ineffassign, misspell, noctx, prealloc, unconvert, and wastedassign
+    # still fire on generated code — a footgun the comment did not warn
+    # readers about.
+    paths:
+      - gen
+    rules:
+      # Test files: relax security and perf linters that fire heavily on
+      # table-driven helpers, intentional weak randomness, hardcoded paths,
+      # and httptest.ResponseRecorder bodies (closed by the recorder).
+      #
+      # `errcheck` is intentionally NOT relaxed here — `errcheck.exclude-
+      # functions` below already exempts the legitimate defer-Close()
+      # patterns, and a blanket test-file exemption was found to be dead
+      # weight (0 findings the day it was added) that would silently mask
+      # future bugs in test setup code (`db.Exec`, `http.Client.Do`, ...).
+      - path: _test\.go
+        linters:
+          - gosec
+          - prealloc
+          - bodyclose
+          - noctx
+
+      # The `flow.FlowService`, `segment.SegmentService`, and
+      # `storage.StorageService` interface names stutter under revive's
+      # `exported` rule (which would prefer `flow.Service` /
+      # `segment.Service` / `storage.Service`). The names predate the
+      # lint-strict tier and are referenced by name across the design
+      # docs and the consumer in `internal/httpx/handlers/`, so a rename
+      # would cascade well beyond the lint cleanup's scope. Tracked as a
+      # follow-up rename for whenever those docs are next revised.
+      - path: internal/service/(flow|segment|storage)/
+        linters:
+          - revive
+        text: "stutters; consider calling this Service"
+
+      # HTTP handler files implement the generated `api.StrictServerInterface`
+      # one method per OpenAPI operation, plus a handful of inline
+      # struct literals that mirror the shape of generated response
+      # types (e.g. `Id` / `ObjectId` / `PutUrl` fields named to match
+      # what oapi-codegen produces from the OpenAPI spec).
+      #
+      # Suppressing all revive findings here covers two related cases:
+      # 1. `exported`: methods exist solely to satisfy the generated
+      #    interface; their behaviour is specified in
+      #    `api/opentams-api-v1.yaml`, the source of truth. Adding
+      #    godoc would paraphrase the spec without adding information.
+      # 2. `var-naming`: inline literal struct fields must match the
+      #    generated parent struct's field names (`Id` not `ID`,
+      #    `ObjectId` not `ObjectID`, `PutUrl` not `PutURL`). The fix
+      #    lives upstream in oapi-codegen config or post-processing,
+      #    not in handwritten handler code.
+      #
+      # gocritic / staticcheck / gosec / errorlint / unused / errcheck
+      # are unaffected — only revive is suppressed for this directory.
+      - path: internal/httpx/handlers/
+        linters:
+          - revive
+
+      # Same handler directory: oapi-codegen produces type *aliases*
+      # for many string-shaped fields (e.g. `type IdempotencyKey =
+      # string`, `type SourceLabel = string`). The handler code casts
+      # through these aliases (`string(*req.Params.Label)`,
+      # `api.IdempotencyKey(idemKey)`) defensively so a future
+      # oapi-codegen release that changes an alias to a named type
+      # surfaces the boundary as a compile error rather than a silent
+      # type-identity flip. unconvert flags these as redundant under
+      # the current generator output; suppressing it here preserves
+      # the defence without rewriting handlers every time we
+      # regenerate the API.
+      - path: internal/httpx/handlers/
+        linters:
+          - unconvert
+
+  settings:
+    revive:
+      severity: warning
+      rules:
+        - name: var-naming
+        - name: error-return
+        - name: error-naming
+        - name: error-strings
+        - name: range
+        - name: blank-imports
+        - name: redefines-builtin-id
+        - name: receiver-naming
+        - name: increment-decrement
+        - name: exported
+          # `checkPrivateReceivers` is intentionally NOT set: methods on
+          # private struct types (e.g. `flowService`, `logAdapter`)
+          # exist solely to satisfy a public interface (e.g.
+          # `FlowService`). The interface's godoc is the contract for
+          # external readers; documenting each implementation method
+          # would be implementation-detail churn that drifts from the
+          # interface doc. The default rule still requires godoc on
+          # exported types and methods on exported types, which is what
+          # the public OSS surface actually needs.
+        # Pragmatic disables — generate too many false positives in this
+        # codebase to be worth the gate.
+        - name: unused-parameter
+          disabled: true   # noisy on HTTP handlers and interface satisfiers
+        - name: unused-receiver
+          disabled: true
+
+    errcheck:
+      # We close in defer in nearly every site; not worth the noise.
+      exclude-functions:
+        - (io.Closer).Close
+        - (*os.File).Close
+        - (net.Listener).Close
+
+    gocritic:
+      disabled-checks:
+        - ifElseChain      # readability is taste; let reviewers decide
+      enabled-tags:
+        - diagnostic
+        - performance
+        - style
+      settings:
+        hugeParam:
+          sizeThreshold: 256
+
+    gosec:
+      excludes:
+        - G104   # unhandled errors — errcheck owns this with finer control
+        - G304   # file inclusion via variable — most usages are safe-by-construction; revisit if a real issue surfaces
+
+    # Architectural boundary rules — D-32 / INV-CONV-10 / INV-HTTP-11.
+    #
+    # `internal/httpx/conversion` is a pure leaf: wire (gen/api) ↔ domain
+    # mapping only, no I/O, no logger, no metrics, no business state. The
+    # forbidden list is the artefact's INV-CONV-10 verbatim. Adding a
+    # forbidden import is a build-time error, not a follow-up.
+    #
+    # `gen/api` is excluded from depguard analysis via the
+    # `linters.exclusions.paths: [gen]` entry above (oapi-codegen owns
+    # those imports), so we don't need a separate allow rule for it.
+    depguard:
+      rules:
+        conversion-is-pure:
+          list-mode: lax
+          files:
+            - "**/internal/httpx/conversion/**"
+          deny:
+            - pkg: github.com/amagioss/opentams/internal/metastore
+              desc: conversion is a pure leaf (D-32, BR-CONV-01); use internal/domain types
+            - pkg: github.com/amagioss/opentams/internal/service
+              desc: conversion is a pure leaf (D-32, BR-CONV-01)
+            - pkg: github.com/amagioss/opentams/internal/objectstore
+              desc: conversion is a pure leaf (D-32, BR-CONV-01)
+            - pkg: github.com/amagioss/opentams/internal/idempotency
+              desc: conversion is a pure leaf (D-32, BR-CONV-01)
+            - pkg: github.com/amagioss/opentams/pkg/logger
+              desc: conversion has no logging (BR-CONV-01)
+            - pkg: github.com/amagioss/opentams/pkg/metrics
+              desc: conversion has no metrics (BR-CONV-01)
+            - pkg: database/sql
+              desc: conversion has no DB I/O (BR-CONV-01)
+            - pkg: net/http
+              desc: conversion does not touch HTTP (BR-CONV-01)
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/amagioss/opentams
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

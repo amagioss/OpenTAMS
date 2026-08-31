@@ -1,0 +1,255 @@
+# goreleaser configuration for OpenTAMS.
+#
+# Release policy:
+#   - reg:ghcr        — push to ghcr.io/amagioss/opentams only
+#   - bin:none        — image-only release; no tarballs / Homebrew tap
+#   - attest:full     — cosign keyless signing of the multi-arch manifest;
+#                       SBOM and SLSA provenance are produced by the
+#                       release workflow after goreleaser exits
+#                       (see .github/workflows/release.yml)
+#   - helm:deferred   — Helm packaging is not part of the release pipeline
+#
+# Trigger contract:
+#   - Tag-only releases (`v*` semver tags). Pre-release detection is
+#     automatic from the suffix (`v0.1.0-rc.1` ⇒ marked Pre-release).
+#   - `workflow_dispatch` is exposed in the workflow for emergency runs.
+#
+# Version stamping:
+#   - main.version / main.commit / main.date are populated via -ldflags.
+#   - The `version` subcommand that surfaces them is tracked as a
+#     follow-up issue; the symbols already exist in cmd/opentams/main.go
+#     so this config is forward-compatible without code churn.
+
+version: 2
+
+project_name: opentams
+
+# Run before any build step. `go mod tidy` keeps go.sum from drifting in
+# release artefacts; if it changes the working tree, goreleaser will
+# refuse to release, which is the correct behaviour.
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: opentams
+    main: ./cmd/opentams
+    binary: opentams
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+  # tamsctl — the operator CLI. Unlike the server (image-only), this ships as
+  # downloadable archives on the GitHub Release (see `archives` + `release.ids`
+  # below). Cross-built for the operator platforms: linux + macOS, amd64/arm64.
+  - id: tamsctl
+    main: ./cmd/tamsctl
+    binary: tamsctl
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+# bin:none — we still need the binary on disk so the dockers step can
+# COPY it, but we publish nothing to the GitHub Release as a tarball.
+# `formats: [binary]` skips tar/zip wrapping; release.ids: [] below
+# filters everything off the release page so contributors aren't
+# tempted to download a raw binary they can't verify.
+archives:
+  - id: opentams-bin
+    ids: [opentams]
+    formats: [binary]
+    name_template: "{{ .ProjectName }}-{{ .Version }}-{{ .Os }}-{{ .Arch }}"
+
+  # tamsctl ships as a conventional .tar.gz per OS/arch (LICENSE + README are
+  # included by goreleaser's default file set). This is the only archive
+  # attached to the GitHub Release — see release.ids.
+  - id: tamsctl-archive
+    ids: [tamsctl]
+    formats: [tar.gz]
+    name_template: "tamsctl-{{ .Version }}-{{ .Os }}-{{ .Arch }}"
+
+# Per-arch image builds. goreleaser hands the prebuilt binary to docker
+# build via the build context, so build/Dockerfile.goreleaser is small
+# and never invokes the Go toolchain. This is meaningfully faster than
+# the buildx/QEMU cross-compile path used by build/Dockerfile in CI.
+dockers:
+  - id: opentams-amd64
+    goos: linux
+    goarch: amd64
+    ids: [opentams]
+    image_templates:
+      - "ghcr.io/amagioss/opentams:{{ .Version }}-amd64"
+    dockerfile: build/Dockerfile.goreleaser
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.title={{ .ProjectName }}"
+      - "--label=org.opencontainers.image.description=Cloud-agnostic BBC TAMS v8.0 API server"
+      - "--label=org.opencontainers.image.source=https://github.com/amagioss/opentams"
+      - "--label=org.opencontainers.image.url=https://github.com/amagioss/opentams"
+      - "--label=org.opencontainers.image.documentation=https://github.com/amagioss/opentams/blob/main/README.md"
+      - "--label=org.opencontainers.image.licenses=Apache-2.0"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
+      - "--label=org.opencontainers.image.created={{ .Date }}"
+      - "--label=org.opencontainers.image.authors=OpenTAMS Authors"
+      - "--label=org.opencontainers.image.vendor=Amagi Media Labs Ltd."
+
+  - id: opentams-arm64
+    goos: linux
+    goarch: arm64
+    ids: [opentams]
+    image_templates:
+      - "ghcr.io/amagioss/opentams:{{ .Version }}-arm64"
+    dockerfile: build/Dockerfile.goreleaser
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.title={{ .ProjectName }}"
+      - "--label=org.opencontainers.image.description=Cloud-agnostic BBC TAMS v8.0 API server"
+      - "--label=org.opencontainers.image.source=https://github.com/amagioss/opentams"
+      - "--label=org.opencontainers.image.url=https://github.com/amagioss/opentams"
+      - "--label=org.opencontainers.image.documentation=https://github.com/amagioss/opentams/blob/main/README.md"
+      - "--label=org.opencontainers.image.licenses=Apache-2.0"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
+      - "--label=org.opencontainers.image.created={{ .Date }}"
+      - "--label=org.opencontainers.image.authors=OpenTAMS Authors"
+      - "--label=org.opencontainers.image.vendor=Amagi Media Labs Ltd."
+
+# Multi-arch manifest. We publish three tag streams:
+#   ghcr.io/amagioss/opentams:vX.Y.Z      — exact version, immutable
+#   ghcr.io/amagioss/opentams:X.Y         — minor track, moves on patches
+#   ghcr.io/amagioss/opentams:latest      — only on stable releases
+#                                           (suppressed automatically for
+#                                            pre-release tags by goreleaser)
+docker_manifests:
+  - name_template: "ghcr.io/amagioss/opentams:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/amagioss/opentams:{{ .Version }}-amd64"
+      - "ghcr.io/amagioss/opentams:{{ .Version }}-arm64"
+
+  - name_template: "ghcr.io/amagioss/opentams:{{ .Major }}.{{ .Minor }}"
+    image_templates:
+      - "ghcr.io/amagioss/opentams:{{ .Version }}-amd64"
+      - "ghcr.io/amagioss/opentams:{{ .Version }}-arm64"
+    skip_push: auto
+
+  - name_template: "ghcr.io/amagioss/opentams:latest"
+    image_templates:
+      - "ghcr.io/amagioss/opentams:{{ .Version }}-amd64"
+      - "ghcr.io/amagioss/opentams:{{ .Version }}-arm64"
+    skip_push: auto
+
+# Cosign keyless signature on the multi-arch manifest. Uses the workflow
+# OIDC token (id-token: write must be granted in release.yml). The
+# resulting signature is published to Rekor and made discoverable as
+# a cosign tag in the registry.
+docker_signs:
+  - cmd: cosign
+    artifacts: manifests
+    output: true
+    args:
+      - "sign"
+      - "--yes"     # non-interactive; required in CI
+      - "${artifact}@${digest}"
+
+# Per-archive checksums. `split: true` writes one `<artifact>.sha256` per
+# archive; each carries its source archive's build id, so it survives the
+# `release.ids` filter below (a single combined checksums.txt would not, as it
+# has no id to match). Only the tamsctl archives are released, so only their
+# checksums are attached.
+checksum:
+  algorithm: sha256
+  split: true
+
+# GitHub Release configuration. The server remains image-only; the tamsctl
+# CLI archives (+ their checksums) are the only assets attached to the page.
+release:
+  github:
+    owner: amagioss
+    name: opentams
+  prerelease: auto    # v0.1.0-rc.1 / -beta.1 / -alpha.1 → Pre-release
+  mode: replace
+  draft: false
+  # Publish only the tamsctl CLI archives. The server is shipped as a signed
+  # container image (see dockers/docker_signs); its raw binary is never
+  # attached to the release page.
+  ids:
+    - tamsctl-archive
+  header: |
+    ## OpenTAMS {{ .Tag }}
+
+    **Server** — container image: `ghcr.io/amagioss/opentams:{{ .Tag }}` (also tagged `{{ .Major }}.{{ .Minor }}` and — for stable releases — `latest`).
+
+    **CLI (`tamsctl`)** — download the archive for your platform from the assets below, or `go install github.com/amagioss/opentams/cmd/tamsctl@{{ .Tag }}`.
+
+    See the [Verifying release artefacts](https://github.com/amagioss/opentams#verifying-release-artefacts) section in the README for the cosign / SBOM / SLSA-provenance verification commands.
+  footer: |
+    ---
+    **Full Changelog**: https://github.com/amagioss/opentams/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+# Conventional-commit-aware changelog. CONTRIBUTING.md recommends
+# Conventional Commits; this maps the scopes the existing history uses
+# into structured release-notes sections so readers can scan a release
+# without parsing every commit.
+changelog:
+  use: github
+  sort: asc
+  groups:
+    - title: "Features"
+      regexp: '^.*?feat(\(.+\))?!?:.+$'
+      order: 0
+    - title: "Bug fixes"
+      regexp: '^.*?fix(\(.+\))?!?:.+$'
+      order: 1
+    - title: "Performance"
+      regexp: '^.*?perf(\(.+\))?!?:.+$'
+      order: 2
+    - title: "Refactor"
+      regexp: '^.*?refactor(\(.+\))?!?:.+$'
+      order: 3
+    - title: "Documentation"
+      regexp: '^.*?docs(\(.+\))?!?:.+$'
+      order: 4
+    - title: "Build / CI"
+      regexp: '^.*?(build|ci|chore)(\(.+\))?!?:.+$'
+      order: 5
+    - title: "Other"
+      order: 99
+  filters:
+    exclude:
+      - "^test(\\(.+\\))?:"
+      - "^style(\\(.+\\))?:"
+      - "Merge pull request"
+      - "Merge branch"
+
+# Snapshot builds (run via `make snapshot`) embed the commit SHA so
+# pre-tag artefacts are always distinguishable from real releases.
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot-{{ .ShortCommit }}"

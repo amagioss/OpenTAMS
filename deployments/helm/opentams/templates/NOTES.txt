@@ -1,0 +1,47 @@
+OpenTAMS {{ .Chart.AppVersion }} has been deployed as release "{{ .Release.Name }}".
+
+Service:
+  {{ include "opentams.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.port }}
+
+{{- if .Values.ingress.enabled }}
+
+Reachable via Ingress:
+{{- range .Values.ingress.hosts }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}
+{{- end }}
+{{- else }}
+
+No Ingress configured. To reach the API locally:
+  kubectl port-forward svc/{{ include "opentams.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
+{{- end }}
+
+{{- if .Values.migration.enabled }}
+
+DB migrations ran as a pre-install/pre-upgrade hook Job ("{{ include "opentams.fullname" . }}-migrate").
+A failed migration blocks the rollout (the server refuses to boot on a stale schema).
+DB rollback is manual: kubectl run ... /opentams migrate down N
+{{- else }}
+
+WARNING: migration.enabled=false — apply schema migrations BEFORE pods start,
+or they will crash-loop on the schema startup gate.
+{{- end }}
+
+Auth:
+{{- if eq .Values.app.env "development" }}
+  APP_ENV=development -> external auth is NOT enforced. Do NOT use in production.
+{{- else }}
+  External (required): issuer {{ .Values.auth.external.issuerURL }}, audience {{ .Values.auth.external.audience }}
+{{- end }}
+{{- if .Values.auth.internal.enabled }}
+  Internal (service-to-service): issuer {{ .Values.auth.internal.issuerURL }}, audience {{ .Values.auth.internal.audience }}
+  NOTE: the issuer must be a PUBLISHED OIDC issuer. The in-cluster
+  kubernetes.default.svc issuer is NOT supported by the current JWKS fetch.
+{{- else }}
+  Internal (service-to-service): disabled.
+{{- end }}
+
+Secret: this chart references the externally-provisioned Secret "{{ .Values.secrets.existingSecret }}".
+Rotating it requires a manual restart:
+  kubectl rollout restart deployment/{{ include "opentams.fullname" . }}
+
+GC worker is NOT deployed (unimplemented — M16).

@@ -1,0 +1,98 @@
+# Renders api/opentams-api-bundled.yaml into a static Redoc HTML page and
+# publishes it to GitHub Pages so consumers can browse the OpenTAMS surface
+# without cloning the repo.
+#
+# Trigger:
+#   - On pull_request that touches api/** — runs the build job only so a PR
+#     introducing a malformed OpenAPI spec (bad $ref, schema error, etc.)
+#     fails review-time instead of breaking the post-merge Pages deploy.
+#   - On push to main when api/** changes — runs build + deploy.
+#   - On manual workflow_dispatch — runs build + deploy (forced rebuilds).
+#
+# Output URL: https://amagioss.github.io/OpenTAMS/
+#
+# Pages must be enabled once on the repo (Settings → Pages → Source:
+# "GitHub Actions"). Until then this workflow will fail at the deploy
+# step; CI/lint/build/test/release are unaffected.
+#
+# Runners: GitHub-hosted `ubuntu-latest`. Every workflow in this repository
+# uses hosted runners, deliberately. A public repository must not name
+# self-hosted labels: no fork can schedule them, so a contributor's run would
+# queue forever, and untrusted fork code must never execute on private
+# infrastructure. Hosted minutes are free for public repositories.
+name: API Docs
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "api/**"
+      - ".github/workflows/api-docs.yml"
+  push:
+    branches: [main]
+    paths:
+      - "api/**"
+      - ".github/workflows/api-docs.yml"
+  workflow_dispatch:
+
+# Least privilege: the workflow default is read-only. `pages: write` and
+# `id-token: write` are granted only to the deploy job, which never runs on
+# a pull request. The build job is fork-reachable and gets no write scope.
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build Redoc HTML
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "20"
+
+      - name: Install Redocly CLI
+        run: npm install -g @redocly/cli@1.25.11
+
+      - name: Render Redoc HTML
+        run: |
+          mkdir -p site
+          # build-docs renders a single self-contained HTML page (Redoc bundle
+          # inlined). Faster and dependency-free at view time vs the React
+          # bundle approach.
+          redocly build-docs api/opentams-api-bundled.yaml --output site/index.html
+          # Tiny landing redirect so /opentams/ also resolves at the root.
+          cp site/index.html site/api.html
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
+        with:
+          path: site
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    # Only deploy on push to main and manual dispatch — PR runs validate
+    # the build but must not publish, since (a) PR head SHAs aren't trusted
+    # to update production Pages and (b) the deploy concurrency group would
+    # serialise and starve unrelated PRs.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5

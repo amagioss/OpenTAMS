@@ -1,0 +1,67 @@
+# gitleaks configuration for OpenTAMS.
+#
+# Extends the upstream default ruleset: the allowlist below narrows it where
+# the default heuristics misfire on generated content, and the AWS rules below
+# fill a gap the default ruleset leaves open.
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "generic-api-key"
+description = "Generic API Key"
+regex = '''(?i)(?:key|api|token|secret|client|passwd|password|auth|access)(?:[0-9a-z\-_\t .]{0,20})(?:[\s|']|[\s|"]){0,3}(?:=|>|:{1,3}=|\|\|:|<=|=>|:|\?=)(?:'|\"|\s|=|\x60){0,5}([0-9a-z\-_.=]{10,150})(?:['|\"|\n|\r|\s|\x60|;]|$)'''
+entropy = 3.5
+keywords = ["key", "api", "token", "secret", "client", "passwd", "password", "auth", "access"]
+
+  [rules.allowlist]
+  description = """
+  gen/api/opentams.gen.go embeds the OpenAPI contract as a gzip+base64 blob
+  (oapi-codegen `embedded-spec: true`, consumed at startup by the
+  OapiRequestValidator middleware — see .oapi-codegen.yaml). The blob is a
+  compression of api/opentams-api-bundled.yaml and holds no credentials, but
+  its base64 chunks clear the generic-api-key entropy threshold by chance.
+  Which chunks trip it changes every time the spec is regenerated.
+
+  Scoped to the one generated file and to the swaggerSpec literal, so a real
+  secret written anywhere else in the package is still caught.
+  """
+  paths = ['''gen/api/opentams\.gen\.go''']
+  regexTarget = "line"
+  regexes = ['''^\s*"[A-Za-z0-9+/=]{40,}",?$''']
+
+# --- AWS ---------------------------------------------------------------------
+#
+# The upstream default ruleset shipped with this gitleaks build detects none of
+# the AWS credential formats: an access key id (AKIA...), a secret access key,
+# and a session token all pass clean. Verified against the canonical examples
+# in AWS's own documentation. Two of them happened to trip `generic-api-key` by
+# entropy, which is luck rather than detection -- a credential that falls below
+# the entropy threshold, or sits under a different key name, goes through
+# silently.
+#
+# That matters here: this repository ships Terraform and Kubernetes manifests
+# for an AWS deployment, so a clean gitleaks run has to mean no AWS credential
+# is present, not that gitleaks was never looking for one.
+
+[[rules]]
+id = "aws-access-key-id"
+description = "AWS Access Key ID"
+regex = '''(?:A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z0-9]{16}'''
+keywords = ["AKIA", "ASIA", "ABIA", "ACCA", "A3T"]
+
+[[rules]]
+id = "aws-secret-access-key"
+description = "AWS Secret Access Key"
+# Anchored on an aws secret-key identifier rather than on shape alone: a bare
+# 40-character base64 run is far too common to flag by itself.
+regex = '''(?i)aws[_\-\. ]?(?:secret[_\-\. ]?access[_\-\. ]?key|secret[_\-\. ]?key)["'\s]*[:=]["'\s]*([A-Za-z0-9/+=]{40})'''
+secretGroup = 1
+keywords = ["aws"]
+
+[[rules]]
+id = "aws-session-token"
+description = "AWS Session Token"
+regex = '''(?i)aws[_\-\. ]?session[_\-\. ]?token["'\s]*[:=]["'\s]*([A-Za-z0-9/+=]{100,})'''
+secretGroup = 1
+keywords = ["aws"]
