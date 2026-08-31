@@ -84,7 +84,7 @@ The parent-level fields are deliberately **not** repeated per entry:
   has no other reason to exist in the generated package.
 * Bad, because it diverges from the TAMS `flow-segment-bulk-failure` schema, so
   `api/schemas/flow-segment-bulk-failure.json` is a modified copy of the upstream file
-  rather than a mirror — see [ADR-0003](0003-vendored-tams-schemas-are-modified.md).
+  rather than a mirror — see [ADR-0005](0005-vendored-tams-schemas-are-modified.md).
 * Bad, because a TAMS client written against the upstream schema will look for
   `error.summary` and find nothing. The field is required in the response, so the failure
   is a missing-key error rather than a silent empty string.

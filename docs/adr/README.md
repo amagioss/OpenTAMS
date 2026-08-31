@@ -13,9 +13,9 @@ stays useful long after the feature ships.
 | ADR | Title | Status |
 |---|---|---|
 | [0000](0000-use-madr-for-decision-records.md) | Use MADR for architecture decision records | accepted |
-| [0001](0001-whole-batch-reject-on-segment-overlap.md) | Reject the whole batch when Flow Segments overlap | accepted |
-| [0002](0002-rfc9457-problem-details-for-per-segment-failures.md) | Report per-segment failures as an RFC 9457 Problem Details subset | accepted |
-| [0003](0003-vendored-tams-schemas-are-modified.md) | Vendor the TAMS JSON schemas as a modified copy | accepted |
+| [0001](0024-whole-batch-reject-on-segment-overlap.md) | Reject the whole batch when Flow Segments overlap | accepted |
+| [0002](0023-rfc9457-problem-details-for-per-segment-failures.md) | Report per-segment failures as an RFC 9457 Problem Details subset | accepted |
+| [0003](0005-vendored-tams-schemas-are-modified.md) | Vendor the TAMS JSON schemas as a modified copy | accepted |
 
 <!-- Add a row per ADR, in number order. Keep the status column in sync with the file's front matter. -->
 
@@ -32,7 +32,8 @@ stays useful long after the feature ships.
 ## Rules
 
 - **Numbers are never reused or renumbered**, including for rejected ADRs. A gap in the
-  sequence is expected, not a defect.
+  sequence is expected, not a defect. The founding set `0000`-`0037` is the one
+  exception — see [ADR-0000](0000-use-madr-for-decision-records.md).
 - **Status** is one of `proposed`, `rejected`, `accepted`, `deprecated`, or
   `superseded by ADR-NNNN`.
 - **An accepted ADR is immutable in substance.** To change a decision, write a new ADR

@@ -75,6 +75,6 @@ discriminator and divergence modifications would still be needed.
 * Drift between the source spec, the committed bundle, and the generated Go types is
   caught by `make api-check`.
 * The behavioural divergences have their own records:
-  [ADR-0001](0001-whole-batch-reject-on-segment-overlap.md) (accepted and implemented),
-  [ADR-0002](0002-rfc9457-problem-details-for-per-segment-failures.md) (proposed — the
-  schema carries the divergence but the server does not yet implement it).
+  [ADR-0024](0024-whole-batch-reject-on-segment-overlap.md) and
+  [ADR-0023](0023-rfc9457-problem-details-for-per-segment-failures.md). Both are accepted,
+  and the server implements both.

@@ -81,7 +81,7 @@ as an architecture decision under [`docs/adr/`](../../docs/adr/).
 
 | File | Divergence |
 |---|---|
-| `flow-segment-bulk-failure.json` | Per-segment `error` is an RFC 9457 Problem Details subset (`type` / `title` / `detail`) and is required, rather than the TAMS `error` type (`type` / `summary` / `time`). **The server does not yet do this** — it still emits the TAMS shape. See [ADR-0002](../../docs/adr/0002-rfc9457-problem-details-for-per-segment-failures.md). |
+| `flow-segment-bulk-failure.json` | Per-segment `error` is an RFC 9457 Problem Details subset (`type` / `title` / `detail`) and is required, rather than the TAMS `error` type (`type` / `summary` / `time`). See [ADR-0023](../../docs/adr/0023-rfc9457-problem-details-for-per-segment-failures.md). |
 | `flow-segment-post.json` | `object_timerange` has no server-computed default. Upstream defaults it to `timerange - ts_offset`; OpenTAMS stores nothing when the client omits it. |
 | `flow-storage-post.json` | Exactly one of `limit` or `object_ids` is required, and `object_ids` is capped at 1000 items. |
 
@@ -105,19 +105,9 @@ make api-check    # verify the committed bundle and generated code are up to dat
 `make api-check` is the one that catches drift. The bundled document and the generated
 Go types are committed, so they can — and do — fall out of step with the source spec.
 
-**`make api-check` currently fails, and both failures are real.** They are a chain, not
-two independent problems:
+`make api-check` passes. The source spec, the committed bundle, and `gen/api/` agree,
+and re-running `make api-bundle && make api-gen` reproduces both byte for byte.
 
-1. `api/opentams-api-bundled.yaml` is stale against `opentams-api-v1.yaml`. The source
-   spec describes whole-batch reject on segment overlap and the RFC 9457 per-segment
-   error shape; the committed bundle still describes first-wins and the TAMS `error`
-   shape. This predates the current work.
-2. `gen/api/` is consistent with the committed *bundle*, so `go generate` is byte-for-byte
-   reproducible today. Re-bundling first is what makes it stale — the regenerated types
-   change shape and no longer compile against
-   `internal/httpx/conversion/segment.go`.
-
-Closing the chain therefore requires a code change, tracked in
-[ADR-0002](../../docs/adr/0002-rfc9457-problem-details-for-per-segment-failures.md). Until
-that lands, do **not** run `make api-bundle` on its own: it breaks a build that is
-currently green. `api-check` is deliberately not wired into `make ci`.
+The [Contract workflow](../../.github/workflows/contract.yml) runs `make api-check` on
+every pull request. It is not part of `make ci`, because it needs Node and the
+version-pinned `@redocly/cli`.

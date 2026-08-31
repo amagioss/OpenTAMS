@@ -240,7 +240,7 @@ Phase 1 does not expose `/objects` endpoints but tracks object metadata internal
 
 [REQ-BEH-14] Full success returns 201. Partial success returns 200 with a `failed_segments` array containing the original payloads and failure reasons for each failed segment.
 
-[REQ-BEH-15] Segments on the same Flow MUST NOT have overlapping timeranges. Overlapping segments are rejected with 422. This applies to overlaps with existing segments AND overlaps within the same batch. **Any overlap rejects the entire batch — no segments are persisted, and no `failed_segments` array is returned.** This diverges from the TAMS specification's first-wins ordering, deliberately; see [ADR-0001](adr/0001-whole-batch-reject-on-segment-overlap.md).
+[REQ-BEH-15] Segments on the same Flow MUST NOT have overlapping timeranges. Overlapping segments are rejected with 422. This applies to overlaps with existing segments AND overlaps within the same batch. **Any overlap rejects the entire batch — no segments are persisted, and no `failed_segments` array is returned.** This diverges from the TAMS specification's first-wins ordering, deliberately; see [ADR-0024](adr/0024-whole-batch-reject-on-segment-overlap.md).
 
 [REQ-BEH-16] `GET /flows/{flowId}/segments` returns 404 for a non-existent flow. This diverges from the TAMS specification, which asks for an empty list, deliberately: returning `[]` for a mistyped flow id turns a client bug into a plausible-looking empty result. Recorded in [`conformance.md`](conformance.md).
 

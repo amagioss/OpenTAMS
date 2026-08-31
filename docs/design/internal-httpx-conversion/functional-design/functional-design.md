@@ -86,7 +86,7 @@ round-trip is asserted in tests rather than left to review.
 `type`, `title`, `detail` — matching the vocabulary every other error in the API uses.
 `Reason` becomes `detail`. `Status` has no slot and is dropped: the enclosing response
 is a 200, so a per-entry status would contradict the status line. See
-[ADR-0002](../../../adr/0002-rfc9457-problem-details-for-per-segment-failures.md).
+[ADR-0023](../../../adr/0023-rfc9457-problem-details-for-per-segment-failures.md).
 
 ## Out of scope
 

@@ -1,7 +1,7 @@
 // Package flow provides the service layer for Flow operations.
-// It sits between HTTP handlers and the metastore/objectstore backends,
-// enforcing business rules (vfr/frame_rate validation, objectstore cleanup on delete)
-// and emitting Prometheus metrics.
+// It sits between HTTP handlers and the metastore, enforcing business rules
+// (vfr/frame_rate validation) and emitting Prometheus metrics. It has no
+// objectstore dependency: object lifetime belongs to the GC worker.
 package flow
 
 import (
