@@ -4,9 +4,6 @@ Copyright 2026 Amagi Media Labs Ltd. and the OpenTAMS contributors
 This product includes software developed at Amagi Media Labs Ltd.
 (https://www.amagi.com).
 
-Licensed under the Apache License, Version 2.0. See the LICENSE file for the
-full terms.
-
 --------------------------------------------------------------------------------
 BBC TAMS specification
 --------------------------------------------------------------------------------
@@ -44,6 +41,73 @@ respective owners.
 Third-party dependencies
 --------------------------------------------------------------------------------
 
-OpenTAMS links against third-party Go modules under the Apache 2.0, MIT, BSD
-3-Clause, and ISC licences. The full list, with versions and licences, is in
-docs/third-party-notices.md.
+OpenTAMS links against third-party Go modules under the MIT, Apache 2.0, BSD
+3-Clause, and 0BSD licences. Direct dependencies are listed with their versions
+and licences in docs/third-party-notices.md. Reproduce the full transitive set
+with `go list -m all`.
+
+The attribution notices below are reproduced from the NOTICE files of the
+Apache 2.0 dependencies that OpenTAMS redistributes in its released binaries and
+container images, as required by Apache License 2.0 section 4(d).
+
+--- github.com/aws/aws-sdk-go-v2 ---
+
+AWS SDK for Go
+Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+Copyright 2014-2015 Stripe, Inc.
+
+--- github.com/aws/smithy-go ---
+
+Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+
+--- github.com/prometheus/client_golang ---
+
+Prometheus instrumentation library for Go applications
+Copyright 2012-2015 The Prometheus Authors
+
+This product includes software developed at
+SoundCloud Ltd. (http://soundcloud.com/).
+
+The following components are included in this product:
+
+perks - a fork of https://github.com/bmizerany/perks
+https://github.com/beorn7/perks
+Copyright 2013-2015 Blake Mizerany, Björn Rabenstein
+See https://github.com/beorn7/perks/blob/master/README.md for license details.
+
+Go support for Protocol Buffers - Google's data interchange format
+http://github.com/golang/protobuf/
+Copyright 2010 The Go Authors
+See source code for license details.
+
+--- github.com/prometheus/client_model ---
+
+Data model artifacts for Prometheus.
+Copyright 2012-2015 The Prometheus Authors
+
+This product includes software developed at
+SoundCloud Ltd. (http://soundcloud.com/).
+
+--- github.com/prometheus/common ---
+
+Common libraries shared by Prometheus Go components.
+Copyright 2015 The Prometheus Authors
+
+This product includes software developed at
+SoundCloud Ltd. (http://soundcloud.com/).
+
+--- github.com/oasdiff/yaml3, go.yaml.in/yaml/v2, gopkg.in/yaml.v3 ---
+
+Copyright 2011-2016 Canonical Ltd.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
