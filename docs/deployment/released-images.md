@@ -58,7 +58,7 @@ curl -s -H "Authorization: Bearer dev" http://localhost:8080/tams/v1/service | j
 # }
 ```
 
-For a complete write-then-read walkthrough, see [`examples/`](../../examples/);
+For a runnable client walkthrough, see [`examples/`](../../examples/);
 for a hands-on tour of five scenarios, see [`docs/demo.md`](../demo.md).
 
 ## Verifying release artefacts

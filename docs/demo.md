@@ -273,6 +273,6 @@ PostgreSQL and MinIO volumes for a clean slate. Use plain
 
 
 The binaries are intentionally thin — the publisher is ~250 lines, the
-gateway under 200. Read them next to `examples/write-segment/main.go`
-and `examples/read-segments/main.go` to see how the bare-wire teaching
-examples scale up into something demonstrable.
+gateway under 200. Read them next to
+`examples/regional-blackout/main.go` to see how a bare-wire client
+scales up into something demonstrable.
