@@ -64,7 +64,7 @@ Overlap detection is metastore-side because the metastore holds the existing-seg
 index; detecting it here would mean re-fetching every segment on the flow or
 duplicating the `internal/timerange` predicate. This diverges from TAMS
 `REQ-BEH-15` deliberately — see
-[ADR-0001](../../../adr/0001-whole-batch-reject-on-segment-overlap.md).
+[ADR-0024](../../../adr/0024-whole-batch-reject-on-segment-overlap.md).
 
 **BR-SEG-04 — Outcome classification**
 When the metastore call succeeds, the result is partitioned into `Accepted` and
@@ -210,7 +210,7 @@ and reading `ToProblemDetails("", "").Type`. There are no `apperror.Type*` or
 
 | Rule | TAMS requirement | OpenTAMS behaviour | Recorded in |
 |---|---|---|---|
-| BR-SEG-03 | `REQ-BEH-15` — first-wins ordering, overlapping entries reported per segment | Any overlap rejects the whole batch: 422, nothing persisted, no `failed_segments` | [ADR-0001](../../../adr/0001-whole-batch-reject-on-segment-overlap.md), [`conformance.md`](../../../conformance.md) |
+| BR-SEG-03 | `REQ-BEH-15` — first-wins ordering, overlapping entries reported per segment | Any overlap rejects the whole batch: 422, nothing persisted, no `failed_segments` | [ADR-0024](../../../adr/0024-whole-batch-reject-on-segment-overlap.md), [`conformance.md`](../../../conformance.md) |
 | BR-SEG-09 | `REQ-BEH-16` — `GET /flows/{flowId}/segments` on an unknown flow returns an empty list | Returns 404 `flow not found` | [`conformance.md`](../../../conformance.md) |
 
 ## Out of scope
@@ -225,7 +225,7 @@ and reading `ToProblemDetails("", "").Type`. There are no `apperror.Type*` or
   handler builds the `get_urls` a reader sees, so the service stays
   storage-agnostic.
 - **TAMS `error.json` compatibility.** The error contract is RFC 9457 throughout;
-  see [ADR-0002](../../../adr/0002-rfc9457-problem-details-for-per-segment-failures.md)
+  see [ADR-0023](../../../adr/0023-rfc9457-problem-details-for-per-segment-failures.md)
   for the one remaining site.
 
 ## Test strategy
@@ -242,4 +242,4 @@ Postgres via testcontainers and is skipped under `-short`.
 verbatim through `conversion.RegisterFailureToAPI`. `Status` is set here (400 for a
 validation failure, 422 for an overlap) but has no slot on the wire; a client
 distinguishes failure kinds by the `type` URI. See
-[ADR-0002](../../../adr/0002-rfc9457-problem-details-for-per-segment-failures.md).
+[ADR-0023](../../../adr/0023-rfc9457-problem-details-for-per-segment-failures.md).

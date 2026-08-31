@@ -80,7 +80,7 @@ committed bundle in two places. Running `make api-bundle` on its own leaves
 `gen/` stale; running `make api-bundle && make api-gen` without also updating
 `internal/httpx/conversion/segment.go` **breaks a build that is otherwise
 green**. Read [`api/schemas/README.md`](api/schemas/README.md) and
-[ADR-0002](docs/adr/0002-rfc9457-problem-details-for-per-segment-failures.md)
+[ADR-0023](docs/adr/0023-rfc9457-problem-details-for-per-segment-failures.md)
 before touching any of it. `api-check` is deliberately not wired into `make ci`
 for this reason.
 

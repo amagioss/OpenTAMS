@@ -101,7 +101,7 @@ with a 422 `segment-overlap` ProblemDetails and persists nothing — within-batc
 against-existing overlaps alike. An overlap is a caller bug, and first-wins ordering
 hides it behind a partially-applied write whose outcome depends on array order. The
 rationale and the rejected alternatives are in
-[ADR-0001](adr/0001-whole-batch-reject-on-segment-overlap.md).
+[ADR-0024](adr/0024-whole-batch-reject-on-segment-overlap.md).
 
 *What breaks for a conformant client:* one that posts an overlapping batch and expects
 `failed_segments` gets a 422 with none, and none of its segments land. Retry with a
@@ -119,7 +119,7 @@ this.
 **Per-segment failure entries carry an RFC 9457 subset, not the TAMS `error` object.**
 Each `failed_segments[].error` is `type`/`title`/`detail` — the same vocabulary as every
 other error in the API — rather than the upstream `type`/`summary`/`time`. Recorded in
-[ADR-0002](adr/0002-rfc9457-problem-details-for-per-segment-failures.md).
+[ADR-0023](adr/0023-rfc9457-problem-details-for-per-segment-failures.md).
 
 *What breaks for a conformant client:* one written against the upstream TAMS schema looks
 for `error.summary` and finds nothing. Because the field is required, that surfaces as a

@@ -40,7 +40,11 @@ Conventions for this repository:
 
 * ADRs live in `docs/adr/` as `NNNN-kebab-case-title.md`, zero-padded to four digits.
 * Numbers are assigned in order and are **never** reused or renumbered, including for
-  rejected ADRs. A gap in the sequence is not a defect.
+  rejected ADRs. A gap in the sequence is not a defect. The founding set `0000`-`0037`
+  is the one exception: it was written as a single change before the first public
+  release and numbered by design layer, so the sequence reads from the substrate
+  outward. Nothing outside the repository linked to those numbers at the time. From
+  `0038` onward, numbers are chronological and this rule holds without exception.
 * `status` is one of `proposed`, `rejected`, `accepted`, `deprecated`, or
   `superseded by ADR-NNNN`.
 * An accepted ADR is immutable in substance. To change a decision, write a new ADR and

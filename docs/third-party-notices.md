@@ -65,7 +65,7 @@ The JSON Schema files under `api/schemas/` are derived from the BBC TAMS
 specification (Apache-2.0), tag `8.0`, and are **modified**. Provenance,
 the full catalogue of modifications, and the independence statement are
 in [`api/schemas/README.md`](../api/schemas/README.md), [`NOTICE`](../NOTICE),
-and [ADR-0003](adr/0003-vendored-tams-schemas-are-modified.md).
+and [ADR-0005](adr/0005-vendored-tams-schemas-are-modified.md).
 
 ## Container base images
 

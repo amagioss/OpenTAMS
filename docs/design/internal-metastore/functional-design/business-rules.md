@@ -321,7 +321,7 @@ A batch either commits in full or persists nothing. There is no per-segment save
 
 On success `InsertResult.AcceptedIndices` holds every input index and `RejectedIndices` is empty. The rejected-index machinery exists for a future partial-acceptance path; nothing populates it today, so the only entries a client sees in `failed_segments` are the ones the segment service rejects before the store is called (BR-SEG-02).
 
-Whole-batch rejection on overlap is a deliberate divergence from TAMS `REQ-BEH-15`, recorded in [ADR-0001](../../../adr/0001-whole-batch-reject-on-segment-overlap.md).
+Whole-batch rejection on overlap is a deliberate divergence from TAMS `REQ-BEH-15`, recorded in [ADR-0024](../../../adr/0024-whole-batch-reject-on-segment-overlap.md).
 
 ### BR-META-07: InsertSegments lazily registers the object, stamps its backend, and refuses reaped rows
 For each segment the referenced `object_id` is upserted into `objects` before the segment row is inserted:

@@ -41,7 +41,7 @@ No SourceService needed — SourceStore already has all operations. No business 
 
 All non-2xx returned as `(nil, *apperror.AppError)`. The oapi-codegen strict wrapper calls `c.Error(err)` on non-nil error return → existing `ErrorHandler` middleware writes ProblemDetails. Generated typed error response types (e.g. `GetFlow404JSONResponse`) are NOT used.
 
-**Exception**: `PostFlowSegments 200 partial success` returns `PostFlowSegments200JSONResponse` with the `flow-segment-bulk-failure` schema. This is the only non-trivial 2xx non-success response. Its per-entry `error` object carries an RFC 9457 subset (`type`, `title`, `detail`) — the parent-level `status`, `instance`, and `request_id` are not repeated per entry — see [ADR-0002](../../../adr/0002-rfc9457-problem-details-for-per-segment-failures.md).
+**Exception**: `PostFlowSegments 200 partial success` returns `PostFlowSegments200JSONResponse` with the `flow-segment-bulk-failure` schema. This is the only non-trivial 2xx non-success response. Its per-entry `error` object carries an RFC 9457 subset (`type`, `title`, `detail`) — the parent-level `status`, `instance`, and `request_id` are not repeated per entry — see [ADR-0023](../../../adr/0023-rfc9457-problem-details-for-per-segment-failures.md).
 
 ### Param Parse Errors (siw.ErrorHandler)
 
@@ -111,7 +111,7 @@ The service returns either an error or a `domain.RegisterResult` carrying an
 All-rejected is a 200 rather than a 4xx: the body already reports per-segment
 failures, and the batch itself was well-formed. The overlap path is the opposite
 case — the batch as a whole is refused, so it is a single ProblemDetails with no
-per-segment array (see [ADR-0001](../../../adr/0001-whole-batch-reject-on-segment-overlap.md)).
+per-segment array (see [ADR-0024](../../../adr/0024-whole-batch-reject-on-segment-overlap.md)).
 
 An unparseable path UUID is answered by write and read paths differently, and the
 split is intentional. `POST` and `DELETE` return 404 `flow not found`: a
@@ -245,6 +245,6 @@ if req.Body.Limit != nil && req.Body.ObjectIds != nil {
 | `ListQuery` (was `ListSegmentsParams`) | Carries Timerange, ObjectID, ReverseOrder, and the storage/URL accept filters | Required by GET /flows/{flowId}/segments spec params |
 | IsObjectRegistered | Added to PostgresStore | Required by StorageService.AllocateStorage |
 | Store ErrNoRows audit | Already correct | All pgx.ErrNoRows paths return apperror.ErrNotFound |
-| FlowSegmentPostBody unwrap | Try AsFlowSegmentPost() first, then AsFlowSegmentPostBody1() | oneOf union; single segment and array are the two variants |
+| FlowSegmentPostBody unwrap | Try AsFlowSegmentPostBody1() (array) first, then AsFlowSegmentPost() | oneOf union; single segment and array are the two variants |
 | FlowStoragePost mutual exclusivity | Explicit handler validation: limit AND object_ids both set → 400 | `not: allOf` constraint not enforced at JSON decode time |
 | PutFlow discriminator | Switch on Discriminator() → AsFlow*() | oneOf union; format URN determines variant |

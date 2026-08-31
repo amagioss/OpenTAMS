@@ -77,14 +77,17 @@ The concrete `flowService` struct is unexported.
 ### DeleteFlow
 
 **BR-SVC-FLOW-08 — Metadata removal**
-- Call `store.DeleteFlow`. The store removes all segment metadata and returns zero-ref object IDs.
+- Call `store.DeleteFlow`. The store removes all segment metadata and decrements
+  `objects.ref_count`. It returns only an error.
 - On store error (including ErrNotFound for non-existent flow), propagate immediately.
 
-**BR-SVC-FLOW-09 — Objectstore cleanup (REQ-BEH-10)**
-- If `zeroRefs` is non-empty, call `obj.DeleteObjects(ctx, zeroRefs)`.
-- On objectstore failure: WARN-log the error with `zap.Error`; return `nil` to caller.
-  Orphaned objects are handled by the GC worker (REQ-REL-14).
-- If `zeroRefs` is empty, skip objectstore call entirely.
+**BR-SVC-FLOW-09 — Object lifetime is not this service's job (REQ-BEH-10)**
+- The flow service holds no objectstore dependency and deletes no media bytes.
+  `DeleteFlow` returns once the metastore transaction commits.
+- Objects whose `ref_count` reaches zero become eligible for the GC worker
+  (REQ-REL-14). The GC worker owns `objectstore.Store.DeleteObjects`.
+- The GC worker is not implemented, so zero-ref objects accumulate today. See
+  [`conformance.md`](../../../conformance.md).
 
 ### Sub-resource operations (PutFlowTag, PutFlowLabel, etc.)
 

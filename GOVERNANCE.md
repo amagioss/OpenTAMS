@@ -81,7 +81,7 @@ integrations that cannot be expressed through the existing storage and
 metastore interfaces.
 
 Divergences from TAMS are sometimes necessary — see
-[ADR-0001](docs/adr/0001-whole-batch-reject-on-segment-overlap.md) for one. Each
+[ADR-0024](docs/adr/0024-whole-batch-reject-on-segment-overlap.md) for one. Each
 one needs an ADR that states what breaks for a conformant TAMS client, and each
 one is recorded in [`docs/conformance.md`](docs/conformance.md).
 
