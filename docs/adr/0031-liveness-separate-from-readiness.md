@@ -45,9 +45,6 @@ Probe construction is strict. `health.New` returns a sentinel error if a require
 missing, and the caller treats that as fatal. A misconfigured readiness check fails at
 startup rather than reporting a comforting `200` forever.
 
-Readiness does not check the schema version. `VerifySchema` exists but is not wired in —
-see [ADR-0017](0017-expand-contract-schema-evolution.md).
-
 ### Consequences
 
 * Good, because a database outage cannot cause a restart storm. Replicas leave the load
@@ -60,7 +57,7 @@ see [ADR-0017](0017-expand-contract-schema-evolution.md).
 * Bad, because liveness cannot detect a deadlocked or wedged process. A server that answers
   `/healthz` but serves nothing else is never restarted.
 * Bad, because readiness is only as good as its probe list. A dependency nobody added is a
-  dependency readiness does not know about, and the schema version is exactly that case.
+  dependency readiness does not know about.
 
 ## More Information
 

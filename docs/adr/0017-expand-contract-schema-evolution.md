@@ -48,13 +48,6 @@ recovery:
   Reconcile by hand, then `migrate force`.
 * `ErrSchemaTooOld` — the version is below the minimum. Apply pending migrations.
 
-**`VerifySchema` is not wired into startup.** No non-test caller invokes it. The server
-starts against any schema version, and readiness probes only reach the database and the
-object store — see [ADR-0031](0031-liveness-separate-from-readiness.md). A binary run
-against a schema older than it needs therefore fails on the first query that touches a
-missing column, not at boot. Closing that gap is a code change, and this ADR records the
-policy rather than claiming the guard runs.
-
 ### Consequences
 
 * Good, because a rolling upgrade needs no downtime and no strict ordering between the
@@ -65,9 +58,6 @@ policy rather than claiming the guard runs.
   intermediate state has to be carried and remembered.
 * Bad, because `ExpectedSchemaVersion` is a hand-maintained constant. Adding a migration
   whose absence would break a request path means bumping it, and nothing enforces that.
-* Bad, because the check does not run. The failure mode an operator meets is a query error
-  under load rather than a named error at startup, which is the outcome `VerifySchema` was
-  written to prevent.
 * Bad, because dual writes during the expand phase cost write throughput and can drift if
   one of the two writes is missed.
 

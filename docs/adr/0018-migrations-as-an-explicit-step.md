@@ -51,9 +51,8 @@ reconciled by hand. It is a recovery tool and changes no schema itself.
   rolled back on its own.
 * Good, because embedding the SQL keeps the migration and the binary in one artefact.
 * Good, because a migration failure is a failed Job, not a crash-looping server.
-* Bad, because a first deploy is two steps, and forgetting the first produces a server that
-  starts and then fails on every query. `VerifySchema` was written to catch exactly this
-  and is not wired in — see [ADR-0017](0017-expand-contract-schema-evolution.md).
+* Bad, because a first deploy is two steps, and forgetting the first produces a server with
+  no schema to serve from.
 * Bad, because `migrate down` and `migrate force` are dangerous by nature. Both are exposed
   in the shipped binary, so an operator can reach them by accident.
 * Bad, because the Helm Job's ordering relative to the Deployment is the operator's

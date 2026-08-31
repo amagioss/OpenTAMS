@@ -49,7 +49,7 @@ stays useful long after the feature ships.
 | [0034](0034-image-only-release-with-attestation.md) | Release the server as a signed image only, and `tamsctl` as archives | accepted |
 | [0035](0035-ci-on-hosted-runners-with-pinned-actions.md) | Run CI on GitHub-hosted runners, with every action pinned by commit SHA | accepted |
 | [0036](0036-rate-limiting-is-the-operators-responsibility.md) | Leave rate limiting to the operator | accepted |
-| [0037](0037-object-garbage-collection.md) | Reclaim Object storage from a separate worker, and ship without it | accepted |
+| [0037](0037-object-garbage-collection.md) | Reclaim Object storage from a separate worker | accepted |
 
 <!-- Add a row per ADR, in number order. Keep the status column in sync with the file's front matter. -->
 
