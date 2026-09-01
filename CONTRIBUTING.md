@@ -197,7 +197,13 @@ git pull --ff-only
 # 2. Pick the next semver tag. Below v1.0.0 the minor moves on every
 #    feature release and the patch on bug-fix-only releases. Use
 #    -rc.N / -beta.N / -alpha.N suffixes for pre-releases — goreleaser
-#    will auto-flag those as "Pre-release" on GitHub.
+#    will auto-flag those as "Pre-release" on GitHub. Use the dotted
+#    form (-rc.1, not -rc1) so pre-releases sort numerically past 9.
+
+# 3. For a STABLE tag only, bump the chart first (see below), and merge
+#    that commit before you tag. Skip this step for a pre-release.
+
+# 4. Tag and push.
 git tag -a v0.1.0 -m "v0.1.0"
 git push origin v0.1.0
 ```
@@ -212,6 +218,17 @@ The push triggers `.github/workflows/release.yml`, which:
 6. Creates the GitHub Release with a Conventional-Commits-grouped changelog. The server ships **only** as a signed image; the `tamsctl` CLI archives (plus their `.sha256` files) are the only assets attached to the release page.
 
 Verification commands for downstream consumers are documented in the [`Verifying release artefacts`](README.md#verifying-release-artefacts) section of the README.
+
+### Helm chart versions
+
+The chart carries two version fields, and nothing bumps them automatically:
+
+- `version` is the chart's own version. It is bare semver, with no `v` prefix, because that is what chart-releaser and OCI tag inference expect.
+- `appVersion` is the image tag the chart pulls. It carries the `v` prefix, so it reads `v0.1.0`.
+
+**Bump `appVersion` on stable tags only.** A pre-release ships as an image, and the chart continues to track the last stable release. If you bump `appVersion` to a pre-release tag, every chart user is moved onto it.
+
+Bump `version` whenever the chart itself changes, even when the server does not. The two numbers are independent and they are expected to drift apart.
 
 ### Testing the release pipeline locally
 
