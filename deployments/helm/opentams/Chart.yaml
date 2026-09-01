@@ -3,7 +3,7 @@ name: opentams
 description: Cloud-agnostic BBC TAMS v8.0 API server
 type: application
 version: 0.1.0
-appVersion: "0.1.0"
+appVersion: "v0.1.0"
 kubeVersion: ">=1.25.0-0"
 home: https://github.com/amagioss/opentams
 sources:
