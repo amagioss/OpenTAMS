@@ -205,11 +205,11 @@ git push origin v0.1.0
 The push triggers `.github/workflows/release.yml`, which:
 
 1. Runs `goreleaser release --clean` against `.goreleaser.yml`.
-2. Builds Linux amd64 + arm64 binaries, packages them into the goreleaser-specific Dockerfile (`build/Dockerfile.goreleaser`), and pushes per-arch images plus a multi-arch manifest to `ghcr.io/amagioss/opentams`.
+2. Builds Linux amd64 + arm64 binaries, packages them into the goreleaser-specific Dockerfile (`build/Dockerfile.goreleaser`), and pushes per-arch images plus a multi-arch manifest to `ghcr.io/amagioss/opentams`. Image tags keep the `v` prefix, so a `v0.1.0` git tag publishes `ghcr.io/amagioss/opentams:v0.1.0`, plus the `v0.1` minor track and `latest` (both suppressed for pre-releases). Cross-builds `tamsctl` for linux/darwin on amd64/arm64 and attaches the archives to the release page.
 3. Cosign-signs the manifest keyless using the workflow's GitHub OIDC identity (no key management; signature lives in Rekor and as a discoverable cosign tag in the registry).
 4. Generates a syft SPDX SBOM for each pushed image and attaches it to the registry as a cosign SPDX attestation.
 5. Generates a SLSA v1.0 build-provenance attestation via `actions/attest-build-provenance` and pushes it to the registry.
-6. Creates the GitHub Release with a Conventional-Commits-grouped changelog. **No binary archives are attached** — the image is the only deliverable.
+6. Creates the GitHub Release with a Conventional-Commits-grouped changelog. The server ships **only** as a signed image; the `tamsctl` CLI archives (plus their `.sha256` files) are the only assets attached to the release page.
 
 Verification commands for downstream consumers are documented in the [`Verifying release artefacts`](README.md#verifying-release-artefacts) section of the README.
 

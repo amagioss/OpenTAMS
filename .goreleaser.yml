@@ -14,6 +14,23 @@
 #     automatic from the suffix (`v0.1.0-rc.1` ⇒ marked Pre-release).
 #   - `workflow_dispatch` is exposed in the workflow for emergency runs.
 #
+# Image tag form:
+#   Image tags carry the `v` prefix, so the git tag, the image tag, and the
+#   GitHub Release all read `vX.Y.Z`. This matches the Kubernetes ecosystem
+#   (registry.k8s.io/kube-apiserver:v1.37.0, quay.io/prometheus/prometheus:v3.14.0,
+#   cert-manager, Argo CD, etcd) rather than the Docker Official Images form
+#   (nginx:1.30.4). The release workflow's digest-capture step selects the
+#   manifest with `test("^ghcr\\.io/amagioss/opentams:v[0-9]")` and depends on it.
+#
+#   Templates use `v{{ .Version }}` rather than `{{ .Tag }}`: in snapshot mode
+#   `.Tag` still resolves to the *previous* release tag, so a snapshot build
+#   would name itself after a real release. `.Version` follows
+#   `snapshot.version_template` below and stays unique.
+#
+#   Deliberately left bare: the OCI `org.opencontainers.image.version` label
+#   (the annotation is specified as a semver string) and the tamsctl archive
+#   names (goreleaser/GitHub asset convention).
+#
 # Version stamping:
 #   - main.version / main.commit / main.date are populated via -ldflags.
 #   - The `version` subcommand that surfaces them is tracked as a
@@ -103,7 +120,7 @@ dockers:
     goarch: amd64
     ids: [opentams]
     image_templates:
-      - "ghcr.io/amagioss/opentams:{{ .Version }}-amd64"
+      - "ghcr.io/amagioss/opentams:v{{ .Version }}-amd64"
     dockerfile: build/Dockerfile.goreleaser
     use: buildx
     build_flag_templates:
@@ -125,7 +142,7 @@ dockers:
     goarch: arm64
     ids: [opentams]
     image_templates:
-      - "ghcr.io/amagioss/opentams:{{ .Version }}-arm64"
+      - "ghcr.io/amagioss/opentams:v{{ .Version }}-arm64"
     dockerfile: build/Dockerfile.goreleaser
     use: buildx
     build_flag_templates:
@@ -144,26 +161,26 @@ dockers:
 
 # Multi-arch manifest. We publish three tag streams:
 #   ghcr.io/amagioss/opentams:vX.Y.Z      — exact version, immutable
-#   ghcr.io/amagioss/opentams:X.Y         — minor track, moves on patches
+#   ghcr.io/amagioss/opentams:vX.Y         — minor track, moves on patches
 #   ghcr.io/amagioss/opentams:latest      — only on stable releases
 #                                           (suppressed automatically for
 #                                            pre-release tags by goreleaser)
 docker_manifests:
-  - name_template: "ghcr.io/amagioss/opentams:{{ .Version }}"
+  - name_template: "ghcr.io/amagioss/opentams:v{{ .Version }}"
     image_templates:
-      - "ghcr.io/amagioss/opentams:{{ .Version }}-amd64"
-      - "ghcr.io/amagioss/opentams:{{ .Version }}-arm64"
+      - "ghcr.io/amagioss/opentams:v{{ .Version }}-amd64"
+      - "ghcr.io/amagioss/opentams:v{{ .Version }}-arm64"
 
-  - name_template: "ghcr.io/amagioss/opentams:{{ .Major }}.{{ .Minor }}"
+  - name_template: "ghcr.io/amagioss/opentams:v{{ .Major }}.{{ .Minor }}"
     image_templates:
-      - "ghcr.io/amagioss/opentams:{{ .Version }}-amd64"
-      - "ghcr.io/amagioss/opentams:{{ .Version }}-arm64"
+      - "ghcr.io/amagioss/opentams:v{{ .Version }}-amd64"
+      - "ghcr.io/amagioss/opentams:v{{ .Version }}-arm64"
     skip_push: auto
 
   - name_template: "ghcr.io/amagioss/opentams:latest"
     image_templates:
-      - "ghcr.io/amagioss/opentams:{{ .Version }}-amd64"
-      - "ghcr.io/amagioss/opentams:{{ .Version }}-arm64"
+      - "ghcr.io/amagioss/opentams:v{{ .Version }}-amd64"
+      - "ghcr.io/amagioss/opentams:v{{ .Version }}-arm64"
     skip_push: auto
 
 # Cosign keyless signature on the multi-arch manifest. Uses the workflow
@@ -205,7 +222,7 @@ release:
   header: |
     ## OpenTAMS {{ .Tag }}
 
-    **Server** — container image: `ghcr.io/amagioss/opentams:{{ .Tag }}` (also tagged `{{ .Major }}.{{ .Minor }}` and — for stable releases — `latest`).
+    **Server** — container image: `ghcr.io/amagioss/opentams:{{ .Tag }}` (also tagged `v{{ .Major }}.{{ .Minor }}` and — for stable releases — `latest`).
 
     **CLI (`tamsctl`)** — download the archive for your platform from the assets below, or `go install github.com/amagioss/opentams/cmd/tamsctl@{{ .Tag }}`.
 
