@@ -70,7 +70,7 @@ jobs:
         # under test output. There is no suppression list: a red gate means
         # an advisory is reachable and unfixed. It does not block releases --
         # release.yml does not run this. Needs no Docker.
-        run: make vuln-gate
+        run: make vuln
 
       - name: Unit tests (race + coverage)
         # Scope mirrors CONTRIBUTING.md: skip ./gen/... since generated code

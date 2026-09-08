@@ -5,7 +5,7 @@
 # to run the underlying commands directly can do so without diverging from
 # CI behaviour.
 
-.PHONY: help compile build build-server build-cli install-cli vet test test-short coverage lint fmt vuln vuln-gate integration perf \
+.PHONY: help compile build build-server build-cli install-cli vet test test-short coverage lint fmt vuln integration perf \
         docker-build docker-build-local ci tools-install clean \
         release-check snapshot release-dry-run \
         api-lint api-bundle api-gen api-check \
@@ -110,22 +110,16 @@ lint: ## Run golangci-lint with the strict project config
 fmt: ## Apply gofmt and goimports via golangci-lint formatters
 	$(call golangci,fmt)
 
-vuln-gate: ## Fail on any advisory reachable from our code
-	# Same command as `vuln`. It is a separate target because `ci` depends on
-	# it and because the name says what it is for. govulncheck exits non-zero
-	# only for advisories it can trace into our code, so this gate is already
-	# reachability-aware; advisories in modules we never call do not fail it.
-	#
-	# There is deliberately no suppression mechanism. If an advisory cannot be
-	# fixed immediately the gate goes red and stays red, which is the signal.
-	# Releases do not run this target, so a red gate does not block a release.
-	$(GO) run $(GOVULNCHECK) ./...
-
-vuln: ## Report vulnerabilities govulncheck can reach from our code
+vuln: ## Fail on any advisory govulncheck can reach from our code
 	# Exits non-zero only on advisories reachable from OpenTAMS code.
 	# Advisories in modules we require but never call are reported in the
 	# summary and do not fail the target -- upgrading for those is a
 	# judgement call, not a gate.
+	#
+	# `ci` and the Test workflow both use this target. There is deliberately
+	# no suppression list: an advisory reachable from our code gets fixed, and
+	# until it is the gate stays red. Releases do not run this, so a red gate
+	# does not block a release.
 	$(GO) run $(GOVULNCHECK) ./...
 
 integration: ## Integration tests (testcontainers; also runs on every PR)
@@ -200,7 +194,7 @@ api-check: ## Fail if the committed bundle or generated code is stale
 	if [ $$rc -eq 0 ]; then echo "api contract, bundle, and generated code agree"; fi; \
 	exit $$rc
 
-ci: compile vet lint vuln-gate test ## Run the full CI gate locally (no integration)
+ci: compile vet lint vuln test ## Run the full CI gate locally (no integration)
 
 tools-install: ## Install pinned golangci-lint, goreleaser, and wire up the repo pre-commit hook
 	$(GO) install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_VERSION)
