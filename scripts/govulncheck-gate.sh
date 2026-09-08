@@ -62,8 +62,10 @@ print("\n".join(sorted(ids)))
 PYEOF
 )"
 
+# `|| true`: an empty accept-list is the goal state, not an error. Without it
+# the non-matching grep trips `set -o pipefail` and aborts with no output.
 accepted="$(grep -oE '^[[:space:]]*-[[:space:]]*id:[[:space:]]*GO-[0-9]{4}-[0-9]+' "$ALLOW_FILE" \
-  | grep -oE 'GO-[0-9]{4}-[0-9]+' | sort -u)"
+  | grep -oE 'GO-[0-9]{4}-[0-9]+' | sort -u || true)"
 
 unexpected="$(comm -23 <(printf '%s\n' "$reachable" | grep -v '^$' | sort -u) \
                         <(printf '%s\n' "$accepted"  | grep -v '^$' | sort -u))"

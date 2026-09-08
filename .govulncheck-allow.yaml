@@ -9,21 +9,4 @@
 # what keeps the gate useful rather than permanently red. Current status:
 # docs/vulnerability-status.md
 
-accepted:
-  - id: GO-2026-6275
-    module: github.com/getkin/kin-openapi
-    statement: >-
-      Fixed in kin-openapi v0.144.0, which does not compile against
-      oapi-codegen v2.6.0 — the generator this repository pins. Moving the
-      generator to v2.7.2 makes it emit union marshalers OpenTAMS currently
-      hand-writes, so the upgrade changes source and is tracked as its own
-      change. See docs/vulnerability-status.md, "Remaining sequence".
-
-  - id: GO-2026-6112
-    module: github.com/getkin/kin-openapi
-    statement: >-
-      Nil-pointer panic in openapi3filter on a content parameter with no
-      schema. Reachable: the request validator calls ValidateRequest on every
-      request. Blocked on the same kin-openapi/oapi-codegen upgrade chain as
-      GO-2026-6275. This is the most directly reachable advisory in the list
-      and should be the first thing fixed once the chain is unblocked.
+accepted: []

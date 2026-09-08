@@ -50,7 +50,7 @@ func TestGetSources_paginationCursor(t *testing.T) {
 	require.NoError(t, err)
 	body, ok := resp.(api.GetSources200JSONResponse)
 	require.True(t, ok)
-	assert.Equal(t, cursor, body.Headers.XPagingNextKey)
+	assert.Equal(t, cursor, *body.Headers.XPagingNextKey)
 }
 
 // TC-HAND-SRC-03: HeadSources returns 200.

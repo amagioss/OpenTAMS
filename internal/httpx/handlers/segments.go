@@ -90,14 +90,14 @@ func (h *Handler) GetFlowSegments(ctx context.Context, req api.GetFlowSegmentsRe
 	// pagination cursor.
 	safeCursor := sanitiseHeaderValue(page.NextCursor)
 	headers := api.GetFlowSegments200ResponseHeaders{
-		XPagingLimit:        page.EffectiveLimit,
-		XPagingCount:        len(body),
-		XPagingReverseOrder: params.ReverseOrder,
-		XPagingTimerange:    page.Timerange.String(),
+		XPagingLimit:        ptr(page.EffectiveLimit),
+		XPagingCount:        ptr(len(body)),
+		XPagingReverseOrder: ptr(params.ReverseOrder),
+		XPagingTimerange:    ptr(api.Timerange(page.Timerange.String())),
 	}
 	if safeCursor != "" {
-		headers.XPagingNextKey = safeCursor
-		headers.Link = `<>; rel="next"; key="` + safeCursor + `"`
+		headers.XPagingNextKey = ptr(safeCursor)
+		headers.Link = ptr(`<>; rel="next"; key="` + safeCursor + `"`)
 	}
 	return api.GetFlowSegments200JSONResponse{Body: body, Headers: headers}, nil
 }
@@ -171,14 +171,14 @@ func (h *Handler) HeadFlowSegments(ctx context.Context, req api.HeadFlowSegments
 
 	safeCursor := sanitiseHeaderValue(page.NextCursor)
 	headers := api.HeadFlowSegments200ResponseHeaders{
-		XPagingLimit:        page.EffectiveLimit,
-		XPagingCount:        len(page.Items),
-		XPagingReverseOrder: params.ReverseOrder,
-		XPagingTimerange:    page.Timerange.String(),
+		XPagingLimit:        ptr(page.EffectiveLimit),
+		XPagingCount:        ptr(len(page.Items)),
+		XPagingReverseOrder: ptr(params.ReverseOrder),
+		XPagingTimerange:    ptr(api.Timerange(page.Timerange.String())),
 	}
 	if safeCursor != "" {
-		headers.XPagingNextKey = safeCursor
-		headers.Link = `<>; rel="next"; key="` + safeCursor + `"`
+		headers.XPagingNextKey = ptr(safeCursor)
+		headers.Link = ptr(`<>; rel="next"; key="` + safeCursor + `"`)
 	}
 	return api.HeadFlowSegments200Response{Headers: headers}, nil
 }
