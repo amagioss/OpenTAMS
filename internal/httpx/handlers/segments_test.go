@@ -261,7 +261,7 @@ func Test_SCN_HTTP_07b_GetEmptyResult200(t *testing.T) {
 	page, ok := resp.(api.GetFlowSegments200JSONResponse)
 	require.True(t, ok, "expected 200 page, got %T", resp)
 	assert.Empty(t, page.Body)
-	assert.Equal(t, 0, page.Headers.XPagingCount)
+	assert.Equal(t, 0, *page.Headers.XPagingCount)
 }
 
 // ---------------------------------------------------------------------------
@@ -499,7 +499,7 @@ func Test_SCN_HTTP_28_GetReverseOrderForwarded(t *testing.T) {
 	page, ok := resp.(api.GetFlowSegments200JSONResponse)
 	require.True(t, ok)
 	assert.True(t, svc.lastListReq.ReverseOrder, "service must receive ReverseOrder=true")
-	assert.True(t, page.Headers.XPagingReverseOrder)
+	assert.True(t, *page.Headers.XPagingReverseOrder)
 }
 
 // ---------------------------------------------------------------------------
@@ -957,14 +957,14 @@ func Test_SCN_HTTP_30a_EmptyResultEmitsAlwaysHeaders(t *testing.T) {
 	require.True(t, ok)
 
 	// Always-emit set:
-	assert.Equal(t, 100, page.Headers.XPagingLimit, "X-Paging-Limit always emitted")
-	assert.Equal(t, 0, page.Headers.XPagingCount, "X-Paging-Count: 0 still emitted on empty")
-	assert.Equal(t, "[1000:0_2000:0)", page.Headers.XPagingTimerange)
-	assert.False(t, page.Headers.XPagingReverseOrder, "X-Paging-Reverse-Order always emitted")
+	assert.Equal(t, 100, *page.Headers.XPagingLimit, "X-Paging-Limit always emitted")
+	assert.Equal(t, 0, *page.Headers.XPagingCount, "X-Paging-Count: 0 still emitted on empty")
+	assert.Equal(t, "[1000:0_2000:0)", *page.Headers.XPagingTimerange)
+	assert.False(t, *page.Headers.XPagingReverseOrder, "X-Paging-Reverse-Order always emitted")
 
 	// Presence-indicator pair: both absent on empty page.
-	assert.Empty(t, page.Headers.Link, "Link header MUST be absent when no NextCursor")
-	assert.Empty(t, page.Headers.XPagingNextKey, "X-Paging-NextKey MUST be absent when no NextCursor")
+	assert.Nil(t, page.Headers.Link, "Link header MUST be absent when no NextCursor")
+	assert.Nil(t, page.Headers.XPagingNextKey, "X-Paging-NextKey MUST be absent when no NextCursor")
 }
 
 // SCN-HTTP-30 sub-B: full page with NextCursor emits Link and
@@ -994,11 +994,11 @@ func Test_SCN_HTTP_30b_NextCursorEmitsLinkAndKey(t *testing.T) {
 	page, ok := resp.(api.GetFlowSegments200JSONResponse)
 	require.True(t, ok)
 
-	assert.Equal(t, 100, page.Headers.XPagingCount)
-	assert.Equal(t, "cursor-page-2", page.Headers.XPagingNextKey)
-	assert.NotEmpty(t, page.Headers.Link, "Link MUST appear with X-Paging-NextKey")
-	assert.Contains(t, page.Headers.Link, `rel="next"`)
-	assert.Contains(t, page.Headers.Link, "cursor-page-2")
+	assert.Equal(t, 100, *page.Headers.XPagingCount)
+	assert.Equal(t, "cursor-page-2", *page.Headers.XPagingNextKey)
+	assert.NotEmpty(t, *page.Headers.Link, "Link MUST appear with X-Paging-NextKey")
+	assert.Contains(t, *page.Headers.Link, `rel="next"`)
+	assert.Contains(t, *page.Headers.Link, "cursor-page-2")
 }
 
 // ---------------------------------------------------------------------------
@@ -1493,7 +1493,7 @@ func Test_SCN_HTTP_23_AuthSubjectNeverInResponseBody(t *testing.T) {
 		// the body would surface as a build break here.
 		_ = page.Body[i]
 	}
-	assert.Empty(t, page.Headers.XPagingNextKey,
+	assert.Nil(t, page.Headers.XPagingNextKey,
 		"sanity: paging headers populated normally; auth_subject not leaked into them either")
 }
 
@@ -1735,18 +1735,18 @@ func Test_SCN_HTTP_22_HeaderInjectionInCursorSanitised(t *testing.T) {
 	// X-Paging-NextKey must not contain CR or LF — the strict-server
 	// framework writes the value via fmt.Sprint which would emit raw
 	// bytes; the handler MUST strip them.
-	assert.NotContains(t, page.Headers.XPagingNextKey, "\r",
+	assert.NotContains(t, *page.Headers.XPagingNextKey, "\r",
 		"X-Paging-NextKey MUST NOT contain CR")
-	assert.NotContains(t, page.Headers.XPagingNextKey, "\n",
+	assert.NotContains(t, *page.Headers.XPagingNextKey, "\n",
 		"X-Paging-NextKey MUST NOT contain LF")
 	// Same constraint on the Link header — it embeds the cursor.
-	assert.NotContains(t, page.Headers.Link, "\r",
+	assert.NotContains(t, *page.Headers.Link, "\r",
 		"Link header MUST NOT contain CR")
-	assert.NotContains(t, page.Headers.Link, "\n",
+	assert.NotContains(t, *page.Headers.Link, "\n",
 		"Link header MUST NOT contain LF")
 
 	// Sanity: the NON-injected portion of the cursor survives.
-	assert.Contains(t, page.Headers.XPagingNextKey, "cursor-good",
+	assert.Contains(t, *page.Headers.XPagingNextKey, "cursor-good",
 		"benign cursor prefix MUST survive sanitisation")
 	// After stripping CR/LF the "X-Injected: badness" bytes still
 	// appear inline inside the cursor string, but they can no longer

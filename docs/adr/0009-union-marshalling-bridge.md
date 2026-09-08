@@ -36,7 +36,7 @@ It fails silently: the status code is right, the body is empty. Schemas using
 Chosen option: "Generate a companion file of passthrough methods".
 
 `tools/genunionbridges` parses the generated file. For every `type X Y` where `Y` declares
-its own `MarshalJSON`, it emits into a sibling file:
+its own `MarshalJSON` and `X` does not, it emits into a sibling file:
 
 ```go
 func (r X) MarshalJSON() ([]byte, error) { return Y(r).MarshalJSON() }
@@ -58,8 +58,10 @@ mirror of generated code.
   regeneration remains reproducible and drift detection keeps working.
 * Good, because coverage is automatic. A new union in the contract gets its bridge without
   anyone remembering to add one.
-* Good, because the workaround is contained. Deleting the tool and its `go:generate` line
-  is the whole removal when upstream fixes #1250.
+* Good, because the workaround is contained, and it shrinks as upstream catches up. The
+  tool skips any type that already declares its own `MarshalJSON`, so a bridge disappears
+  by itself once the generator emits that method. Deleting the tool and its `go:generate`
+  line is the whole removal once every bridge has gone that way.
 * Bad, because we maintain a Go AST tool to work around someone else's bug.
 * Bad, because the failure it prevents is silent. Anyone who bypasses the bridge sees a
   valid `200` with an empty body, which is hard to spot in a test that only asserts the

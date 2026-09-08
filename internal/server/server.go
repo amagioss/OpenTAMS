@@ -158,7 +158,7 @@ func New(d Deps) (*Server, error) {
 	// nil'd because we sit behind reverse proxies and do not want
 	// kin-openapi's host-matching logic to reject otherwise-valid requests
 	// based on the Host header.
-	swagger, err := api.GetSwagger()
+	swagger, err := api.GetSpec()
 	if err != nil {
 		return nil, fmt.Errorf("server: load OpenAPI spec: %w", err)
 	}
@@ -187,7 +187,27 @@ func New(d Deps) (*Server, error) {
 	authed := engine.Group("")
 	authed.Use(middleware.Auth(d.AuthProvider))
 	authed.Use(validatorMW)
-	api.RegisterHandlersWithOptions(authed, api.NewStrictHandler(d.Handlers, nil), api.GinServerOptions{
+	// oapi-codegen v2.7.x made the strict handler's error paths
+	// configurable and defaults them to writing `{"msg": ...}` with a
+	// hard-coded status. That default would swallow every AppError into a
+	// 500 and bypass the RFC 9457 mapping in middleware.ErrorHandler, which
+	// only runs while nothing has been written yet. These three funcs
+	// reproduce the pre-2.7 generated behaviour: record the error, set the
+	// status, write no body.
+	strictOpts := api.StrictGinServerOptions{
+		RequestErrorHandlerFunc: func(c *gin.Context, err error) {
+			c.Status(http.StatusBadRequest)
+			_ = c.Error(err)
+		},
+		HandlerErrorFunc: func(c *gin.Context, err error) {
+			_ = c.Error(err)
+			c.Status(http.StatusInternalServerError)
+		},
+		ResponseErrorHandlerFunc: func(c *gin.Context, err error) {
+			_ = c.Error(err)
+		},
+	}
+	api.RegisterHandlersWithOptions(authed, api.NewStrictHandlerWithOptions(d.Handlers, nil, strictOpts), api.GinServerOptions{
 		ErrorHandler: paramParseErrorHandler,
 	})
 

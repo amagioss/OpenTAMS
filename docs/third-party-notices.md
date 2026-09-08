@@ -28,7 +28,7 @@ go list -m -f '{{.Path}} {{.Version}} {{.Dir}}' all
 | `github.com/aws/aws-sdk-go-v2/credentials` | v1.19.15 | Apache-2.0 |
 | `github.com/aws/smithy-go` | v1.25.0 | Apache-2.0 |
 | `github.com/aws/aws-sdk-go-v2/service/s3` | v1.99.1 | Apache-2.0 |
-| `github.com/getkin/kin-openapi` | v0.133.0 | MIT |
+| `github.com/getkin/kin-openapi` | v0.144.0 | MIT |
 | `github.com/gin-gonic/gin` | v1.12.0 | MIT |
 | `github.com/golang-migrate/migrate/v4` | v4.19.1 | MIT |
 | `github.com/google/uuid` | v1.6.0 | BSD-3-Clause |
@@ -49,7 +49,7 @@ generation, testing, or local development.
 
 | Module | Version | Licence | Used for |
 |---|---|---|---|
-| `github.com/oapi-codegen/oapi-codegen/v2` | v2.6.0 | Apache-2.0 | Generating `gen/api/` from the OpenAPI contract |
+| `github.com/oapi-codegen/oapi-codegen/v2` | v2.7.2 | Apache-2.0 | Generating `gen/api/` from the OpenAPI contract |
 | `github.com/stretchr/testify` | v1.11.1 | MIT | Test assertions |
 | `github.com/testcontainers/testcontainers-go` | v0.42.0 | MIT | Integration tests against real Postgres and S3 |
 | `github.com/testcontainers/testcontainers-go/modules/postgres` | v0.42.0 | MIT | Integration tests against real Postgres |

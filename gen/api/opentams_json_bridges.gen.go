@@ -9,10 +9,10 @@
 
 package api
 
-func (r GetFlow200JSONResponse) MarshalJSON() ([]byte, error) {
-	return Flow(r).MarshalJSON()
+func (r PutFlowTagJSONRequestBody) MarshalJSON() ([]byte, error) {
+	return PutFlowTagJSONBody(r).MarshalJSON()
 }
 
-func (r PutFlow201JSONResponse) MarshalJSON() ([]byte, error) {
-	return Flow(r).MarshalJSON()
+func (r PutSourceTagJSONRequestBody) MarshalJSON() ([]byte, error) {
+	return PutSourceTagJSONBody(r).MarshalJSON()
 }
