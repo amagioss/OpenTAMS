@@ -110,15 +110,22 @@ lint: ## Run golangci-lint with the strict project config
 fmt: ## Apply gofmt and goimports via golangci-lint formatters
 	$(call golangci,fmt)
 
-vuln-gate: ## Fail on reachable advisories not accepted in .govulncheck-allow.yaml
-	./scripts/govulncheck-gate.sh
+vuln-gate: ## Fail on any advisory reachable from our code
+	# Same command as `vuln`. It is a separate target because `ci` depends on
+	# it and because the name says what it is for. govulncheck exits non-zero
+	# only for advisories it can trace into our code, so this gate is already
+	# reachability-aware; advisories in modules we never call do not fail it.
+	#
+	# There is deliberately no suppression mechanism. If an advisory cannot be
+	# fixed immediately the gate goes red and stays red, which is the signal.
+	# Releases do not run this target, so a red gate does not block a release.
+	$(GO) run $(GOVULNCHECK) ./...
 
 vuln: ## Report vulnerabilities govulncheck can reach from our code
 	# Exits non-zero only on advisories reachable from OpenTAMS code.
 	# Advisories in modules we require but never call are reported in the
 	# summary and do not fail the target -- upgrading for those is a
-	# judgement call, not a gate. Anything reachable and not yet fixed is
-	# listed, with its reason, in .govulncheck-allow.yaml
+	# judgement call, not a gate.
 	$(GO) run $(GOVULNCHECK) ./...
 
 integration: ## Integration tests (testcontainers; also runs on every PR)

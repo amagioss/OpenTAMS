@@ -65,10 +65,11 @@ jobs:
         run: go vet ./...
 
       - name: Vulnerability gate
-        # Fails on any advisory govulncheck can trace from OpenTAMS code that
-        # is not justified in .govulncheck-allow.yaml. Runs before the tests
-        # so a newly-disclosed advisory is not buried under test output.
-        # Needs no Docker; `make vuln` prints the unfiltered report.
+        # Fails on any advisory govulncheck can trace from OpenTAMS code.
+        # Runs before the tests so a newly-disclosed advisory is not buried
+        # under test output. There is no suppression list: a red gate means
+        # an advisory is reachable and unfixed. It does not block releases --
+        # release.yml does not run this. Needs no Docker.
         run: make vuln-gate
 
       - name: Unit tests (race + coverage)
