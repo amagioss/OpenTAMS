@@ -39,7 +39,7 @@ go list -m -f '{{.Path}} {{.Version}} {{.Dir}}' all
 | `github.com/prometheus/client_model` | v0.6.2 | Apache-2.0 |
 | `github.com/spf13/cobra` | v1.10.2 | Apache-2.0 |
 | `go.uber.org/zap` | v1.27.1 | MIT |
-| `golang.org/x/sync` | v0.21.0 | BSD-3-Clause |
+| `golang.org/x/sync` | v0.22.0 | BSD-3-Clause |
 | `gopkg.in/yaml.v3` | v3.0.1 | MIT AND Apache-2.0 (dual) |
 
 ## Build- and test-only dependencies
@@ -53,7 +53,7 @@ generation, testing, or local development.
 | `github.com/stretchr/testify` | v1.11.1 | MIT | Test assertions |
 | `github.com/testcontainers/testcontainers-go` | v0.42.0 | MIT | Integration tests against real Postgres and S3 |
 | `github.com/testcontainers/testcontainers-go/modules/postgres` | v0.42.0 | MIT | Integration tests against real Postgres |
-| `golang.org/x/tools` | v0.47.0 | BSD-3-Clause | Code generation tooling |
+| `golang.org/x/tools` | v0.48.0 | BSD-3-Clause | Code generation tooling |
 
 `github.com/oapi-codegen/runtime` is the exception in that pairing: it is a
 library the generated code calls at request-handling time, so it *is* linked
