@@ -6,7 +6,7 @@
 # six months, that is the signal to escalate the upgrade, not to extend it.
 #
 # `make vuln` fails on any reachable advisory NOT listed here, so this file is
-# what keeps the gate useful rather than permanently red. Current status:
-# docs/vulnerability-status.md
+# what keeps the gate useful rather than permanently red. This file is the
+# status: an empty list means nothing reachable is unfixed.
 
 accepted: []

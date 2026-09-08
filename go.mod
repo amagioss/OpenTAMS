@@ -49,8 +49,7 @@ require (
 // `go mod tidy` preserves these: it keeps an explicit require above the
 // graph minimum. They move only if someone edits them deliberately, or
 // if a future dependency change means nothing needs the module at all.
-// `make vuln` is the check that catches a regression -- see
-// docs/vulnerability-status.md.
+// `make vuln` is the check that catches a regression.
 
 require (
 	dario.cat/mergo v1.0.2 // indirect

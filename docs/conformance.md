@@ -195,6 +195,17 @@ OpenTAMS accepts the full TAMS time-range grammar documented in the spec, includ
 
 See `internal/timerange/timerange.go` for the parser. `internal/timerange/timerange_test.go` enumerates every shape we accept and reject, including the edge cases the spec is silent on.
 
+## Tag names
+
+Tag names are free-form strings and travel in the path: `/flows/{flowId}/tags/{name}`.
+Percent-encode any character that is not safe in a path segment.
+
+One known defect: **a tag name containing a literal `%` cannot be addressed**. The router
+percent-decodes the path segment and the parameter binder then decodes it a second time,
+so `%25` arrives as `%`, fails to parse as an escape, and the request is rejected with
+`400`. By the same double decode, a name containing a literal `%20` is folded to a space.
+Names are otherwise unrestricted, and a literal `+` is preserved.
+
 ## Pagination cursor format
 
 OpenTAMS surfaces pagination through two parallel response headers:

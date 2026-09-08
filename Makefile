@@ -117,8 +117,8 @@ vuln: ## Report vulnerabilities govulncheck can reach from our code
 	# Exits non-zero only on advisories reachable from OpenTAMS code.
 	# Advisories in modules we require but never call are reported in the
 	# summary and do not fail the target -- upgrading for those is a
-	# judgement call, not a gate. Current status and the remaining
-	# blocked upgrades: docs/vulnerability-status.md
+	# judgement call, not a gate. Anything reachable and not yet fixed is
+	# listed, with its reason, in .govulncheck-allow.yaml
 	$(GO) run $(GOVULNCHECK) ./...
 
 integration: ## Integration tests (testcontainers; also runs on every PR)
