@@ -87,10 +87,9 @@ make lint           # golangci-lint with the project's strict config
 make fmt            # apply gofmt and goimports
 make integration    # integration tests (testcontainers; also runs on every PR)
 make perf           # performance budgets (testcontainers; runs nightly)
-make vuln           # govulncheck report, unfiltered
 make vuln           # fails on any advisory reachable from our code
 make docker-build   # multi-arch buildx verification (no push)
-make ci             # build + vet + lint + test (the full CI gate, locally)
+make ci             # build + vet + lint + vuln + test (the full CI gate, locally)
 make tools-install  # install pinned golangci-lint + activate pre-commit hook
 make help           # list all targets
 ```
