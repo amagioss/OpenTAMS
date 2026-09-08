@@ -72,14 +72,3 @@ mirror of generated code.
 * The tool, with the full explanation in its package comment: [`tools/genunionbridges/main.go`](../../tools/genunionbridges/main.go).
 * Its current output: [`gen/api/opentams_json_bridges.gen.go`](../../gen/api/opentams_json_bridges.gen.go).
 * Why generated code is committed: [ADR-0008](0008-commit-generated-code.md).
-
-## Update — oapi-codegen v2.7.2
-
-Upstream fixed #1250 **partially**. From generator v2.7.0 the strict-server response types
-get their `MarshalJSON` emitted directly, so the `GetFlow200JSONResponse` and
-`PutFlow201JSONResponse` bridges are no longer needed and the skip rule above drops them.
-
-Two bridges remain, for the request-body types `PutFlowTagJSONRequestBody` and
-`PutSourceTagJSONRequestBody`. Those are still declared `type X Y` with no generated
-marshaller, so the original failure mode still applies to them. The tool stays until the
-generator covers request bodies too.
