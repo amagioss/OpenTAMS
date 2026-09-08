@@ -40,6 +40,12 @@ Errors take the other path. A handler returns an `error`, and one central
 `ErrorHandler` turns it into a Problem Details body. See
 [ADR-0022](0022-rfc9457-as-the-single-error-contract.md).
 
+From generator v2.7.0 that path is configurable, and its defaults write
+`{"msg":"..."}` with a hard-coded status. The server therefore builds the handler with
+`NewStrictHandlerWithOptions` and supplies error funcs that record the error, set the
+status, and write no body — which is what keeps the single-error-contract invariant
+true.
+
 ### Consequences
 
 * Good, because the compiler enforces the contract. Removing a response from the spec

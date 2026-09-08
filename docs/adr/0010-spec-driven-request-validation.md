@@ -39,7 +39,11 @@ Two options are set deliberately:
   `SilenceServersWarning` suppresses the boot warning this causes.
 * `AuthenticationFunc` is `NoopAuthenticationFunc`. Authentication runs earlier in the
   chain, and no `AuthenticationFunc` is registered against the bearer scheme, so
-  kin-openapi's own pass would reject everything.
+  kin-openapi's own pass would reject everything. Note for anyone triaging
+  GHSA-r277-6w6q-xmqw, which reports this default as a fail-open authentication bypass:
+  it does not apply here, because kin-openapi is never the authentication decision point.
+  `middleware.Auth` runs ahead of the validator and is fail-closed — a missing header or a
+  provider error aborts with 401.
 
 The middleware runs after authentication and before the strict handlers. An
 unauthenticated caller therefore gets `401`, not `400`, and a strict handler can assume

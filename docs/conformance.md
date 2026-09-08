@@ -204,6 +204,8 @@ OpenTAMS surfaces pagination through two parallel response headers:
 
 Both headers carry the same cursor. Use whichever your client library prefers. Companion headers `X-Paging-Limit`, `X-Paging-Count`, and `X-Paging-ReverseOrder` describe the page itself.
 
+`X-Paging-NextKey` and `Link` are **absent** on the last page — their presence is the signal that another page exists. Test for presence, not for an empty value. The companion headers behave the other way: `X-Paging-Limit`, `X-Paging-Count`, `X-Paging-Timerange`, and `X-Paging-Reverse-Order` are always sent, including at zero values, so a client never has to distinguish "absent" from "zero".
+
 ## JSON response encoding
 
 Response bodies are encoded with Go's `encoding/json` defaults, which **HTML-escape** the characters `&`, `<`, and `>` as the unicode escapes `\u0026`, `\u003c`, and `\u003e`. This is most visible in presigned object-store URLs, whose signed query strings are full of `&` — they come back as `...X-Amz-Date=...\u0026X-Amz-Expires=...`.
