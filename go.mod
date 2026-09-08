@@ -25,7 +25,7 @@ require (
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.42.0
 	go.uber.org/zap v1.27.1
 	golang.org/x/sync v0.22.0
-	golang.org/x/tools v0.47.0
+	golang.org/x/tools v0.48.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -39,12 +39,16 @@ require (
 //
 //	golang.org/x/text       >= v0.39.0   GO-2026-5970
 //	golang.org/x/net        >= v0.55.0   GO-2026-5026, GO-2026-4918
-//	golang.org/x/crypto     >= v0.52.0   GO-2026-5013, -5017, -5018, -5019, -5020
+//	golang.org/x/crypto     >= v0.56.0   GO-2026-6354, GO-2026-6355
+//	                                     (also >= v0.52.0 for GO-2026-5013,
+//	                                      -5017, -5018, -5019, -5020)
 //	github.com/quic-go/quic-go   >= v0.59.1   GO-2026-5676
 //	github.com/moby/go-archive   >= v0.3.0    GO-2026-6253
 //
-// x/net and x/crypto sit above their advisory floors (at v0.56.0 and
-// v0.53.0) because x/text v0.39.0 requires those transitively.
+// Some of these sit above their advisory floor because another pinned
+// module requires a higher version transitively; `go get` refuses the
+// lower pin in that case. The floors above are the security minimum, not
+// the version in the require block.
 //
 // `go mod tidy` preserves these: it keeps an explicit require above the
 // graph minimum. They move only if someone edits them deliberately, or
@@ -161,11 +165,11 @@ require (
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/arch v0.22.0 // indirect
-	golang.org/x/crypto v0.53.0 // indirect
+	golang.org/x/crypto v0.56.0 // indirect
 	golang.org/x/mod v0.38.0 // indirect
-	golang.org/x/net v0.56.0 // indirect
+	golang.org/x/net v0.57.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/text v0.40.0 // indirect
+	golang.org/x/text v0.41.0 // indirect
 	google.golang.org/protobuf v1.36.10 // indirect
 	gopkg.in/go-jose/go-jose.v2 v2.6.3 // indirect
 )

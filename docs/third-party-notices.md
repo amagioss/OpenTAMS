@@ -53,7 +53,7 @@ generation, testing, or local development.
 | `github.com/stretchr/testify` | v1.11.1 | MIT | Test assertions |
 | `github.com/testcontainers/testcontainers-go` | v0.42.0 | MIT | Integration tests against real Postgres and S3 |
 | `github.com/testcontainers/testcontainers-go/modules/postgres` | v0.42.0 | MIT | Integration tests against real Postgres |
-| `golang.org/x/tools` | v0.47.0 | BSD-3-Clause | Code generation tooling |
+| `golang.org/x/tools` | v0.48.0 | BSD-3-Clause | Code generation tooling |
 
 `github.com/oapi-codegen/runtime` is the exception in that pairing: it is a
 library the generated code calls at request-handling time, so it *is* linked
