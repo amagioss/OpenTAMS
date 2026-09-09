@@ -471,7 +471,7 @@ All `type` URIs use the base `https://github.com/amagioss/opentams/problems/` pr
 
 [REQ-SEC-09] Secrets injectable via environment variables or mounted files.
 
-[REQ-SEC-10] Configurable request body size limits with defaults sufficient for bulk segment registration. Maximum segments per `POST /flows/{flowId}/segments` batch: 1000. Maximum list page size: 1000 items. These maximums are documented in the OpenAPI specification and enforced at runtime — requests exceeding them return 400.
+[REQ-SEC-10] Configurable request body size limits with defaults sufficient for bulk segment registration. Maximum segments per `POST /flows/{flowId}/segments` batch: 1000. Maximum list page size: 1000 items. Maximum media objects per `POST /flows/{flowId}/storage` request: 100, in either mode — each object costs a presigned-URL round trip, and the caller-supplied mode a registration lookup as well, so the bound is lower than the others. These maximums are documented in the OpenAPI specification and enforced at runtime — requests exceeding them return 400.
 
 [REQ-SEC-11] Dependency vulnerability scanning in CI.
 

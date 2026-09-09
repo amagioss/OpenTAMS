@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -28,6 +29,17 @@ type FlowReader interface {
 type ObjectStore interface {
 	GenerateUploadURL(ctx context.Context, objectID, contentType string) (string, error)
 }
+
+// MaxAllocate is the largest number of media objects one allocation
+// request may ask for, in either mode. The OpenAPI schema carries the
+// same bound, so a request over it is normally rejected by the
+// validator before reaching this package; the check in AllocateStorage
+// is a second line for callers that bypass the HTTP layer.
+//
+// Both modes cost a presigned-URL round trip per object, and the
+// caller-supplied mode additionally costs a registration lookup per
+// object, so the two share one bound rather than each having its own.
+const MaxAllocate = 100
 
 // AllocateRequest is the storage-allocation request body. Limit is
 // the number of new object IDs the server should mint
@@ -97,6 +109,11 @@ func (s *storageService) AllocateStorage(ctx context.Context, flowID uuid.UUID, 
 		return nil, err
 	}
 
+	if err := validateAllocateSize(req); err != nil {
+		s.observe("allocate", time.Since(start), err)
+		return nil, err
+	}
+
 	contentType := "application/octet-stream"
 	if flow.Codec != nil {
 		contentType = *flow.Codec
@@ -138,4 +155,26 @@ func (s *storageService) AllocateStorage(ctx context.Context, flowID uuid.UUID, 
 	}
 	s.observe("allocate", time.Since(start), nil)
 	return result, nil
+}
+
+// validateAllocateSize bounds an allocation request before any work is
+// done for it. Without the lower bound a negative limit panics
+// make(); without the upper bound a large one asks the runtime for an
+// allocation sized by the caller, which the process does not survive.
+func validateAllocateSize(req AllocateRequest) error {
+	if req.Limit != nil {
+		switch n := *req.Limit; {
+		case n < 1:
+			return apperror.New(apperror.ErrSchemaValidation,
+				fmt.Sprintf("limit must be at least 1, got %d", n))
+		case n > MaxAllocate:
+			return apperror.New(apperror.ErrSchemaValidation,
+				fmt.Sprintf("limit must not exceed %d, got %d", MaxAllocate, n))
+		}
+	}
+	if len(req.ObjectIDs) > MaxAllocate {
+		return apperror.New(apperror.ErrSchemaValidation,
+			fmt.Sprintf("object_ids must not exceed %d entries, got %d", MaxAllocate, len(req.ObjectIDs)))
+	}
+	return nil
 }

@@ -135,7 +135,7 @@ below.
 
 | Endpoint | Status | Notes |
 |---|---|---|
-| `POST /tams/v1/flows/{flowId}/storage` | Implemented | Two modes: `{"limit": N}` (server picks `object_id`s) and `{"object_ids": [...]}` (client picks; idempotent across retries). The two are mutually exclusive — supplying both is 400. Presigned URL TTL is `OBJECT_STORE_PRESIGN_EXPIRY` (default 1h). |
+| `POST /tams/v1/flows/{flowId}/storage` | Implemented | Two modes: `{"limit": N}` (server picks `object_id`s) and `{"object_ids": [...]}` (client picks; idempotent across retries). The two are mutually exclusive — supplying both is 400. Both modes are capped at 100 objects per request; above that the request is rejected with 400 rather than truncated, so ask again for the rest. `limit` below 1 is also 400. Presigned URL TTL is `OBJECT_STORE_PRESIGN_EXPIRY` (default 1h). |
 
 ## Media objects
 

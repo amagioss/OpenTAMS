@@ -247,3 +247,70 @@ func TestAllocateStorage_ObjectIDsMode_URLError(t *testing.T) {
 }
 
 func intPtr(n int) *int { return &n }
+
+// TC-SVC-STG-10: allocation size is bounded before any work is done.
+//
+// The bound matters for two distinct reasons. A negative limit reaches
+// make() and panics. A very large one reaches make() as a capacity the
+// caller chose, and the runtime does not survive being asked for it --
+// that allocation is fatal, not a recoverable panic, so the recovery
+// middleware never sees it. Neither may reach the allocation.
+func TestAllocateStorage_SizeBounds(t *testing.T) {
+	cases := []struct {
+		name string
+		req  storage.AllocateRequest
+	}{
+		{"negative limit panics make", storage.AllocateRequest{Limit: intPtr(-1)}},
+		{"zero limit allocates nothing", storage.AllocateRequest{Limit: intPtr(0)}},
+		{"limit over the cap", storage.AllocateRequest{Limit: intPtr(storage.MaxAllocate + 1)}},
+		{"limit large enough to exhaust memory", storage.AllocateRequest{Limit: intPtr(2_000_000_000)}},
+		{"object_ids over the cap", storage.AllocateRequest{ObjectIDs: make([]string, storage.MaxAllocate+1)}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := &mockFlowReader{
+				getFlowFn: func(_ context.Context, _ uuid.UUID) (*metastore.Flow, error) {
+					return okFlow(nil), nil
+				},
+			}
+			// Fails the test if the guard let the request through: no
+			// presigned URL should ever be minted for a rejected size.
+			obj := &mockObjectStore{generateUploadURLFn: func(_ context.Context, _, _ string) (string, error) {
+				t.Error("GenerateUploadURL called for an out-of-range request")
+				return "", nil
+			}}
+			svc := newSvc(t, store, obj)
+
+			_, err := svc.AllocateStorage(context.Background(), uuid.New(), tc.req)
+			if err == nil {
+				t.Fatal("expected an error, got nil")
+			}
+			var ae *apperror.AppError
+			if !errors.As(err, &ae) || ae.Code != apperror.ErrSchemaValidation {
+				t.Fatalf("expected %s, got %v", apperror.ErrSchemaValidation, err)
+			}
+		})
+	}
+}
+
+// The cap applies to both modes: they cost the same presigned-URL round
+// trip per object, and the caller-supplied mode additionally costs a
+// registration lookup per object.
+func TestAllocateStorage_AtTheCap(t *testing.T) {
+	store := &mockFlowReader{
+		getFlowFn: func(_ context.Context, _ uuid.UUID) (*metastore.Flow, error) {
+			return okFlow(nil), nil
+		},
+	}
+	obj := &mockObjectStore{generateUploadURLFn: okUploadURL}
+	svc := newSvc(t, store, obj)
+
+	result, err := svc.AllocateStorage(context.Background(), uuid.New(),
+		storage.AllocateRequest{Limit: intPtr(storage.MaxAllocate)})
+	if err != nil {
+		t.Fatalf("the cap itself must be accepted, got: %v", err)
+	}
+	if len(result) != storage.MaxAllocate {
+		t.Fatalf("expected %d objects, got %d", storage.MaxAllocate, len(result))
+	}
+}

@@ -149,13 +149,13 @@ func segmentRedirectHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	allowedBase := envOr("OPENTAMSPLAY_OBJECT_BASE", "http://localhost:9000")
-	if !strings.HasPrefix(decoded, allowedBase) {
-		http.Error(w, "redirect target outside allowed base "+allowedBase, http.StatusForbidden)
+	if err := targetWithinBase(decoded, allowedBase); err != nil {
+		http.Error(w, "redirect target outside allowed base "+allowedBase+": "+err.Error(), http.StatusForbidden)
 		return
 	}
-	// gosec G710: the redirect target is constrained to OPENTAMSPLAY_OBJECT_BASE
-	// above, so this is not an open redirector. Demo tool; production code
-	// should layer in CSRF protection on top.
+	// gosec G710: targetWithinBase constrains the redirect to
+	// OPENTAMSPLAY_OBJECT_BASE above, so this is not an open redirector.
+	// Demo tool; production code should layer in CSRF protection on top.
 	http.Redirect(w, r, decoded, http.StatusFound) //nolint:gosec // see comment
 }
 
@@ -249,4 +249,46 @@ func envOr(k, def string) string {
 
 func logf(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, format+"\n", args...)
+}
+
+// targetWithinBase reports whether a redirect target really belongs to
+// the allowed base, by comparing parsed URLs rather than raw strings.
+//
+// A string prefix test is not enough. With a base of
+// http://localhost:9000 it admits http://localhost:9000.evil.com,
+// because the host simply continues past the port, and
+// http://localhost:9000@evil.com, where everything before the "@" is
+// userinfo and the real host is evil.com. Both redirect off-host while
+// passing a prefix check.
+//
+// Scheme and host must match exactly. The path must match at a
+// separator, so /bucket is not treated as a prefix of /bucket-other.
+// Userinfo on the target is refused outright: it has no legitimate use
+// here and is the readable half of the second bypass above.
+func targetWithinBase(target, base string) error {
+	t, err := url.Parse(target)
+	if err != nil {
+		return fmt.Errorf("target is not a URL: %w", err)
+	}
+	b, err := url.Parse(base)
+	if err != nil {
+		return fmt.Errorf("base is not a URL: %w", err)
+	}
+	if !t.IsAbs() {
+		return errors.New("target is not absolute")
+	}
+	if t.User != nil {
+		return errors.New("target carries userinfo")
+	}
+	if !strings.EqualFold(t.Scheme, b.Scheme) {
+		return fmt.Errorf("scheme %q is not %q", t.Scheme, b.Scheme)
+	}
+	if !strings.EqualFold(t.Host, b.Host) {
+		return fmt.Errorf("host %q is not %q", t.Host, b.Host)
+	}
+	basePath := strings.TrimSuffix(b.Path, "/")
+	if basePath != "" && t.Path != basePath && !strings.HasPrefix(t.Path, basePath+"/") {
+		return fmt.Errorf("path %q is outside %q", t.Path, basePath)
+	}
+	return nil
 }
