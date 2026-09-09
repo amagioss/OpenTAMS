@@ -4,13 +4,15 @@
     "type": "object",
     "properties": {
         "limit": {
-            "description": "Allocate this many new Media Objects, with server-generated identifiers. The server may apply its own maximum; if the requested limit exceeds the maximum, the server allocates up to its maximum and the client must page for more.",
-            "type": "integer"
+            "description": "Allocate this many new Media Objects, with server-generated identifiers. Maximum 100 per request. A request above the maximum is rejected with 400 rather than truncated, so a partial allocation is never mistaken for a complete one; the client asks again for the rest.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
         },
         "object_ids": {
-            "description": "Array of client-specified object_ids to allocate. Maximum 1000 per request. The supplied object_ids must not already exist in this TAMS service instance. A 400 response is returned if any supplied object_id already exists. Clients may re-request an object_id that was previously allocated but has not yet been registered as a segment (e.g. after a presigned URL expired).",
+            "description": "Array of client-specified object_ids to allocate. Maximum 100 per request. The supplied object_ids must not already exist in this TAMS service instance. A 400 response is returned if any supplied object_id already exists. Clients may re-request an object_id that was previously allocated but has not yet been registered as a segment (e.g. after a presigned URL expired).",
             "type": "array",
-            "maxItems": 1000,
+            "maxItems": 100,
             "items": {
                 "type": "string"
             }

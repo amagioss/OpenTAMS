@@ -83,7 +83,7 @@ as an architecture decision under [`docs/adr/`](../../docs/adr/).
 |---|---|
 | `flow-segment-bulk-failure.json` | Per-segment `error` is an RFC 9457 Problem Details subset (`type` / `title` / `detail`) and is required, rather than the TAMS `error` type (`type` / `summary` / `time`). See [ADR-0023](../../docs/adr/0023-rfc9457-problem-details-for-per-segment-failures.md). |
 | `flow-segment-post.json` | `object_timerange` has no server-computed default. Upstream defaults it to `timerange - ts_offset`; OpenTAMS stores nothing when the client omits it. |
-| `flow-storage-post.json` | Exactly one of `limit` or `object_ids` is required, and `object_ids` is capped at 1000 items. |
+| `flow-storage-post.json` | Exactly one of `limit` or `object_ids` is required, and both are capped at 100 objects per request (`limit` by `maximum`, `object_ids` by `maxItems`). Upstream bounds neither and says the server truncates a `limit` above its own maximum; OpenTAMS rejects with 400 instead, per [REQ-SEC-10](../../docs/requirements.md), so a truncated allocation is never mistaken for a complete one. |
 
 ## The OpenTAMS-only file
 
