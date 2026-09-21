@@ -1,9 +1,10 @@
 # Support
 
-OpenTAMS is an open-source project maintained by
-[Amagi Media Labs Ltd.](https://www.amagi.com) and external contributors. There
-is no paid support offering attached to this repository, and no service-level
-agreement. Everything below is best-effort by volunteers and maintainers.
+OpenTAMS is an open-source project developed and maintained by
+[Amagi Media Labs Limited](https://www.amagi.com). This software is provided
+"AS IS", without technical support, warranties, or guarantees of any kind
+whatsoever. There is no paid support offering attached to this repository, and
+no service-level agreement. Everything below is best-effort by the maintainers.
 
 ## Pick the right channel
 

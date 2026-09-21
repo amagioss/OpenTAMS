@@ -1,0 +1,30 @@
+==============================================================================
+Zero-Clause BSD License Components
+==============================================================================
+
+OpenTAMS uses the third-party components listed below under the Zero-Clause BSD License.
+Each component remains subject to its own copyright notice, reproduced with
+the component. The license terms follow the component list and apply to every
+component listed, except where an entry reproduces its own text.
+
+------------------------------------------------------------------------------
+Module:    github.com/woodsbury/decimal128
+Version:   v1.3.0
+License:   Zero-Clause BSD License
+SPDX-License-Identifier: 0BSD
+Copyright: Copyright (c) 2022 Wade Smith
+
+==============================================================================
+License Terms — Zero-Clause BSD License
+==============================================================================
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
+AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
+LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
+OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS SOFTWARE.

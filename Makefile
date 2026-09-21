@@ -8,7 +8,7 @@
 .PHONY: help compile build build-server build-cli install-cli vet test test-short coverage lint fmt vuln vuln-gate integration perf \
         docker-build docker-build-local ci tools-install clean \
         release-check snapshot release-dry-run \
-        api-lint api-bundle api-gen api-check \
+        api-lint api-bundle api-gen api-check notices notices-check \
         env stack stack-down run install-demo-deps
 
 # --- knobs ------------------------------------------------------------------
@@ -193,7 +193,14 @@ api-check: ## Fail if the committed bundle or generated code is stale
 	if [ $$rc -eq 0 ]; then echo "api contract, bundle, and generated code agree"; fi; \
 	exit $$rc
 
-ci: compile vet lint vuln-gate test ## Run the full CI gate locally (no integration)
+# --- licence notices --------------------------------------------------------
+notices: ## Regenerate THIRD-PARTY-NOTICES from the module cache
+	$(GO) run ./tools/gennotices
+
+notices-check: ## Fail if THIRD-PARTY-NOTICES is stale after a dependency change
+	$(GO) run ./tools/gennotices -check
+
+ci: compile vet lint vuln-gate notices-check test ## Run the full CI gate locally (no integration)
 
 tools-install: ## Install pinned golangci-lint, goreleaser, and wire up the repo pre-commit hook
 	$(GO) install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_VERSION)

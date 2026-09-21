@@ -269,14 +269,16 @@ The Kubernetes manifests cover the common case. A broader production deployment 
 
 ## Contributing
 
-OpenTAMS is open to external contributors. Start with [`CONTRIBUTING.md`](CONTRIBUTING.md) — it covers the one-command local setup, build/test commands, commit conventions, and the PR review process.
+Code contributions are accepted only from Amagi Media Labs Limited personnel. We do not currently accept pull requests or code contributions from outside the organisation. Bug reports and feature requests are welcome from anyone through GitHub issues.
+
+Amagi engineers should start with [`CONTRIBUTING.md`](CONTRIBUTING.md) — it covers the one-command local setup, build/test commands, commit conventions, and the PR review process.
 
 - **Bugs**: [open a bug report](https://github.com/amagioss/opentams/issues/new?template=bug_report.yml).
-- **Features**: [open a feature request](https://github.com/amagioss/opentams/issues/new?template=feature_request.yml). For non-trivial proposals, please file the issue before sending a PR — the project tracks every behavioural decision against the requirements spec.
+- **Features**: [open a feature request](https://github.com/amagioss/opentams/issues/new?template=feature_request.yml). The project tracks every behavioural decision against the requirements spec, so the issue is where a proposal gets discussed.
 - **Security issues**: please **do not** open a public issue. See [`SECURITY.md`](SECURITY.md) for the private reporting channels (GitHub Security Advisories preferred; email fallback to `security@amagi.com`).
 - **Code-of-Conduct concerns**: see [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md). Reports go to `conduct@amagi.com`.
 
-All contributions are accepted under the [Apache 2.0 license](LICENSE).
+You are welcome to fork this repository to add features, address issues, or adapt the implementation to your own requirements, under the [Apache 2.0 license](LICENSE). Amagi trademarks are not licensed with it — see the Trademarks section of [`NOTICE`](NOTICE).
 
 ---
 
@@ -291,6 +293,6 @@ grateful for that work. OpenTAMS is an independent implementation — see
 
 ## License
 
-Copyright 2026 Amagi Media Labs Ltd. and the OpenTAMS Authors.
+Copyright © 2026 Amagi Media Labs Limited.
 
 Licensed under the Apache License, Version 2.0. See [`LICENSE`](LICENSE) for the full text.
