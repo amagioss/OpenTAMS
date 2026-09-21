@@ -1,22 +1,29 @@
 Amagi Media Labs Limited TAMS V8.0 Implementation (OpenTAMS)
 Copyright © 2026 Amagi Media Labs Limited
 
-This product includes software developed at Amagi Media Labs Limited
-(https://www.amagi.com).
+This repository contains Amagi Media Labs Limited's implementation of the
+Time-Addressable Media Store (TAMS) Specification, published by the British
+Broadcasting Corporation (BBC), available at <https://github.com/bbc/tams>.
 
-This product includes software developed by the British Broadcasting
-Corporation (https://github.com/bbc/tams), licensed under the Apache License,
-Version 2.0. The JSON Schema files under api/schemas/ are derived from the
-Time-Addressable Media Store (TAMS) Specification at tag 8.0 (commit
-b386c43f97f05274d838066c62eb1d9dad351ea6). They are MODIFIED copies, not an
-upstream mirror: 17 of the 41 vendored files differ from upstream, and one file
-has no upstream counterpart. Every modification is catalogued in
-api/schemas/README.md.
+The JSON Schema files under api/schemas/ are derived from that specification at
+tag 8.0 (commit b386c43f97f05274d838066c62eb1d9dad351ea6). They are MODIFIED
+copies, not an upstream mirror: 17 of the 41 vendored files differ from
+upstream, and one file has no upstream counterpart. Every modification is
+catalogued in api/schemas/README.md.
 
-This product includes third-party open-source software components. Each
-component remains subject to its own copyright and license terms. The
-applicable components, versions, licenses, copyright notices, and license
-conditions are identified in the THIRD-PARTY-NOTICES directory.
+By making this implementation publicly available, we aim to support TAMS
+interoperability and broader adoption. It provides a practical reference that
+users can examine, test, operate, and adapt to their own needs.
+
+
+License
+-------
+
+This OpenTAMS software project is licensed under the Apache License 2.0.
+
+You may use, modify, and distribute this software in accordance with the terms
+of the license. See the LICENSE file for full text of Apache 2.0 License.
+
 
 Trademarks
 ----------
@@ -34,3 +41,48 @@ All third-party trademarks, product names, logos, and other marks referenced in
 this repository are the property of their respective owners. Their use is for
 identification and informational purposes only and does not imply endorsement
 or affiliation.
+
+
+Third-Party Open Source Software Components
+-------------------------------------------
+
+OpenTAMS uses third-party open-source software components licensed under the
+MIT License, BSD 3-Clause License, Zero-Clause BSD (0BSD) License, and Apache
+License 2.0.
+
+Applicable third-party copyright notices, license terms, and attribution
+information are provided in the THIRD-PARTY-NOTICES.txt file.
+
+Third-party components remain the property of their respective copyright
+holders and are provided under their respective license terms.
+
+
+Contributions
+-------------
+
+This repository is maintained primarily for our internal product and
+engineering requirements.
+
+1. Contribution Policy: Code contributions are accepted only from Amagi Media
+   Labs Limited personnel. We do not currently accept pull requests or code
+   contributions from outside the organisation. Bug reports and feature
+   requests are welcome from anyone through GitHub issues.
+
+2. Development Priorities: Feature development and enhancements are driven by
+   our internal product requirements.
+
+3. Support & Warranty: This software is provided "AS IS", without technical
+   support, warranties, or guarantees of any kind whatsoever.
+
+4. Forking & Customization: You are welcome to fork this repository to add
+   features, address issues, or adapt the implementation to your own
+   requirements.
+
+
+Acknowledgement
+---------------
+
+This implementation is based on the TAMS Specification developed by the BBC.
+
+For more information about Amagi Media Labs Limited, and our products, visit
+<https://www.amagi.com/>.

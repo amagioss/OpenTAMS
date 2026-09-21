@@ -1,5 +1,5 @@
-// Command gennotices regenerates the THIRD-PARTY-NOTICES directory from the
-// Go module cache.
+// Command gennotices regenerates THIRD-PARTY-NOTICES.txt from the Go module
+// cache.
 //
 // Scope is every module linked into the released artefacts — the modules
 // reachable from ./cmd/..., which is what ends up inside the opentams and
@@ -8,7 +8,7 @@
 //
 // For each module the tool reads the licence file shipped in the module
 // cache, classifies it, and pulls out the copyright notices. Modules are then
-// grouped by licence family, one output file each.
+// grouped by licence family, one section each.
 //
 // Within a family the licence text is printed once, after the component list,
 // rather than repeated under every module. That is the standard attribution
@@ -18,12 +18,14 @@
 // exception — its text is reproduced verbatim in full, so a locally modified
 // or unusual licence can never be silently collapsed into the standard one.
 //
-//	go run ./tools/gennotices          # rewrite THIRD-PARTY-NOTICES/
+//	go run ./tools/gennotices          # rewrite THIRD-PARTY-NOTICES.txt
 //	go run ./tools/gennotices -check   # fail if the committed files are stale
 package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -36,7 +38,7 @@ import (
 )
 
 const (
-	outDir      = "THIRD-PARTY-NOTICES"
+	outFile     = "THIRD-PARTY-NOTICES.txt"
 	ownModule   = "github.com/amagioss/opentams"
 	copyrightCO = "Copyright © 2026 Amagi Media Labs Limited"
 )
@@ -50,9 +52,13 @@ var familyOrder = []string{"MIT", "Apache-2.0", "BSD-3-Clause", "BSD-2-Clause", 
 // has exactly one; a dual-licensed module has several, either as separate
 // files or as several licences inside a single file.
 type licenseDoc struct {
-	file      string
-	family    string
-	text      string
+	file   string
+	family string
+	text   string
+	// sha256 of the licence file as shipped in the module cache. It anchors
+	// this entry to an exact upstream file, so a silent relicensing upstream
+	// shows up as a changed digest rather than passing unnoticed.
+	sha256    string
 	canonical bool
 	combined  bool
 }
@@ -125,26 +131,30 @@ func main() {
 			strings.Join(unknown, "\n  ")))
 	}
 
-	files := map[string]string{
-		"README.md": renderIndex(byFamily, len(mods)),
-	}
-	for fam, list := range byFamily {
+	for fam := range byFamily {
+		list := byFamily[fam]
 		sort.Slice(list, func(i, j int) bool { return list[i].mod.Path < list[j].mod.Path })
-		files[fam+".txt"] = renderFamily(fam, list)
 	}
 
-	dir := filepath.Join(root, outDir)
+	want := render(byFamily, len(mods))
+	path := filepath.Join(root, outFile)
+
 	if *check {
-		if err := verify(dir, files); err != nil {
-			fatal(err)
+		got, err := os.ReadFile(path)
+		if err != nil {
+			fatal(fmt.Errorf("%s is missing, run `make notices`: %w", outFile, err))
 		}
-		fmt.Printf("THIRD-PARTY-NOTICES is up to date (%d modules, %d families)\n", len(mods), len(byFamily))
+		if string(got) != want {
+			fatal(fmt.Errorf("%s is stale, run `make notices`", outFile))
+		}
+		fmt.Printf("%s is up to date (%d modules, %d licence families)\n", outFile, len(mods), len(byFamily))
 		return
 	}
-	if err := write(dir, files); err != nil {
+	if err := os.WriteFile(path, []byte(want), 0o644); err != nil {
 		fatal(err)
 	}
-	fmt.Printf("wrote %s: %d modules across %d licence families\n", outDir, len(mods), len(byFamily))
+	fmt.Printf("wrote %s: %d modules across %d licence families, %d KiB\n",
+		outFile, len(mods), len(byFamily), len(want)/1024)
 }
 
 func repoRoot() (string, error) {
@@ -233,10 +243,12 @@ func (m *module) classify() error {
 				return fmt.Errorf("unrecognised licence text in %s", name)
 			}
 			for _, fam := range fams {
+				sum := sha256.Sum256(b)
 				m.licenses = append(m.licenses, licenseDoc{
 					file:     name,
 					family:   fam,
 					text:     text,
+					sha256:   hex.EncodeToString(sum[:]),
 					combined: len(fams) > 1,
 					// A file covering several licences can never be replaced
 					// by one family's shared text, so it is always reproduced.
@@ -522,34 +534,43 @@ func matchesCanonical(fam, text string) bool {
 	return canonicalBody(fam, text) == canonicalBody(fam, tmpl)
 }
 
-func renderIndex(byFamily map[string][]entry, total int) string {
+// render builds the whole THIRD-PARTY-NOTICES file: a preamble, a summary
+// table, then one section per licence family in familyOrder.
+func render(byFamily map[string][]entry, total int) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "# Third-Party Software Licenses\n\n")
-	fmt.Fprintf(&b, "OpenTAMS (%s) is licensed under the Apache License 2.0.\nThe full text is in the [`LICENSE`](../LICENSE) file at the root of this\nrepository.\n\n", copyrightCO)
-	fmt.Fprintf(&b, "OpenTAMS uses third-party open-source software components. Each component\nremains subject to its respective copyright and license terms.\n\n")
-	fmt.Fprintf(&b, "The files in this directory identify the applicable third-party components,\nversions, licenses, copyright notices, and license conditions.\n\n")
+	rule := strings.Repeat("=", 78)
 
-	fmt.Fprintf(&b, "| License | Components | Notices |\n|---|---|---|\n")
+	fmt.Fprintf(&b, "%s\nThird-Party Software Licenses\n%s\n\n", rule, rule)
+	fmt.Fprintf(&b, "OpenTAMS, %s, is licensed under the\nApache License 2.0. Its full text is in the LICENSE file at the root of this\nrepository.\n\n", copyrightCO)
+	fmt.Fprintf(&b, "OpenTAMS uses third-party open-source software components. Each component\nremains subject to its respective copyright and license terms.\n\n")
+	fmt.Fprintf(&b, "The following information identifies the applicable third-party components,\nversions, licenses, copyright notices, and license conditions.\n\n")
+
+	fmt.Fprintf(&b, "Scope\n-----\n\n")
+	fmt.Fprintf(&b, "These are the %d modules linked into the released opentams and tamsctl\nbinaries and the published container images: every module reachable from\n./cmd/... . Go links statically, so all of them are redistributed inside\nthose artefacts.\n\n", total)
+	fmt.Fprintf(&b, "Modules used only to build or test OpenTAMS are not listed. They are never\nredistributed, so no attribution obligation attaches to them.\n\n")
+
+	fmt.Fprintf(&b, "Summary\n-------\n\n")
+	for _, fam := range familyOrder {
+		if list, ok := byFamily[fam]; ok {
+			fmt.Fprintf(&b, "  %-14s %3d %s\n", fam, len(list), plural(len(list), "component", "components"))
+		}
+	}
+	fmt.Fprintf(&b, "\nA dual-licensed module is listed under every license it is distributed\nunder, so these counts add up to more than %d.\n\n", total)
+
+	fmt.Fprintf(&b, "How to read this file\n---------------------\n\n")
+	fmt.Fprintf(&b, "Each component gives its module path, version, license, SPDX identifier and\ncopyright notice, followed by the license text that governs it.\n\n")
+	fmt.Fprintf(&b, "Components under the Apache License 2.0 do not repeat its text. OpenTAMS is\nitself licensed under Apache 2.0, so a copy travels with every artefact as the\nLICENSE file, which is what section 4(a) asks for. What does vary per module\nis the attribution required by section 4(d), and that is reproduced in full\nwith each component. An Apache-licensed module whose license file is not the\nstandard text is reproduced as well.\n\n")
+	fmt.Fprintf(&b, "Every other component reproduces its own license file verbatim, because the\nnotice that has to travel with it is specific to that module: its copyright\nholder, and for BSD 3-Clause the entity named in clause 3.\n\n")
+
+	fmt.Fprintf(&b, "This file is generated from the Go module cache by `make notices`. Do not\nedit it by hand. `make notices-check` fails if it is stale, and CI runs that\ncheck on every pull request.\n\n")
+
 	for _, fam := range familyOrder {
 		list, ok := byFamily[fam]
 		if !ok {
 			continue
 		}
-		fmt.Fprintf(&b, "| %s | %d | [`%s.txt`](%s.txt) |\n", fam, len(list), fam, fam)
+		b.WriteString(renderFamily(fam, list))
 	}
-	fmt.Fprintf(&b, "\nA dual-licensed module is listed under every license it is distributed\nunder, so these counts add up to more than the module total below.\n\n")
-
-	fmt.Fprintf(&b, "## Scope\n\n")
-	fmt.Fprintf(&b, "These are the %d modules linked into the released `opentams` and `tamsctl`\nbinaries and the published container images — every module reachable from\n`./cmd/...`. Go links statically, so all of them are redistributed inside\nthose artefacts.\n\n", total)
-	fmt.Fprintf(&b, "Modules used only to build or test OpenTAMS are not listed. They are never\nredistributed, so no attribution obligation attaches to them.\n\n")
-
-	fmt.Fprintf(&b, "## Layout\n\n")
-	fmt.Fprintf(&b, "Each file lists its components first, with the module path, version and\ncopyright notice, and then gives the license terms once. A component whose\nlicense text differs from the standard text for its family is reproduced in\nfull under its own entry instead.\n\n")
-
-	fmt.Fprintf(&b, "## Regenerating\n\n")
-	fmt.Fprintf(&b, "These files are generated from the Go module cache. Do not edit them by hand.\n\n")
-	fmt.Fprintf(&b, "```bash\nmake notices        # rewrite this directory\nmake notices-check  # fail if it is stale\n```\n\n")
-	fmt.Fprintf(&b, "Regenerate after any dependency change. CI runs `make notices-check`.\n")
 	return b.String()
 }
 
@@ -558,9 +579,15 @@ func renderFamily(fam string, entries []entry) string {
 	rule := strings.Repeat("=", 78)
 	sub := strings.Repeat("-", 78)
 
-	fmt.Fprintf(&b, "%s\n%s Components\n%s\n\n", rule, familyHeading(fam), rule)
-	fmt.Fprintf(&b, "OpenTAMS uses the third-party components listed below under the %s.\n", familyProse(fam))
-	fmt.Fprintf(&b, "Each component remains subject to its own copyright notice, reproduced with\nthe component. The license terms follow the component list and apply to every\ncomponent listed, except where an entry reproduces its own text.\n\n")
+	fmt.Fprintf(&b, "\n%s\n%s Components\n%s\n\n", rule, familyHeading(fam), rule)
+	fmt.Fprintf(&b, "OpenTAMS uses the %d %s listed below under the %s.\n\n",
+		len(entries), plural(len(entries), "component", "components"), familyProse(fam))
+
+	if fam == "Apache-2.0" {
+		fmt.Fprintf(&b, "License Terms:\n\n")
+		fmt.Fprintf(&b, "Licensed under the Apache License, Version 2.0. See the applicable Apache 2.0\nLicense text in the LICENSE file at the root of this repository, also\navailable at http://www.apache.org/licenses/LICENSE-2.0\n\n")
+		fmt.Fprintf(&b, "The attribution notices required by section 4(d) are reproduced with each\ncomponent below.\n\n")
+	}
 
 	for _, e := range entries {
 		m, lic := e.mod, e.lic
@@ -582,6 +609,7 @@ func renderFamily(fam string, entries []entry) string {
 		if m.inheritedFrom != "" {
 			fmt.Fprintf(&b, "           (this module ships no notice of its own; the notice above is\n            that of %s, the project that publishes it)\n", m.inheritedFrom)
 		}
+		fmt.Fprintf(&b, "License file: %s (sha256 %s)\n", lic.file, lic.sha256)
 		if len(m.licenses) > 1 {
 			fmt.Fprintf(&b, "\nThis module is dual-licensed under %s, and is listed under\neach. This entry covers its %s file.\n",
 				strings.Join(licenseFamilies(m), " and "), lic.file)
@@ -590,25 +618,28 @@ func renderFamily(fam string, entries []entry) string {
 			fmt.Fprintf(&b, "\nAttribution notices, reproduced from this module's NOTICE file as required\nby Apache License 2.0 section 4(d):\n\n")
 			fmt.Fprintf(&b, "%s\n", indent(m.noticeText, "    "))
 		}
-		switch {
-		case lic.combined:
-			fmt.Fprintf(&b, "\nThis component's %s file covers more than one license and is reproduced\nhere in full:\n\n", lic.file)
-			fmt.Fprintf(&b, "%s\n", indent(strings.TrimRight(lic.text, "\n"), "    "))
-		case !lic.canonical:
-			fmt.Fprintf(&b, "\nThis component's license text differs from the standard text below and is\nreproduced here in full:\n\n")
+		if reproduce(fam, lic) {
+			fmt.Fprintf(&b, "\nLicense Terms, reproduced from this module's %s file:\n\n", lic.file)
 			fmt.Fprintf(&b, "%s\n", indent(strings.TrimRight(lic.text, "\n"), "    "))
 		}
 		fmt.Fprintf(&b, "\n")
 	}
-
-	fmt.Fprintf(&b, "%s\nLicense Terms — %s\n%s\n\n", rule, familyField(fam), rule)
-	if fam == "Apache-2.0" {
-		fmt.Fprintf(&b, "Licensed under the Apache License, Version 2.0. The full license text is in\nthe LICENSE file at the root of this repository, and at\nhttp://www.apache.org/licenses/LICENSE-2.0\n\n")
-		fmt.Fprintf(&b, "The attribution notices required by section 4(d) are reproduced with each\ncomponent above.\n")
-		return b.String()
-	}
-	fmt.Fprintf(&b, "%s\n", strings.TrimRight(licenseTemplates[fam], "\n"))
 	return b.String()
+}
+
+// reproduce decides whether a component's own licence text is printed.
+//
+// Everything is reproduced except a stock Apache-2.0 licence file. Repeating
+// the Apache text would add roughly 10 KB per module for ~30 modules, all of
+// it identical to the repository's own LICENSE, which already travels with
+// every artefact and is what section 4(a) requires. A non-standard or
+// multi-licence Apache file is still reproduced, because then the text is no
+// longer the one in LICENSE.
+func reproduce(fam string, lic licenseDoc) bool {
+	if fam != "Apache-2.0" {
+		return true
+	}
+	return lic.combined || !lic.canonical
 }
 
 // familyNames carries the three ways each licence has to be named: the
@@ -637,6 +668,13 @@ func licenseFamilies(m module) []string {
 	return out
 }
 
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
+}
+
 func familyHeading(fam string) string { return familyNames[fam].heading }
 func familyField(fam string) string   { return familyNames[fam].field }
 func familyProse(fam string) string   { return familyNames[fam].prose }
@@ -651,54 +689,6 @@ func indent(s, pad string) string {
 		lines[i] = pad + l
 	}
 	return strings.Join(lines, "\n")
-}
-
-func write(dir string, files map[string]string) error {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	existing, err := os.ReadDir(dir)
-	if err != nil {
-		return err
-	}
-	for _, e := range existing {
-		if _, keep := files[e.Name()]; !keep && !e.IsDir() {
-			if err := os.Remove(filepath.Join(dir, e.Name())); err != nil {
-				return err
-			}
-		}
-	}
-	names := make([]string, 0, len(files))
-	for n := range files {
-		names = append(names, n)
-	}
-	sort.Strings(names)
-	for _, n := range names {
-		if err := os.WriteFile(filepath.Join(dir, n), []byte(files[n]), 0o644); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func verify(dir string, files map[string]string) error {
-	var stale []string
-	for name, want := range files {
-		got, err := os.ReadFile(filepath.Join(dir, name))
-		if err != nil {
-			stale = append(stale, name+" (missing)")
-			continue
-		}
-		if string(got) != want {
-			stale = append(stale, name)
-		}
-	}
-	if len(stale) > 0 {
-		sort.Strings(stale)
-		return fmt.Errorf("THIRD-PARTY-NOTICES is stale, run `make notices`:\n  %s",
-			strings.Join(stale, "\n  "))
-	}
-	return nil
 }
 
 func fatal(err error) {

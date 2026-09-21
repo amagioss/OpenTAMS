@@ -106,7 +106,7 @@ archives:
   # archive attached to the GitHub Release — see release.ids.
   #
   # `files` replaces goreleaser's default set rather than adding to it, so
-  # LICENSE and README are restated here. NOTICE and THIRD-PARTY-NOTICES/ are
+  # LICENSE and README are restated here. NOTICE and THIRD-PARTY-NOTICES.txt are
   # the reason this block exists: the archive is a distribution of every
   # statically linked dependency, so Apache 2.0 sections 4(a) and 4(d) and the
   # MIT and BSD notice conditions apply to it.
@@ -118,8 +118,7 @@ archives:
       - LICENSE
       - NOTICE
       - README.md
-      - src: THIRD-PARTY-NOTICES/**/*
-        dst: THIRD-PARTY-NOTICES
+      - THIRD-PARTY-NOTICES.txt
 
 # Per-arch image builds. goreleaser hands the prebuilt binary to docker
 # build via the build context, so build/Dockerfile.goreleaser is small
@@ -137,7 +136,7 @@ dockers:
     extra_files:
       - LICENSE
       - NOTICE
-      - THIRD-PARTY-NOTICES
+      - THIRD-PARTY-NOTICES.txt
     build_flag_templates:
       - "--platform=linux/amd64"
       - "--label=org.opencontainers.image.title={{ .ProjectName }}"
@@ -163,7 +162,7 @@ dockers:
     extra_files:
       - LICENSE
       - NOTICE
-      - THIRD-PARTY-NOTICES
+      - THIRD-PARTY-NOTICES.txt
     build_flag_templates:
       - "--platform=linux/arm64"
       - "--label=org.opencontainers.image.title={{ .ProjectName }}"

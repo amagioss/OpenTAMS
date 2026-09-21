@@ -30,7 +30,7 @@
 | [`development/`](development/) | Codebase tour for new contributors. |
 | [`good-first-issues.md`](good-first-issues.md) | Curated starting points for a first contribution. |
 | [`vulnerability-status.md`](vulnerability-status.md) | Current `govulncheck` status, and the upgrade sequence that clears it. |
-| [`../THIRD-PARTY-NOTICES/`](../THIRD-PARTY-NOTICES/) | Every dependency shipped in the released artefacts, with its licence and copyright. Generated. |
+| [`../THIRD-PARTY-NOTICES.txt`](../THIRD-PARTY-NOTICES.txt) | Every dependency shipped in the released artefacts, with its licence and copyright. Generated. |
 
 ## Project and governance
 

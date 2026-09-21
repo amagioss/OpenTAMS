@@ -43,5 +43,4 @@ Makefile
 # them from the build context and break the image's attribution.
 !LICENSE
 !NOTICE
-!THIRD-PARTY-NOTICES
-!THIRD-PARTY-NOTICES/**
+!THIRD-PARTY-NOTICES.txt
