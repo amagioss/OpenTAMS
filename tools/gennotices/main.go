@@ -534,41 +534,28 @@ func matchesCanonical(fam, text string) bool {
 	return canonicalBody(fam, text) == canonicalBody(fam, tmpl)
 }
 
-// render builds the whole THIRD-PARTY-NOTICES file: a preamble, a summary
-// table, then one section per licence family in familyOrder.
+// render builds the whole THIRD-PARTY-NOTICES file.
+//
+// The wording, the section headings and the per-component field labels are
+// the legal team's template. Everything this tool adds is either a data field
+// (SPDX identifier, license file digest) or a one-line statement of fact the
+// template has no slot for: an inherited copyright notice, a dual-licensed
+// module, the section 4(d) attribution the template asks for in brackets.
 func render(byFamily map[string][]entry, total int) string {
 	var b strings.Builder
-	rule := strings.Repeat("=", 78)
+	sep := strings.Repeat("-", 28)
 
-	fmt.Fprintf(&b, "%s\nThird-Party Software Licenses\n%s\n\n", rule, rule)
-	fmt.Fprintf(&b, "OpenTAMS, %s, is licensed under the\nApache License 2.0. Its full text is in the LICENSE file at the root of this\nrepository.\n\n", copyrightCO)
+	fmt.Fprintf(&b, "Third Party Software Licenses\n\n")
 	fmt.Fprintf(&b, "OpenTAMS uses third-party open-source software components. Each component\nremains subject to its respective copyright and license terms.\n\n")
-	fmt.Fprintf(&b, "The following information identifies the applicable third-party components,\nversions, licenses, copyright notices, and license conditions.\n\n")
-
-	fmt.Fprintf(&b, "Scope\n-----\n\n")
-	fmt.Fprintf(&b, "These are the %d modules linked into the released opentams and tamsctl\nbinaries and the published container images: every module reachable from\n./cmd/... . Go links statically, so all of them are redistributed inside\nthose artefacts.\n\n", total)
-	fmt.Fprintf(&b, "Modules used only to build or test OpenTAMS are not listed. They are never\nredistributed, so no attribution obligation attaches to them.\n\n")
-
-	fmt.Fprintf(&b, "Summary\n-------\n\n")
-	for _, fam := range familyOrder {
-		if list, ok := byFamily[fam]; ok {
-			fmt.Fprintf(&b, "  %-14s %3d %s\n", fam, len(list), plural(len(list), "component", "components"))
-		}
-	}
-	fmt.Fprintf(&b, "\nA dual-licensed module is listed under every license it is distributed\nunder, so these counts add up to more than %d.\n\n", total)
-
-	fmt.Fprintf(&b, "How to read this file\n---------------------\n\n")
-	fmt.Fprintf(&b, "Each component gives its module path, version, license, SPDX identifier and\ncopyright notice, followed by the license text that governs it.\n\n")
-	fmt.Fprintf(&b, "Components under the Apache License 2.0 do not repeat its text. OpenTAMS is\nitself licensed under Apache 2.0, so a copy travels with every artefact as the\nLICENSE file, which is what section 4(a) asks for. What does vary per module\nis the attribution required by section 4(d), and that is reproduced in full\nwith each component. An Apache-licensed module whose license file is not the\nstandard text is reproduced as well.\n\n")
-	fmt.Fprintf(&b, "Every other component reproduces its own license file verbatim, because the\nnotice that has to travel with it is specific to that module: its copyright\nholder, and for BSD 3-Clause the entity named in clause 3.\n\n")
-
-	fmt.Fprintf(&b, "This file is generated from the Go module cache by `make notices`. Do not\nedit it by hand. `make notices-check` fails if it is stale, and CI runs that\ncheck on every pull request.\n\n")
+	fmt.Fprintf(&b, "The following information identifies the applicable third-party components,\nversions, licenses, copyright notices, and license conditions:\n\n")
+	fmt.Fprintf(&b, "Generated from the Go module cache by `make notices`. Do not edit by hand.\n")
 
 	for _, fam := range familyOrder {
 		list, ok := byFamily[fam]
 		if !ok {
 			continue
 		}
+		fmt.Fprintf(&b, "\n%s\n\n", sep)
 		b.WriteString(renderFamily(fam, list))
 	}
 	return b.String()
@@ -576,28 +563,17 @@ func render(byFamily map[string][]entry, total int) string {
 
 func renderFamily(fam string, entries []entry) string {
 	var b strings.Builder
-	rule := strings.Repeat("=", 78)
-	sub := strings.Repeat("-", 78)
 
-	fmt.Fprintf(&b, "\n%s\n%s Components\n%s\n\n", rule, familyHeading(fam), rule)
-	fmt.Fprintf(&b, "OpenTAMS uses the %d %s listed below under the %s.\n\n",
-		len(entries), plural(len(entries), "component", "components"), familyProse(fam))
-
-	if fam == "Apache-2.0" {
-		fmt.Fprintf(&b, "License Terms:\n\n")
-		fmt.Fprintf(&b, "Licensed under the Apache License, Version 2.0. See the applicable Apache 2.0\nLicense text in the LICENSE file at the root of this repository, also\navailable at http://www.apache.org/licenses/LICENSE-2.0\n\n")
-		fmt.Fprintf(&b, "The attribution notices required by section 4(d) are reproduced with each\ncomponent below.\n\n")
-	}
+	fmt.Fprintf(&b, "%s Components\n\n", familyHeading(fam))
 
 	for _, e := range entries {
 		m, lic := e.mod, e.lic
-		fmt.Fprintf(&b, "%s\n", sub)
-		fmt.Fprintf(&b, "Module:    %s\n", m.Path)
-		fmt.Fprintf(&b, "Version:   %s\n", m.Version)
-		fmt.Fprintf(&b, "License:   %s\n", familyField(fam))
-		fmt.Fprintf(&b, "SPDX-License-Identifier: %s\n", fam)
+		fmt.Fprintf(&b, "%s\n\n", m.Path)
+		fmt.Fprintf(&b, "Module: %s\n", m.Path)
+		fmt.Fprintf(&b, "Version: %s\n", m.Version)
+		fmt.Fprintf(&b, "License: %s\n", familyField(fam))
 		if len(m.copyrights) == 0 {
-			fmt.Fprintf(&b, "Copyright: Not stated separately by the module; see the module source.\n")
+			fmt.Fprintf(&b, "Copyright: not stated by the module\n")
 		}
 		for i, c := range m.copyrights {
 			label := "Copyright:"
@@ -607,20 +583,23 @@ func renderFamily(fam string, entries []entry) string {
 			fmt.Fprintf(&b, "%s %s\n", label, c)
 		}
 		if m.inheritedFrom != "" {
-			fmt.Fprintf(&b, "           (this module ships no notice of its own; the notice above is\n            that of %s, the project that publishes it)\n", m.inheritedFrom)
+			fmt.Fprintf(&b, "           (notice of %s, which publishes this module)\n", m.inheritedFrom)
 		}
+		fmt.Fprintf(&b, "SPDX-License-Identifier: %s\n", fam)
 		fmt.Fprintf(&b, "License file: %s (sha256 %s)\n", lic.file, lic.sha256)
 		if len(m.licenses) > 1 {
-			fmt.Fprintf(&b, "\nThis module is dual-licensed under %s, and is listed under\neach. This entry covers its %s file.\n",
-				strings.Join(licenseFamilies(m), " and "), lic.file)
+			fmt.Fprintf(&b, "Dual-licensed under %s; listed under each.\n", strings.Join(licenseFamilies(m), " and "))
+		}
+
+		fmt.Fprintf(&b, "\nLicense Terms:\n\n")
+		if reproduce(fam, lic) {
+			fmt.Fprintf(&b, "%s\n", indent(strings.TrimRight(lic.text, "\n"), "    "))
+		} else {
+			fmt.Fprintf(&b, "    Licensed under the Apache 2.0 License, version 2.0. See the applicable\n    Apache 2.0 License text in the LICENSE file at the root of this\n    repository.\n")
 		}
 		if fam == "Apache-2.0" && m.noticeText != "" {
-			fmt.Fprintf(&b, "\nAttribution notices, reproduced from this module's NOTICE file as required\nby Apache License 2.0 section 4(d):\n\n")
-			fmt.Fprintf(&b, "%s\n", indent(m.noticeText, "    "))
-		}
-		if reproduce(fam, lic) {
-			fmt.Fprintf(&b, "\nLicense Terms, reproduced from this module's %s file:\n\n", lic.file)
-			fmt.Fprintf(&b, "%s\n", indent(strings.TrimRight(lic.text, "\n"), "    "))
+			fmt.Fprintf(&b, "\n    Attribution information from the NOTICE file of this Apache module:\n\n")
+			fmt.Fprintf(&b, "%s\n", indent(m.noticeText, "        "))
 		}
 		fmt.Fprintf(&b, "\n")
 	}

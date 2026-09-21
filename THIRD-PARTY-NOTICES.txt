@@ -1,76 +1,27 @@
-==============================================================================
-Third-Party Software Licenses
-==============================================================================
-
-OpenTAMS, Copyright © 2026 Amagi Media Labs Limited, is licensed under the
-Apache License 2.0. Its full text is in the LICENSE file at the root of this
-repository.
+Third Party Software Licenses
 
 OpenTAMS uses third-party open-source software components. Each component
 remains subject to its respective copyright and license terms.
 
 The following information identifies the applicable third-party components,
-versions, licenses, copyright notices, and license conditions.
+versions, licenses, copyright notices, and license conditions:
 
-Scope
------
+Generated from the Go module cache by `make notices`. Do not edit by hand.
 
-These are the 73 modules linked into the released opentams and tamsctl
-binaries and the published container images: every module reachable from
-./cmd/... . Go links statically, so all of them are redistributed inside
-those artefacts.
+----------------------------
 
-Modules used only to build or test OpenTAMS are not listed. They are never
-redistributed, so no attribution obligation attaches to them.
-
-Summary
--------
-
-  MIT             34 components
-  Apache-2.0      31 components
-  BSD-3-Clause    11 components
-  0BSD             1 component
-
-A dual-licensed module is listed under every license it is distributed
-under, so these counts add up to more than 73.
-
-How to read this file
----------------------
-
-Each component gives its module path, version, license, SPDX identifier and
-copyright notice, followed by the license text that governs it.
-
-Components under the Apache License 2.0 do not repeat its text. OpenTAMS is
-itself licensed under Apache 2.0, so a copy travels with every artefact as the
-LICENSE file, which is what section 4(a) asks for. What does vary per module
-is the attribution required by section 4(d), and that is reproduced in full
-with each component. An Apache-licensed module whose license file is not the
-standard text is reproduced as well.
-
-Every other component reproduces its own license file verbatim, because the
-notice that has to travel with it is specific to that module: its copyright
-holder, and for BSD 3-Clause the entity named in clause 3.
-
-This file is generated from the Go module cache by `make notices`. Do not
-edit it by hand. `make notices-check` fails if it is stale, and CI runs that
-check on every pull request.
-
-
-==============================================================================
 MIT License Components
-==============================================================================
 
-OpenTAMS uses the 34 components listed below under the MIT License.
+github.com/apapsch/go-jsonmerge/v2
 
-------------------------------------------------------------------------------
-Module:    github.com/apapsch/go-jsonmerge/v2
-Version:   v2.0.0
-License:   The MIT License
-SPDX-License-Identifier: MIT
+Module: github.com/apapsch/go-jsonmerge/v2
+Version: v2.0.0
+License: The MIT License
 Copyright: Copyright (c) 2016-2019 Artur Kraev
+SPDX-License-Identifier: MIT
 License file: LICENSE (sha256 80c0c1f258e2364312f46c5f6dc1a6ced27593f889d2146369e0b1ae033ecff6)
 
-License Terms, reproduced from this module's LICENSE file:
+License Terms:
 
     MIT License
 
@@ -94,15 +45,16 @@ License Terms, reproduced from this module's LICENSE file:
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
     SOFTWARE.
 
-------------------------------------------------------------------------------
-Module:    github.com/auth0/go-jwt-middleware/v2
-Version:   v2.3.1
-License:   The MIT License
-SPDX-License-Identifier: MIT
+github.com/auth0/go-jwt-middleware/v2
+
+Module: github.com/auth0/go-jwt-middleware/v2
+Version: v2.3.1
+License: The MIT License
 Copyright: Copyright (c) 2015 Auth0, Inc. <support@auth0.com> (http://auth0.com)
+SPDX-License-Identifier: MIT
 License file: LICENSE (sha256 2144eb6894cb440fde6b2b3aaae3b617c8f1dc9bb19813079dcf62ec6c517042)
 
-License Terms, reproduced from this module's LICENSE file:
+License Terms:
 
     The MIT License (MIT)
 
@@ -126,15 +78,16 @@ License Terms, reproduced from this module's LICENSE file:
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
     SOFTWARE.
 
-------------------------------------------------------------------------------
-Module:    github.com/beorn7/perks
-Version:   v1.0.1
-License:   The MIT License
-SPDX-License-Identifier: MIT
+github.com/beorn7/perks
+
+Module: github.com/beorn7/perks
+Version: v1.0.1
+License: The MIT License
 Copyright: Copyright (C) 2013 Blake Mizerany
+SPDX-License-Identifier: MIT
 License file: LICENSE (sha256 0db7c9ebb3717e526f34f87dd1ee8bc77d36846e29cb0cec9246f7138fbe962b)
 
-License Terms, reproduced from this module's LICENSE file:
+License Terms:
 
     Copyright (C) 2013 Blake Mizerany
 
@@ -157,15 +110,16 @@ License Terms, reproduced from this module's LICENSE file:
     OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
     WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-------------------------------------------------------------------------------
-Module:    github.com/cespare/xxhash/v2
-Version:   v2.3.0
-License:   The MIT License
-SPDX-License-Identifier: MIT
+github.com/cespare/xxhash/v2
+
+Module: github.com/cespare/xxhash/v2
+Version: v2.3.0
+License: The MIT License
 Copyright: Copyright (c) 2016 Caleb Spare
+SPDX-License-Identifier: MIT
 License file: LICENSE.txt (sha256 f566a9f97bacdaf00d9f21dd991e81dc11201c4e016c86b470799429a1c9a79c)
 
-License Terms, reproduced from this module's LICENSE.txt file:
+License Terms:
 
     Copyright (c) 2016 Caleb Spare
 
@@ -190,15 +144,16 @@ License Terms, reproduced from this module's LICENSE.txt file:
     OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
     WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-------------------------------------------------------------------------------
-Module:    github.com/gabriel-vasile/mimetype
-Version:   v1.4.12
-License:   The MIT License
-SPDX-License-Identifier: MIT
+github.com/gabriel-vasile/mimetype
+
+Module: github.com/gabriel-vasile/mimetype
+Version: v1.4.12
+License: The MIT License
 Copyright: Copyright (c) 2018 Gabriel Vasile
+SPDX-License-Identifier: MIT
 License file: LICENSE (sha256 b5a867655833aca9e27c97e28e43dcfc62be0ba0e84f24157afedf8fdaaa2fc1)
 
-License Terms, reproduced from this module's LICENSE file:
+License Terms:
 
     MIT License
 
@@ -222,15 +177,16 @@ License Terms, reproduced from this module's LICENSE file:
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
     SOFTWARE.
 
-------------------------------------------------------------------------------
-Module:    github.com/getkin/kin-openapi
-Version:   v0.133.0
-License:   The MIT License
-SPDX-License-Identifier: MIT
+github.com/getkin/kin-openapi
+
+Module: github.com/getkin/kin-openapi
+Version: v0.133.0
+License: The MIT License
 Copyright: Copyright (c) 2017-2018 the project authors.
+SPDX-License-Identifier: MIT
 License file: LICENSE (sha256 612a11e78c07e12765d9cf3866e3edc5f8212c541602721b14e465311afb3aa6)
 
-License Terms, reproduced from this module's LICENSE file:
+License Terms:
 
     MIT License
 
@@ -254,15 +210,16 @@ License Terms, reproduced from this module's LICENSE file:
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
     SOFTWARE.
 
-------------------------------------------------------------------------------
-Module:    github.com/gin-contrib/sse
-Version:   v1.1.0
-License:   The MIT License
-SPDX-License-Identifier: MIT
+github.com/gin-contrib/sse
+
+Module: github.com/gin-contrib/sse
+Version: v1.1.0
+License: The MIT License
 Copyright: Copyright (c) 2014 Manuel Martínez-Almeida
+SPDX-License-Identifier: MIT
 License file: LICENSE (sha256 03458b6d5828e1be1127ca2adf122572eb574fc47b56190c3b38203b8b2a98d0)
 
-License Terms, reproduced from this module's LICENSE file:
+License Terms:
 
     The MIT License (MIT)
 
@@ -286,15 +243,16 @@ License Terms, reproduced from this module's LICENSE file:
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
     THE SOFTWARE.
 
-------------------------------------------------------------------------------
-Module:    github.com/gin-gonic/gin
-Version:   v1.12.0
-License:   The MIT License
-SPDX-License-Identifier: MIT
+github.com/gin-gonic/gin
+
+Module: github.com/gin-gonic/gin
+Version: v1.12.0
+License: The MIT License
 Copyright: Copyright (c) 2014 Manuel Martínez-Almeida
+SPDX-License-Identifier: MIT
 License file: LICENSE (sha256 03458b6d5828e1be1127ca2adf122572eb574fc47b56190c3b38203b8b2a98d0)
 
-License Terms, reproduced from this module's LICENSE file:
+License Terms:
 
     The MIT License (MIT)
 
@@ -318,15 +276,16 @@ License Terms, reproduced from this module's LICENSE file:
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
     THE SOFTWARE.
 
-------------------------------------------------------------------------------
-Module:    github.com/go-playground/locales
-Version:   v0.14.1
-License:   The MIT License
-SPDX-License-Identifier: MIT
+github.com/go-playground/locales
+
+Module: github.com/go-playground/locales
+Version: v0.14.1
+License: The MIT License
 Copyright: Copyright (c) 2016 Go Playground
+SPDX-License-Identifier: MIT
 License file: LICENSE (sha256 a1a5ca382f9e8c646fa05240a74a6554bbc3084b5675f84c9eaafd3d95686612)
 
-License Terms, reproduced from this module's LICENSE file:
+License Terms:
 
     The MIT License (MIT)
 
@@ -350,15 +309,16 @@ License Terms, reproduced from this module's LICENSE file:
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
     SOFTWARE.
 
-------------------------------------------------------------------------------
-Module:    github.com/go-playground/universal-translator
-Version:   v0.18.1
-License:   The MIT License
-SPDX-License-Identifier: MIT
+github.com/go-playground/universal-translator
+
+Module: github.com/go-playground/universal-translator
+Version: v0.18.1
+License: The MIT License
 Copyright: Copyright (c) 2016 Go Playground
+SPDX-License-Identifier: MIT
 License file: LICENSE (sha256 a55d0c6e1a35ee6cf13afb4bbc3c8801cc570d7ac8edcd5e4503892f1c7ff4f7)
 
-License Terms, reproduced from this module's LICENSE file:
+License Terms:
 
     The MIT License (MIT)
 
@@ -382,15 +342,16 @@ License Terms, reproduced from this module's LICENSE file:
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
     SOFTWARE.
 
-------------------------------------------------------------------------------
-Module:    github.com/go-playground/validator/v10
-Version:   v10.30.1
-License:   The MIT License
-SPDX-License-Identifier: MIT
+github.com/go-playground/validator/v10
+
+Module: github.com/go-playground/validator/v10
+Version: v10.30.1
+License: The MIT License
 Copyright: Copyright (c) 2015 Dean Karn
+SPDX-License-Identifier: MIT
 License file: LICENSE (sha256 9e321f6a1db81616a6c344d3aefddf9834fef23bdd913eae0db283dfa6753dff)
 
-License Terms, reproduced from this module's LICENSE file:
+License Terms:
 
     The MIT License (MIT)
 
@@ -414,15 +375,16 @@ License Terms, reproduced from this module's LICENSE file:
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
     SOFTWARE.
 
-------------------------------------------------------------------------------
-Module:    github.com/goccy/go-yaml
-Version:   v1.19.2
-License:   The MIT License
-SPDX-License-Identifier: MIT
+github.com/goccy/go-yaml
+
+Module: github.com/goccy/go-yaml
+Version: v1.19.2
+License: The MIT License
 Copyright: Copyright (c) 2019 Masaaki Goshima
+SPDX-License-Identifier: MIT
 License file: LICENSE (sha256 43fe703ea9ebe27f0a6e5d2a1f6dd094fbe324251c743498f3ec19986d7349cd)
 
-License Terms, reproduced from this module's LICENSE file:
+License Terms:
 
     MIT License
 
@@ -446,16 +408,17 @@ License Terms, reproduced from this module's LICENSE file:
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
     SOFTWARE.
 
-------------------------------------------------------------------------------
-Module:    github.com/golang-migrate/migrate/v4
-Version:   v4.19.1
-License:   The MIT License
-SPDX-License-Identifier: MIT
+github.com/golang-migrate/migrate/v4
+
+Module: github.com/golang-migrate/migrate/v4
+Version: v4.19.1
+License: The MIT License
 Copyright: Copyright (c) 2016 Matthias Kadenbach
            Copyright (c) 2018 Dale Hui
+SPDX-License-Identifier: MIT
 License file: LICENSE (sha256 4c250e1d2cb21c738d5ec785f6fb1e03cd1e9adecfab46feb9494847872455be)
 
-License Terms, reproduced from this module's LICENSE file:
+License Terms:
 
     The MIT License (MIT)
 
@@ -486,15 +449,16 @@ License Terms, reproduced from this module's LICENSE file:
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
     THE SOFTWARE.
 
-------------------------------------------------------------------------------
-Module:    github.com/jackc/pgerrcode
-Version:   v0.0.0-20220416144525-469b46aa5efa
-License:   The MIT License
-SPDX-License-Identifier: MIT
+github.com/jackc/pgerrcode
+
+Module: github.com/jackc/pgerrcode
+Version: v0.0.0-20220416144525-469b46aa5efa
+License: The MIT License
 Copyright: Copyright (c) 2019 Jack Christensen
+SPDX-License-Identifier: MIT
 License file: LICENSE (sha256 ba651777b8362b30d778d60f7a0fcd1f01cdac79aa713d1a6f0a53bf5372fa2f)
 
-License Terms, reproduced from this module's LICENSE file:
+License Terms:
 
     Copyright (c) 2019 Jack Christensen
 
@@ -543,15 +507,16 @@ License Terms, reproduced from this module's LICENSE file:
     BASIS, AND THE UNIVERSITY OF CALIFORNIA HAS NO OBLIGATIONS TO PROVIDE MAINTENANCE, SUPPORT, UPDATES, ENHANCEMENTS, OR
     MODIFICATIONS.
 
-------------------------------------------------------------------------------
-Module:    github.com/jackc/pgpassfile
-Version:   v1.0.0
-License:   The MIT License
-SPDX-License-Identifier: MIT
+github.com/jackc/pgpassfile
+
+Module: github.com/jackc/pgpassfile
+Version: v1.0.0
+License: The MIT License
 Copyright: Copyright (c) 2019 Jack Christensen
+SPDX-License-Identifier: MIT
 License file: LICENSE (sha256 adb1663fda031df8f4344aa68f299fd87d80353e31339406742ded21dae65702)
 
-License Terms, reproduced from this module's LICENSE file:
+License Terms:
 
     Copyright (c) 2019 Jack Christensen
 
@@ -576,15 +541,16 @@ License Terms, reproduced from this module's LICENSE file:
     OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
     WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-------------------------------------------------------------------------------
-Module:    github.com/jackc/pgservicefile
-Version:   v0.0.0-20240606120523-5a60cdf6a761
-License:   The MIT License
-SPDX-License-Identifier: MIT
+github.com/jackc/pgservicefile
+
+Module: github.com/jackc/pgservicefile
+Version: v0.0.0-20240606120523-5a60cdf6a761
+License: The MIT License
 Copyright: Copyright (c) 2020 Jack Christensen
+SPDX-License-Identifier: MIT
 License file: LICENSE (sha256 fc505773403fe869ed64cc2235cdd13988a427bb7e3a7e7004a3f4b27420f8fc)
 
-License Terms, reproduced from this module's LICENSE file:
+License Terms:
 
     Copyright (c) 2020 Jack Christensen
 
@@ -609,15 +575,16 @@ License Terms, reproduced from this module's LICENSE file:
     OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
     WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-------------------------------------------------------------------------------
-Module:    github.com/jackc/pgx/v5
-Version:   v5.9.2
-License:   The MIT License
-SPDX-License-Identifier: MIT
+github.com/jackc/pgx/v5
+
+Module: github.com/jackc/pgx/v5
+Version: v5.9.2
+License: The MIT License
 Copyright: Copyright (c) 2013-2021 Jack Christensen
+SPDX-License-Identifier: MIT
 License file: LICENSE (sha256 467f95e074fe23079a5623ed652619682692041b8551da27e3c2ddb9659a1507)
 
-License Terms, reproduced from this module's LICENSE file:
+License Terms:
 
     Copyright (c) 2013-2021 Jack Christensen
 
@@ -642,15 +609,16 @@ License Terms, reproduced from this module's LICENSE file:
     OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
     WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-------------------------------------------------------------------------------
-Module:    github.com/jackc/puddle/v2
-Version:   v2.2.2
-License:   The MIT License
-SPDX-License-Identifier: MIT
+github.com/jackc/puddle/v2
+
+Module: github.com/jackc/puddle/v2
+Version: v2.2.2
+License: The MIT License
 Copyright: Copyright (c) 2018 Jack Christensen
+SPDX-License-Identifier: MIT
 License file: LICENSE (sha256 2d50e98a4900b4d6457a38d39c1432fdc156fc2f7b365f2e33ec9344acbb0057)
 
-License Terms, reproduced from this module's LICENSE file:
+License Terms:
 
     Copyright (c) 2018 Jack Christensen
 
@@ -675,15 +643,16 @@ License Terms, reproduced from this module's LICENSE file:
     OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
     WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-------------------------------------------------------------------------------
-Module:    github.com/josharian/intern
-Version:   v1.0.0
-License:   The MIT License
-SPDX-License-Identifier: MIT
+github.com/josharian/intern
+
+Module: github.com/josharian/intern
+Version: v1.0.0
+License: The MIT License
 Copyright: Copyright (c) 2019 Josh Bleecher Snyder
+SPDX-License-Identifier: MIT
 License file: license.md (sha256 ad754e4f7d16f789dd0694828254cb4011928025b0d500339a5c4eded5a0c346)
 
-License Terms, reproduced from this module's license.md file:
+License Terms:
 
     MIT License
 
@@ -707,15 +676,16 @@ License Terms, reproduced from this module's license.md file:
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
     SOFTWARE.
 
-------------------------------------------------------------------------------
-Module:    github.com/leodido/go-urn
-Version:   v1.4.0
-License:   The MIT License
-SPDX-License-Identifier: MIT
+github.com/leodido/go-urn
+
+Module: github.com/leodido/go-urn
+Version: v1.4.0
+License: The MIT License
 Copyright: Copyright (c) 2018 Leonardo Di Donato
+SPDX-License-Identifier: MIT
 License file: LICENSE (sha256 fe81a9072afbfe0fe32b0bc99a852d697d14fbbca99b0b1878ac8f5dcbdd6ee6)
 
-License Terms, reproduced from this module's LICENSE file:
+License Terms:
 
     MIT License
 
@@ -739,15 +709,16 @@ License Terms, reproduced from this module's LICENSE file:
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
     SOFTWARE.
 
-------------------------------------------------------------------------------
-Module:    github.com/mailru/easyjson
-Version:   v0.7.7
-License:   The MIT License
-SPDX-License-Identifier: MIT
+github.com/mailru/easyjson
+
+Module: github.com/mailru/easyjson
+Version: v0.7.7
+License: The MIT License
 Copyright: Copyright (c) 2016 Mail.Ru Group
+SPDX-License-Identifier: MIT
 License file: LICENSE (sha256 87baa92c3100cf37441761262d622db99492ee386a063460d4676143db49af57)
 
-License Terms, reproduced from this module's LICENSE file:
+License Terms:
 
     Copyright (c) 2016 Mail.Ru Group
 
@@ -757,15 +728,16 @@ License Terms, reproduced from this module's LICENSE file:
 
     THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-------------------------------------------------------------------------------
-Module:    github.com/mattn/go-isatty
-Version:   v0.0.20
-License:   The MIT License
-SPDX-License-Identifier: MIT
+github.com/mattn/go-isatty
+
+Module: github.com/mattn/go-isatty
+Version: v0.0.20
+License: The MIT License
 Copyright: Copyright (c) Yasuhiro MATSUMOTO <mattn.jp@gmail.com>
+SPDX-License-Identifier: MIT
 License file: LICENSE (sha256 08eab1118c80885fa1fa6a6dd7303f65a379fcb3733e063d20d1bbc2c76e6fa1)
 
-License Terms, reproduced from this module's LICENSE file:
+License Terms:
 
     Copyright (c) Yasuhiro MATSUMOTO <mattn.jp@gmail.com>
 
@@ -777,15 +749,16 @@ License Terms, reproduced from this module's LICENSE file:
 
     THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-------------------------------------------------------------------------------
-Module:    github.com/mohae/deepcopy
-Version:   v0.0.0-20170929034955-c48cc78d4826
-License:   The MIT License
-SPDX-License-Identifier: MIT
+github.com/mohae/deepcopy
+
+Module: github.com/mohae/deepcopy
+Version: v0.0.0-20170929034955-c48cc78d4826
+License: The MIT License
 Copyright: Copyright (c) 2014 Joel
+SPDX-License-Identifier: MIT
 License file: LICENSE (sha256 f10ae61f1256dcd24b2d826590b90662da5d8b3af10e1b8c19ebcf5f046217ff)
 
-License Terms, reproduced from this module's LICENSE file:
+License Terms:
 
     The MIT License (MIT)
 
@@ -809,19 +782,18 @@ License Terms, reproduced from this module's LICENSE file:
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
     SOFTWARE.
 
-------------------------------------------------------------------------------
-Module:    github.com/oasdiff/yaml
-Version:   v0.0.0-20250309154309-f31be36b4037
-License:   The MIT License
-SPDX-License-Identifier: MIT
+github.com/oasdiff/yaml
+
+Module: github.com/oasdiff/yaml
+Version: v0.0.0-20250309154309-f31be36b4037
+License: The MIT License
 Copyright: Copyright (c) 2014 Sam Ghods
            Copyright (c) 2012 The Go Authors. All rights reserved.
+SPDX-License-Identifier: MIT
 License file: LICENSE (sha256 24653fd8a39354396da1a265d68316399edc39b1df48c5866d55f9f06484fa9a)
+Dual-licensed under MIT and BSD-3-Clause; listed under each.
 
-This module is dual-licensed under MIT and BSD-3-Clause, and is listed under
-each. This entry covers its LICENSE file.
-
-License Terms, reproduced from this module's LICENSE file:
+License Terms:
 
     The MIT License (MIT)
 
@@ -874,20 +846,19 @@ License Terms, reproduced from this module's LICENSE file:
     (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
     OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-------------------------------------------------------------------------------
-Module:    github.com/oasdiff/yaml3
-Version:   v0.0.0-20250309153720-d2182401db90
-License:   The MIT License
-SPDX-License-Identifier: MIT
+github.com/oasdiff/yaml3
+
+Module: github.com/oasdiff/yaml3
+Version: v0.0.0-20250309153720-d2182401db90
+License: The MIT License
 Copyright: Copyright (c) 2006-2010 Kirill Simonov
            Copyright (c) 2006-2011 Kirill Simonov
            Copyright (c) 2011-2019 Canonical Ltd
+SPDX-License-Identifier: MIT
 License file: LICENSE (sha256 d18f6323b71b0b768bb5e9616e36da390fbd39369a81807cca352de4e4e6aa0b)
+Dual-licensed under MIT and Apache-2.0; listed under each.
 
-This module is dual-licensed under MIT and Apache-2.0, and is listed under
-each. This entry covers its LICENSE file.
-
-License Terms, reproduced from this module's LICENSE file:
+License Terms:
 
 
     This project is covered by two different licenses: MIT and Apache.
@@ -940,15 +911,16 @@ License Terms, reproduced from this module's LICENSE file:
     See the License for the specific language governing permissions and
     limitations under the License.
 
-------------------------------------------------------------------------------
-Module:    github.com/pelletier/go-toml/v2
-Version:   v2.2.4
-License:   The MIT License
-SPDX-License-Identifier: MIT
+github.com/pelletier/go-toml/v2
+
+Module: github.com/pelletier/go-toml/v2
+Version: v2.2.4
+License: The MIT License
 Copyright: Copyright (c) 2021 - 2023 Thomas Pelletier
+SPDX-License-Identifier: MIT
 License file: LICENSE (sha256 26844e4b53c5adec04e557fd7dfef281cc0205a7d355626b1c68b778b99e9e7b)
 
-License Terms, reproduced from this module's LICENSE file:
+License Terms:
 
     The MIT License (MIT)
 
@@ -973,15 +945,16 @@ License Terms, reproduced from this module's LICENSE file:
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
     SOFTWARE.
 
-------------------------------------------------------------------------------
-Module:    github.com/perimeterx/marshmallow
-Version:   v1.1.5
-License:   The MIT License
-SPDX-License-Identifier: MIT
+github.com/perimeterx/marshmallow
+
+Module: github.com/perimeterx/marshmallow
+Version: v1.1.5
+License: The MIT License
 Copyright: Copyright (c) 2022 PerimeterX
+SPDX-License-Identifier: MIT
 License file: LICENSE (sha256 bf966fa94da4c07302f7f44df49278b6c5712f27660ea54e7f2fe3aa62e9b40b)
 
-License Terms, reproduced from this module's LICENSE file:
+License Terms:
 
     MIT License
 
@@ -1005,15 +978,16 @@ License Terms, reproduced from this module's LICENSE file:
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
     SOFTWARE.
 
-------------------------------------------------------------------------------
-Module:    github.com/quic-go/qpack
-Version:   v0.6.0
-License:   The MIT License
-SPDX-License-Identifier: MIT
+github.com/quic-go/qpack
+
+Module: github.com/quic-go/qpack
+Version: v0.6.0
+License: The MIT License
 Copyright: Copyright 2019 Marten Seemann
+SPDX-License-Identifier: MIT
 License file: LICENSE.md (sha256 1b6a897efd39b20b3cdce8cd306160d115dbded39d855ceeffe21dc11e4d53df)
 
-License Terms, reproduced from this module's LICENSE.md file:
+License Terms:
 
     Copyright 2019 Marten Seemann
 
@@ -1023,15 +997,16 @@ License Terms, reproduced from this module's LICENSE.md file:
 
     THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-------------------------------------------------------------------------------
-Module:    github.com/quic-go/quic-go
-Version:   v0.59.1
-License:   The MIT License
-SPDX-License-Identifier: MIT
+github.com/quic-go/quic-go
+
+Module: github.com/quic-go/quic-go
+Version: v0.59.1
+License: The MIT License
 Copyright: Copyright (c) 2016 the quic-go authors & Google, Inc.
+SPDX-License-Identifier: MIT
 License file: LICENSE (sha256 77d0b7b53e8abb84cf4dd3f9945a7fdf27044240d2e8023966a721a9a46fe96e)
 
-License Terms, reproduced from this module's LICENSE file:
+License Terms:
 
     MIT License
 
@@ -1055,15 +1030,16 @@ License Terms, reproduced from this module's LICENSE file:
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
     SOFTWARE.
 
-------------------------------------------------------------------------------
-Module:    github.com/ugorji/go/codec
-Version:   v1.3.1
-License:   The MIT License
-SPDX-License-Identifier: MIT
+github.com/ugorji/go/codec
+
+Module: github.com/ugorji/go/codec
+Version: v1.3.1
+License: The MIT License
 Copyright: Copyright (c) 2012-2020 Ugorji Nwoke.
+SPDX-License-Identifier: MIT
 License file: LICENSE (sha256 c8a84b926246b4ac76e3810722858b0f83bdea8378de49911dccbefd70b0692e)
 
-License Terms, reproduced from this module's LICENSE file:
+License Terms:
 
     The MIT License (MIT)
 
@@ -1088,15 +1064,16 @@ License Terms, reproduced from this module's LICENSE file:
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
     SOFTWARE.
 
-------------------------------------------------------------------------------
-Module:    go.uber.org/multierr
-Version:   v1.11.0
-License:   The MIT License
-SPDX-License-Identifier: MIT
+go.uber.org/multierr
+
+Module: go.uber.org/multierr
+Version: v1.11.0
+License: The MIT License
 Copyright: Copyright (c) 2017-2021 Uber Technologies, Inc.
+SPDX-License-Identifier: MIT
 License file: LICENSE.txt (sha256 dcdabe03bef2382a130640d1c3a4cd5ec42aba1035095c38272fde694eb72405)
 
-License Terms, reproduced from this module's LICENSE.txt file:
+License Terms:
 
     Copyright (c) 2017-2021 Uber Technologies, Inc.
 
@@ -1118,15 +1095,16 @@ License Terms, reproduced from this module's LICENSE.txt file:
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
     THE SOFTWARE.
 
-------------------------------------------------------------------------------
-Module:    go.uber.org/zap
-Version:   v1.27.1
-License:   The MIT License
-SPDX-License-Identifier: MIT
+go.uber.org/zap
+
+Module: go.uber.org/zap
+Version: v1.27.1
+License: The MIT License
 Copyright: Copyright (c) 2016-2024 Uber Technologies, Inc.
+SPDX-License-Identifier: MIT
 License file: LICENSE (sha256 c2b97b3281be272711909076c8402499b4b5a3216196af47a25b1d3674d86152)
 
-License Terms, reproduced from this module's LICENSE file:
+License Terms:
 
     Copyright (c) 2016-2024 Uber Technologies, Inc.
 
@@ -1148,18 +1126,17 @@ License Terms, reproduced from this module's LICENSE file:
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
     THE SOFTWARE.
 
-------------------------------------------------------------------------------
-Module:    go.yaml.in/yaml/v2
-Version:   v2.4.2
-License:   The MIT License
-SPDX-License-Identifier: MIT
+go.yaml.in/yaml/v2
+
+Module: go.yaml.in/yaml/v2
+Version: v2.4.2
+License: The MIT License
 Copyright: Copyright (c) 2006 Kirill Simonov
+SPDX-License-Identifier: MIT
 License file: LICENSE.libyaml (sha256 a94710b55e03b5285f77d048c5ba61bb9d6ee04a06c0eb90e68821e11b0c707a)
+Dual-licensed under MIT and Apache-2.0; listed under each.
 
-This module is dual-licensed under MIT and Apache-2.0, and is listed under
-each. This entry covers its LICENSE.libyaml file.
-
-License Terms, reproduced from this module's LICENSE.libyaml file:
+License Terms:
 
     The following files were ported to Go from C files of libyaml, and thus
     are still covered by their original copyright and license:
@@ -1193,342 +1170,58 @@ License Terms, reproduced from this module's LICENSE.libyaml file:
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
     SOFTWARE.
 
-------------------------------------------------------------------------------
-Module:    gopkg.in/yaml.v3
-Version:   v3.0.1
-License:   The MIT License
-SPDX-License-Identifier: MIT
+gopkg.in/yaml.v3
+
+Module: gopkg.in/yaml.v3
+Version: v3.0.1
+License: The MIT License
 Copyright: Copyright (c) 2006-2010 Kirill Simonov
            Copyright (c) 2006-2011 Kirill Simonov
            Copyright (c) 2011-2019 Canonical Ltd
+SPDX-License-Identifier: MIT
 License file: LICENSE (sha256 d18f6323b71b0b768bb5e9616e36da390fbd39369a81807cca352de4e4e6aa0b)
-
-This module is dual-licensed under MIT and Apache-2.0, and is listed under
-each. This entry covers its LICENSE file.
-
-License Terms, reproduced from this module's LICENSE file:
-
-
-    This project is covered by two different licenses: MIT and Apache.
-
-    #### MIT License ####
-
-    The following files were ported to Go from C files of libyaml, and thus
-    are still covered by their original MIT license, with the additional
-    copyright staring in 2011 when the project was ported over:
-
-        apic.go emitterc.go parserc.go readerc.go scannerc.go
-        writerc.go yamlh.go yamlprivateh.go
-
-    Copyright (c) 2006-2010 Kirill Simonov
-    Copyright (c) 2006-2011 Kirill Simonov
-
-    Permission is hereby granted, free of charge, to any person obtaining a copy of
-    this software and associated documentation files (the "Software"), to deal in
-    the Software without restriction, including without limitation the rights to
-    use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
-    of the Software, and to permit persons to whom the Software is furnished to do
-    so, subject to the following conditions:
-
-    The above copyright notice and this permission notice shall be included in all
-    copies or substantial portions of the Software.
-
-    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-    SOFTWARE.
-
-    ### Apache License ###
-
-    All the remaining project files are covered by the Apache license:
-
-    Copyright (c) 2011-2019 Canonical Ltd
-
-    Licensed under the Apache License, Version 2.0 (the "License");
-    you may not use this file except in compliance with the License.
-    You may obtain a copy of the License at
-
-        http://www.apache.org/licenses/LICENSE-2.0
-
-    Unless required by applicable law or agreed to in writing, software
-    distributed under the License is distributed on an "AS IS" BASIS,
-    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-    See the License for the specific language governing permissions and
-    limitations under the License.
-
-
-==============================================================================
-Apache 2.0 License Components
-==============================================================================
-
-OpenTAMS uses the 31 components listed below under the Apache License, Version 2.0.
+Dual-licensed under MIT and Apache-2.0; listed under each.
 
 License Terms:
 
-Licensed under the Apache License, Version 2.0. See the applicable Apache 2.0
-License text in the LICENSE file at the root of this repository, also
-available at http://www.apache.org/licenses/LICENSE-2.0
 
-The attribution notices required by section 4(d) are reproduced with each
-component below.
+    This project is covered by two different licenses: MIT and Apache.
 
-------------------------------------------------------------------------------
-Module:    github.com/aws/aws-sdk-go-v2
-Version:   v1.41.6
-License:   Apache 2.0 License
-SPDX-License-Identifier: Apache-2.0
-Copyright: Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-           Copyright 2014-2015 Stripe, Inc.
-License file: LICENSE.txt (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
+    #### MIT License ####
 
-Attribution notices, reproduced from this module's NOTICE file as required
-by Apache License 2.0 section 4(d):
+    The following files were ported to Go from C files of libyaml, and thus
+    are still covered by their original MIT license, with the additional
+    copyright staring in 2011 when the project was ported over:
 
-    AWS SDK for Go
-    Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-    Copyright 2014-2015 Stripe, Inc.
+        apic.go emitterc.go parserc.go readerc.go scannerc.go
+        writerc.go yamlh.go yamlprivateh.go
 
-------------------------------------------------------------------------------
-Module:    github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream
-Version:   v1.7.9
-License:   Apache 2.0 License
-SPDX-License-Identifier: Apache-2.0
-Copyright: Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-           Copyright 2014-2015 Stripe, Inc.
-           (this module ships no notice of its own; the notice above is
-            that of github.com/aws/aws-sdk-go-v2, the project that publishes it)
-License file: LICENSE.txt (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
+    Copyright (c) 2006-2010 Kirill Simonov
+    Copyright (c) 2006-2011 Kirill Simonov
 
-------------------------------------------------------------------------------
-Module:    github.com/aws/aws-sdk-go-v2/config
-Version:   v1.32.16
-License:   Apache 2.0 License
-SPDX-License-Identifier: Apache-2.0
-Copyright: Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-           Copyright 2014-2015 Stripe, Inc.
-           (this module ships no notice of its own; the notice above is
-            that of github.com/aws/aws-sdk-go-v2, the project that publishes it)
-License file: LICENSE.txt (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
+    Permission is hereby granted, free of charge, to any person obtaining a copy of
+    this software and associated documentation files (the "Software"), to deal in
+    the Software without restriction, including without limitation the rights to
+    use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+    of the Software, and to permit persons to whom the Software is furnished to do
+    so, subject to the following conditions:
 
-------------------------------------------------------------------------------
-Module:    github.com/aws/aws-sdk-go-v2/credentials
-Version:   v1.19.15
-License:   Apache 2.0 License
-SPDX-License-Identifier: Apache-2.0
-Copyright: Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-           Copyright 2014-2015 Stripe, Inc.
-           (this module ships no notice of its own; the notice above is
-            that of github.com/aws/aws-sdk-go-v2, the project that publishes it)
-License file: LICENSE.txt (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
 
-------------------------------------------------------------------------------
-Module:    github.com/aws/aws-sdk-go-v2/feature/ec2/imds
-Version:   v1.18.22
-License:   Apache 2.0 License
-SPDX-License-Identifier: Apache-2.0
-Copyright: Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-           Copyright 2014-2015 Stripe, Inc.
-           (this module ships no notice of its own; the notice above is
-            that of github.com/aws/aws-sdk-go-v2, the project that publishes it)
-License file: LICENSE.txt (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
 
-------------------------------------------------------------------------------
-Module:    github.com/aws/aws-sdk-go-v2/internal/configsources
-Version:   v1.4.22
-License:   Apache 2.0 License
-SPDX-License-Identifier: Apache-2.0
-Copyright: Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-           Copyright 2014-2015 Stripe, Inc.
-           (this module ships no notice of its own; the notice above is
-            that of github.com/aws/aws-sdk-go-v2, the project that publishes it)
-License file: LICENSE.txt (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
+    ### Apache License ###
 
-------------------------------------------------------------------------------
-Module:    github.com/aws/aws-sdk-go-v2/internal/endpoints/v2
-Version:   v2.7.22
-License:   Apache 2.0 License
-SPDX-License-Identifier: Apache-2.0
-Copyright: Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-           Copyright 2014-2015 Stripe, Inc.
-           (this module ships no notice of its own; the notice above is
-            that of github.com/aws/aws-sdk-go-v2, the project that publishes it)
-License file: LICENSE.txt (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
+    All the remaining project files are covered by the Apache license:
 
-------------------------------------------------------------------------------
-Module:    github.com/aws/aws-sdk-go-v2/internal/v4a
-Version:   v1.4.23
-License:   Apache 2.0 License
-SPDX-License-Identifier: Apache-2.0
-Copyright: Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-           Copyright 2014-2015 Stripe, Inc.
-           (this module ships no notice of its own; the notice above is
-            that of github.com/aws/aws-sdk-go-v2, the project that publishes it)
-License file: LICENSE.txt (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
-
-------------------------------------------------------------------------------
-Module:    github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding
-Version:   v1.13.8
-License:   Apache 2.0 License
-SPDX-License-Identifier: Apache-2.0
-Copyright: Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-           Copyright 2014-2015 Stripe, Inc.
-           (this module ships no notice of its own; the notice above is
-            that of github.com/aws/aws-sdk-go-v2, the project that publishes it)
-License file: LICENSE.txt (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
-
-------------------------------------------------------------------------------
-Module:    github.com/aws/aws-sdk-go-v2/service/internal/checksum
-Version:   v1.9.14
-License:   Apache 2.0 License
-SPDX-License-Identifier: Apache-2.0
-Copyright: Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-           Copyright 2014-2015 Stripe, Inc.
-           (this module ships no notice of its own; the notice above is
-            that of github.com/aws/aws-sdk-go-v2, the project that publishes it)
-License file: LICENSE.txt (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
-
-------------------------------------------------------------------------------
-Module:    github.com/aws/aws-sdk-go-v2/service/internal/presigned-url
-Version:   v1.13.22
-License:   Apache 2.0 License
-SPDX-License-Identifier: Apache-2.0
-Copyright: Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-           Copyright 2014-2015 Stripe, Inc.
-           (this module ships no notice of its own; the notice above is
-            that of github.com/aws/aws-sdk-go-v2, the project that publishes it)
-License file: LICENSE.txt (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
-
-------------------------------------------------------------------------------
-Module:    github.com/aws/aws-sdk-go-v2/service/internal/s3shared
-Version:   v1.19.22
-License:   Apache 2.0 License
-SPDX-License-Identifier: Apache-2.0
-Copyright: Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-           Copyright 2014-2015 Stripe, Inc.
-           (this module ships no notice of its own; the notice above is
-            that of github.com/aws/aws-sdk-go-v2, the project that publishes it)
-License file: LICENSE.txt (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
-
-------------------------------------------------------------------------------
-Module:    github.com/aws/aws-sdk-go-v2/service/s3
-Version:   v1.99.1
-License:   Apache 2.0 License
-SPDX-License-Identifier: Apache-2.0
-Copyright: Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-           Copyright 2014-2015 Stripe, Inc.
-           (this module ships no notice of its own; the notice above is
-            that of github.com/aws/aws-sdk-go-v2, the project that publishes it)
-License file: LICENSE.txt (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
-
-------------------------------------------------------------------------------
-Module:    github.com/aws/aws-sdk-go-v2/service/signin
-Version:   v1.0.10
-License:   Apache 2.0 License
-SPDX-License-Identifier: Apache-2.0
-Copyright: Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-           Copyright 2014-2015 Stripe, Inc.
-           (this module ships no notice of its own; the notice above is
-            that of github.com/aws/aws-sdk-go-v2, the project that publishes it)
-License file: LICENSE.txt (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
-
-------------------------------------------------------------------------------
-Module:    github.com/aws/aws-sdk-go-v2/service/sso
-Version:   v1.30.16
-License:   Apache 2.0 License
-SPDX-License-Identifier: Apache-2.0
-Copyright: Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-           Copyright 2014-2015 Stripe, Inc.
-           (this module ships no notice of its own; the notice above is
-            that of github.com/aws/aws-sdk-go-v2, the project that publishes it)
-License file: LICENSE.txt (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
-
-------------------------------------------------------------------------------
-Module:    github.com/aws/aws-sdk-go-v2/service/ssooidc
-Version:   v1.35.20
-License:   Apache 2.0 License
-SPDX-License-Identifier: Apache-2.0
-Copyright: Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-           Copyright 2014-2015 Stripe, Inc.
-           (this module ships no notice of its own; the notice above is
-            that of github.com/aws/aws-sdk-go-v2, the project that publishes it)
-License file: LICENSE.txt (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
-
-------------------------------------------------------------------------------
-Module:    github.com/aws/aws-sdk-go-v2/service/sts
-Version:   v1.42.0
-License:   Apache 2.0 License
-SPDX-License-Identifier: Apache-2.0
-Copyright: Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-           Copyright 2014-2015 Stripe, Inc.
-           (this module ships no notice of its own; the notice above is
-            that of github.com/aws/aws-sdk-go-v2, the project that publishes it)
-License file: LICENSE.txt (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
-
-------------------------------------------------------------------------------
-Module:    github.com/aws/smithy-go
-Version:   v1.25.0
-License:   Apache 2.0 License
-SPDX-License-Identifier: Apache-2.0
-Copyright: Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
-License file: LICENSE (sha256 09e8a9bcec8067104652c168685ab0931e7868f9c8284b66f5ae6edae5f1130b)
-
-Attribution notices, reproduced from this module's NOTICE file as required
-by Apache License 2.0 section 4(d):
-
-    Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
-
-------------------------------------------------------------------------------
-Module:    github.com/go-openapi/jsonpointer
-Version:   v0.21.0
-License:   Apache 2.0 License
-SPDX-License-Identifier: Apache-2.0
-Copyright: Copyright 2013 sigu-399 ( https://github.com/sigu-399 )
-License file: LICENSE (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
-
-------------------------------------------------------------------------------
-Module:    github.com/go-openapi/swag
-Version:   v0.23.0
-License:   Apache 2.0 License
-SPDX-License-Identifier: Apache-2.0
-Copyright: Copyright 2015 go-swagger maintainers
-License file: LICENSE (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
-
-------------------------------------------------------------------------------
-Module:    github.com/oapi-codegen/gin-middleware
-Version:   v1.0.2
-License:   Apache 2.0 License
-SPDX-License-Identifier: Apache-2.0
-Copyright: Copyright 2021 DeepMap, Inc.
-License file: LICENSE (sha256 c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4)
-
-------------------------------------------------------------------------------
-Module:    github.com/oapi-codegen/runtime
-Version:   v1.4.0
-License:   Apache 2.0 License
-SPDX-License-Identifier: Apache-2.0
-Copyright: Copyright 2021 DeepMap, Inc.
-License file: LICENSE (sha256 c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4)
-
-------------------------------------------------------------------------------
-Module:    github.com/oasdiff/yaml3
-Version:   v0.0.0-20250309153720-d2182401db90
-License:   Apache 2.0 License
-SPDX-License-Identifier: Apache-2.0
-Copyright: Copyright (c) 2006-2010 Kirill Simonov
-           Copyright (c) 2006-2011 Kirill Simonov
-           Copyright (c) 2011-2019 Canonical Ltd
-License file: LICENSE (sha256 d18f6323b71b0b768bb5e9616e36da390fbd39369a81807cca352de4e4e6aa0b)
-
-This module is dual-licensed under MIT and Apache-2.0, and is listed under
-each. This entry covers its LICENSE file.
-
-Attribution notices, reproduced from this module's NOTICE file as required
-by Apache License 2.0 section 4(d):
-
-    Copyright 2011-2016 Canonical Ltd.
+    Copyright (c) 2011-2019 Canonical Ltd
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -1542,7 +1235,397 @@ by Apache License 2.0 section 4(d):
     See the License for the specific language governing permissions and
     limitations under the License.
 
-License Terms, reproduced from this module's LICENSE file:
+
+----------------------------
+
+Apache 2.0 License Components
+
+github.com/aws/aws-sdk-go-v2
+
+Module: github.com/aws/aws-sdk-go-v2
+Version: v1.41.6
+License: Apache 2.0 License
+Copyright: Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+           Copyright 2014-2015 Stripe, Inc.
+SPDX-License-Identifier: Apache-2.0
+License file: LICENSE.txt (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
+
+License Terms:
+
+    Licensed under the Apache 2.0 License, version 2.0. See the applicable
+    Apache 2.0 License text in the LICENSE file at the root of this
+    repository.
+
+    Attribution information from the NOTICE file of this Apache module:
+
+        AWS SDK for Go
+        Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+        Copyright 2014-2015 Stripe, Inc.
+
+github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream
+
+Module: github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream
+Version: v1.7.9
+License: Apache 2.0 License
+Copyright: Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+           Copyright 2014-2015 Stripe, Inc.
+           (notice of github.com/aws/aws-sdk-go-v2, which publishes this module)
+SPDX-License-Identifier: Apache-2.0
+License file: LICENSE.txt (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
+
+License Terms:
+
+    Licensed under the Apache 2.0 License, version 2.0. See the applicable
+    Apache 2.0 License text in the LICENSE file at the root of this
+    repository.
+
+github.com/aws/aws-sdk-go-v2/config
+
+Module: github.com/aws/aws-sdk-go-v2/config
+Version: v1.32.16
+License: Apache 2.0 License
+Copyright: Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+           Copyright 2014-2015 Stripe, Inc.
+           (notice of github.com/aws/aws-sdk-go-v2, which publishes this module)
+SPDX-License-Identifier: Apache-2.0
+License file: LICENSE.txt (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
+
+License Terms:
+
+    Licensed under the Apache 2.0 License, version 2.0. See the applicable
+    Apache 2.0 License text in the LICENSE file at the root of this
+    repository.
+
+github.com/aws/aws-sdk-go-v2/credentials
+
+Module: github.com/aws/aws-sdk-go-v2/credentials
+Version: v1.19.15
+License: Apache 2.0 License
+Copyright: Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+           Copyright 2014-2015 Stripe, Inc.
+           (notice of github.com/aws/aws-sdk-go-v2, which publishes this module)
+SPDX-License-Identifier: Apache-2.0
+License file: LICENSE.txt (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
+
+License Terms:
+
+    Licensed under the Apache 2.0 License, version 2.0. See the applicable
+    Apache 2.0 License text in the LICENSE file at the root of this
+    repository.
+
+github.com/aws/aws-sdk-go-v2/feature/ec2/imds
+
+Module: github.com/aws/aws-sdk-go-v2/feature/ec2/imds
+Version: v1.18.22
+License: Apache 2.0 License
+Copyright: Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+           Copyright 2014-2015 Stripe, Inc.
+           (notice of github.com/aws/aws-sdk-go-v2, which publishes this module)
+SPDX-License-Identifier: Apache-2.0
+License file: LICENSE.txt (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
+
+License Terms:
+
+    Licensed under the Apache 2.0 License, version 2.0. See the applicable
+    Apache 2.0 License text in the LICENSE file at the root of this
+    repository.
+
+github.com/aws/aws-sdk-go-v2/internal/configsources
+
+Module: github.com/aws/aws-sdk-go-v2/internal/configsources
+Version: v1.4.22
+License: Apache 2.0 License
+Copyright: Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+           Copyright 2014-2015 Stripe, Inc.
+           (notice of github.com/aws/aws-sdk-go-v2, which publishes this module)
+SPDX-License-Identifier: Apache-2.0
+License file: LICENSE.txt (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
+
+License Terms:
+
+    Licensed under the Apache 2.0 License, version 2.0. See the applicable
+    Apache 2.0 License text in the LICENSE file at the root of this
+    repository.
+
+github.com/aws/aws-sdk-go-v2/internal/endpoints/v2
+
+Module: github.com/aws/aws-sdk-go-v2/internal/endpoints/v2
+Version: v2.7.22
+License: Apache 2.0 License
+Copyright: Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+           Copyright 2014-2015 Stripe, Inc.
+           (notice of github.com/aws/aws-sdk-go-v2, which publishes this module)
+SPDX-License-Identifier: Apache-2.0
+License file: LICENSE.txt (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
+
+License Terms:
+
+    Licensed under the Apache 2.0 License, version 2.0. See the applicable
+    Apache 2.0 License text in the LICENSE file at the root of this
+    repository.
+
+github.com/aws/aws-sdk-go-v2/internal/v4a
+
+Module: github.com/aws/aws-sdk-go-v2/internal/v4a
+Version: v1.4.23
+License: Apache 2.0 License
+Copyright: Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+           Copyright 2014-2015 Stripe, Inc.
+           (notice of github.com/aws/aws-sdk-go-v2, which publishes this module)
+SPDX-License-Identifier: Apache-2.0
+License file: LICENSE.txt (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
+
+License Terms:
+
+    Licensed under the Apache 2.0 License, version 2.0. See the applicable
+    Apache 2.0 License text in the LICENSE file at the root of this
+    repository.
+
+github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding
+
+Module: github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding
+Version: v1.13.8
+License: Apache 2.0 License
+Copyright: Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+           Copyright 2014-2015 Stripe, Inc.
+           (notice of github.com/aws/aws-sdk-go-v2, which publishes this module)
+SPDX-License-Identifier: Apache-2.0
+License file: LICENSE.txt (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
+
+License Terms:
+
+    Licensed under the Apache 2.0 License, version 2.0. See the applicable
+    Apache 2.0 License text in the LICENSE file at the root of this
+    repository.
+
+github.com/aws/aws-sdk-go-v2/service/internal/checksum
+
+Module: github.com/aws/aws-sdk-go-v2/service/internal/checksum
+Version: v1.9.14
+License: Apache 2.0 License
+Copyright: Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+           Copyright 2014-2015 Stripe, Inc.
+           (notice of github.com/aws/aws-sdk-go-v2, which publishes this module)
+SPDX-License-Identifier: Apache-2.0
+License file: LICENSE.txt (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
+
+License Terms:
+
+    Licensed under the Apache 2.0 License, version 2.0. See the applicable
+    Apache 2.0 License text in the LICENSE file at the root of this
+    repository.
+
+github.com/aws/aws-sdk-go-v2/service/internal/presigned-url
+
+Module: github.com/aws/aws-sdk-go-v2/service/internal/presigned-url
+Version: v1.13.22
+License: Apache 2.0 License
+Copyright: Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+           Copyright 2014-2015 Stripe, Inc.
+           (notice of github.com/aws/aws-sdk-go-v2, which publishes this module)
+SPDX-License-Identifier: Apache-2.0
+License file: LICENSE.txt (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
+
+License Terms:
+
+    Licensed under the Apache 2.0 License, version 2.0. See the applicable
+    Apache 2.0 License text in the LICENSE file at the root of this
+    repository.
+
+github.com/aws/aws-sdk-go-v2/service/internal/s3shared
+
+Module: github.com/aws/aws-sdk-go-v2/service/internal/s3shared
+Version: v1.19.22
+License: Apache 2.0 License
+Copyright: Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+           Copyright 2014-2015 Stripe, Inc.
+           (notice of github.com/aws/aws-sdk-go-v2, which publishes this module)
+SPDX-License-Identifier: Apache-2.0
+License file: LICENSE.txt (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
+
+License Terms:
+
+    Licensed under the Apache 2.0 License, version 2.0. See the applicable
+    Apache 2.0 License text in the LICENSE file at the root of this
+    repository.
+
+github.com/aws/aws-sdk-go-v2/service/s3
+
+Module: github.com/aws/aws-sdk-go-v2/service/s3
+Version: v1.99.1
+License: Apache 2.0 License
+Copyright: Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+           Copyright 2014-2015 Stripe, Inc.
+           (notice of github.com/aws/aws-sdk-go-v2, which publishes this module)
+SPDX-License-Identifier: Apache-2.0
+License file: LICENSE.txt (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
+
+License Terms:
+
+    Licensed under the Apache 2.0 License, version 2.0. See the applicable
+    Apache 2.0 License text in the LICENSE file at the root of this
+    repository.
+
+github.com/aws/aws-sdk-go-v2/service/signin
+
+Module: github.com/aws/aws-sdk-go-v2/service/signin
+Version: v1.0.10
+License: Apache 2.0 License
+Copyright: Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+           Copyright 2014-2015 Stripe, Inc.
+           (notice of github.com/aws/aws-sdk-go-v2, which publishes this module)
+SPDX-License-Identifier: Apache-2.0
+License file: LICENSE.txt (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
+
+License Terms:
+
+    Licensed under the Apache 2.0 License, version 2.0. See the applicable
+    Apache 2.0 License text in the LICENSE file at the root of this
+    repository.
+
+github.com/aws/aws-sdk-go-v2/service/sso
+
+Module: github.com/aws/aws-sdk-go-v2/service/sso
+Version: v1.30.16
+License: Apache 2.0 License
+Copyright: Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+           Copyright 2014-2015 Stripe, Inc.
+           (notice of github.com/aws/aws-sdk-go-v2, which publishes this module)
+SPDX-License-Identifier: Apache-2.0
+License file: LICENSE.txt (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
+
+License Terms:
+
+    Licensed under the Apache 2.0 License, version 2.0. See the applicable
+    Apache 2.0 License text in the LICENSE file at the root of this
+    repository.
+
+github.com/aws/aws-sdk-go-v2/service/ssooidc
+
+Module: github.com/aws/aws-sdk-go-v2/service/ssooidc
+Version: v1.35.20
+License: Apache 2.0 License
+Copyright: Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+           Copyright 2014-2015 Stripe, Inc.
+           (notice of github.com/aws/aws-sdk-go-v2, which publishes this module)
+SPDX-License-Identifier: Apache-2.0
+License file: LICENSE.txt (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
+
+License Terms:
+
+    Licensed under the Apache 2.0 License, version 2.0. See the applicable
+    Apache 2.0 License text in the LICENSE file at the root of this
+    repository.
+
+github.com/aws/aws-sdk-go-v2/service/sts
+
+Module: github.com/aws/aws-sdk-go-v2/service/sts
+Version: v1.42.0
+License: Apache 2.0 License
+Copyright: Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+           Copyright 2014-2015 Stripe, Inc.
+           (notice of github.com/aws/aws-sdk-go-v2, which publishes this module)
+SPDX-License-Identifier: Apache-2.0
+License file: LICENSE.txt (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
+
+License Terms:
+
+    Licensed under the Apache 2.0 License, version 2.0. See the applicable
+    Apache 2.0 License text in the LICENSE file at the root of this
+    repository.
+
+github.com/aws/smithy-go
+
+Module: github.com/aws/smithy-go
+Version: v1.25.0
+License: Apache 2.0 License
+Copyright: Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+SPDX-License-Identifier: Apache-2.0
+License file: LICENSE (sha256 09e8a9bcec8067104652c168685ab0931e7868f9c8284b66f5ae6edae5f1130b)
+
+License Terms:
+
+    Licensed under the Apache 2.0 License, version 2.0. See the applicable
+    Apache 2.0 License text in the LICENSE file at the root of this
+    repository.
+
+    Attribution information from the NOTICE file of this Apache module:
+
+        Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+
+github.com/go-openapi/jsonpointer
+
+Module: github.com/go-openapi/jsonpointer
+Version: v0.21.0
+License: Apache 2.0 License
+Copyright: Copyright 2013 sigu-399 ( https://github.com/sigu-399 )
+SPDX-License-Identifier: Apache-2.0
+License file: LICENSE (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
+
+License Terms:
+
+    Licensed under the Apache 2.0 License, version 2.0. See the applicable
+    Apache 2.0 License text in the LICENSE file at the root of this
+    repository.
+
+github.com/go-openapi/swag
+
+Module: github.com/go-openapi/swag
+Version: v0.23.0
+License: Apache 2.0 License
+Copyright: Copyright 2015 go-swagger maintainers
+SPDX-License-Identifier: Apache-2.0
+License file: LICENSE (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
+
+License Terms:
+
+    Licensed under the Apache 2.0 License, version 2.0. See the applicable
+    Apache 2.0 License text in the LICENSE file at the root of this
+    repository.
+
+github.com/oapi-codegen/gin-middleware
+
+Module: github.com/oapi-codegen/gin-middleware
+Version: v1.0.2
+License: Apache 2.0 License
+Copyright: Copyright 2021 DeepMap, Inc.
+SPDX-License-Identifier: Apache-2.0
+License file: LICENSE (sha256 c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4)
+
+License Terms:
+
+    Licensed under the Apache 2.0 License, version 2.0. See the applicable
+    Apache 2.0 License text in the LICENSE file at the root of this
+    repository.
+
+github.com/oapi-codegen/runtime
+
+Module: github.com/oapi-codegen/runtime
+Version: v1.4.0
+License: Apache 2.0 License
+Copyright: Copyright 2021 DeepMap, Inc.
+SPDX-License-Identifier: Apache-2.0
+License file: LICENSE (sha256 c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4)
+
+License Terms:
+
+    Licensed under the Apache 2.0 License, version 2.0. See the applicable
+    Apache 2.0 License text in the LICENSE file at the root of this
+    repository.
+
+github.com/oasdiff/yaml3
+
+Module: github.com/oasdiff/yaml3
+Version: v0.0.0-20250309153720-d2182401db90
+License: Apache 2.0 License
+Copyright: Copyright (c) 2006-2010 Kirill Simonov
+           Copyright (c) 2006-2011 Kirill Simonov
+           Copyright (c) 2011-2019 Canonical Ltd
+SPDX-License-Identifier: Apache-2.0
+License file: LICENSE (sha256 d18f6323b71b0b768bb5e9616e36da390fbd39369a81807cca352de4e4e6aa0b)
+Dual-licensed under MIT and Apache-2.0; listed under each.
+
+License Terms:
 
 
     This project is covered by two different licenses: MIT and Apache.
@@ -1595,155 +1678,196 @@ License Terms, reproduced from this module's LICENSE file:
     See the License for the specific language governing permissions and
     limitations under the License.
 
-------------------------------------------------------------------------------
-Module:    github.com/prometheus/client_golang
-Version:   v1.23.2
-License:   Apache 2.0 License
-SPDX-License-Identifier: Apache-2.0
+    Attribution information from the NOTICE file of this Apache module:
+
+        Copyright 2011-2016 Canonical Ltd.
+
+        Licensed under the Apache License, Version 2.0 (the "License");
+        you may not use this file except in compliance with the License.
+        You may obtain a copy of the License at
+
+            http://www.apache.org/licenses/LICENSE-2.0
+
+        Unless required by applicable law or agreed to in writing, software
+        distributed under the License is distributed on an "AS IS" BASIS,
+        WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+        See the License for the specific language governing permissions and
+        limitations under the License.
+
+github.com/prometheus/client_golang
+
+Module: github.com/prometheus/client_golang
+Version: v1.23.2
+License: Apache 2.0 License
 Copyright: Copyright 2012-2015 The Prometheus Authors
            Copyright 2013-2015 Blake Mizerany, Björn Rabenstein
            Copyright 2010 The Go Authors
+SPDX-License-Identifier: Apache-2.0
 License file: LICENSE (sha256 c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4)
 
-Attribution notices, reproduced from this module's NOTICE file as required
-by Apache License 2.0 section 4(d):
+License Terms:
 
-    Prometheus instrumentation library for Go applications
-    Copyright 2012-2015 The Prometheus Authors
+    Licensed under the Apache 2.0 License, version 2.0. See the applicable
+    Apache 2.0 License text in the LICENSE file at the root of this
+    repository.
 
-    This product includes software developed at
-    SoundCloud Ltd. (http://soundcloud.com/).
+    Attribution information from the NOTICE file of this Apache module:
+
+        Prometheus instrumentation library for Go applications
+        Copyright 2012-2015 The Prometheus Authors
+
+        This product includes software developed at
+        SoundCloud Ltd. (http://soundcloud.com/).
 
 
-    The following components are included in this product:
+        The following components are included in this product:
 
-    perks - a fork of https://github.com/bmizerany/perks
-    https://github.com/beorn7/perks
-    Copyright 2013-2015 Blake Mizerany, Björn Rabenstein
-    See https://github.com/beorn7/perks/blob/master/README.md for license details.
+        perks - a fork of https://github.com/bmizerany/perks
+        https://github.com/beorn7/perks
+        Copyright 2013-2015 Blake Mizerany, Björn Rabenstein
+        See https://github.com/beorn7/perks/blob/master/README.md for license details.
 
-    Go support for Protocol Buffers - Google's data interchange format
-    http://github.com/golang/protobuf/
-    Copyright 2010 The Go Authors
-    See source code for license details.
+        Go support for Protocol Buffers - Google's data interchange format
+        http://github.com/golang/protobuf/
+        Copyright 2010 The Go Authors
+        See source code for license details.
 
-------------------------------------------------------------------------------
-Module:    github.com/prometheus/client_model
-Version:   v0.6.2
-License:   Apache 2.0 License
-SPDX-License-Identifier: Apache-2.0
+github.com/prometheus/client_model
+
+Module: github.com/prometheus/client_model
+Version: v0.6.2
+License: Apache 2.0 License
 Copyright: Copyright 2012-2015 The Prometheus Authors
+SPDX-License-Identifier: Apache-2.0
 License file: LICENSE (sha256 c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4)
 
-Attribution notices, reproduced from this module's NOTICE file as required
-by Apache License 2.0 section 4(d):
+License Terms:
 
-    Data model artifacts for Prometheus.
-    Copyright 2012-2015 The Prometheus Authors
+    Licensed under the Apache 2.0 License, version 2.0. See the applicable
+    Apache 2.0 License text in the LICENSE file at the root of this
+    repository.
 
-    This product includes software developed at
-    SoundCloud Ltd. (http://soundcloud.com/).
+    Attribution information from the NOTICE file of this Apache module:
 
-------------------------------------------------------------------------------
-Module:    github.com/prometheus/common
-Version:   v0.66.1
-License:   Apache 2.0 License
-SPDX-License-Identifier: Apache-2.0
+        Data model artifacts for Prometheus.
+        Copyright 2012-2015 The Prometheus Authors
+
+        This product includes software developed at
+        SoundCloud Ltd. (http://soundcloud.com/).
+
+github.com/prometheus/common
+
+Module: github.com/prometheus/common
+Version: v0.66.1
+License: Apache 2.0 License
 Copyright: Copyright 2015 The Prometheus Authors
+SPDX-License-Identifier: Apache-2.0
 License file: LICENSE (sha256 c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4)
 
-Attribution notices, reproduced from this module's NOTICE file as required
-by Apache License 2.0 section 4(d):
+License Terms:
 
-    Common libraries shared by Prometheus Go components.
-    Copyright 2015 The Prometheus Authors
+    Licensed under the Apache 2.0 License, version 2.0. See the applicable
+    Apache 2.0 License text in the LICENSE file at the root of this
+    repository.
 
-    This product includes software developed at
-    SoundCloud Ltd. (http://soundcloud.com/).
+    Attribution information from the NOTICE file of this Apache module:
 
-------------------------------------------------------------------------------
-Module:    github.com/spf13/cobra
-Version:   v1.10.2
-License:   Apache 2.0 License
-SPDX-License-Identifier: Apache-2.0
+        Common libraries shared by Prometheus Go components.
+        Copyright 2015 The Prometheus Authors
+
+        This product includes software developed at
+        SoundCloud Ltd. (http://soundcloud.com/).
+
+github.com/spf13/cobra
+
+Module: github.com/spf13/cobra
+Version: v1.10.2
+License: Apache 2.0 License
 Copyright: Copyright 2013-2023 The Cobra Authors
+SPDX-License-Identifier: Apache-2.0
 License file: LICENSE.txt (sha256 5e3400b93bbb099e83e52bab885e7441750673c21f97988ca3f1240639b63283)
 
-------------------------------------------------------------------------------
-Module:    go.mongodb.org/mongo-driver/v2
-Version:   v2.5.0
-License:   Apache 2.0 License
-SPDX-License-Identifier: Apache-2.0
+License Terms:
+
+    Licensed under the Apache 2.0 License, version 2.0. See the applicable
+    Apache 2.0 License text in the LICENSE file at the root of this
+    repository.
+
+go.mongodb.org/mongo-driver/v2
+
+Module: go.mongodb.org/mongo-driver/v2
+Version: v2.5.0
+License: Apache 2.0 License
 Copyright: Copyright (C) MongoDB, Inc. 2017-present.
+SPDX-License-Identifier: Apache-2.0
 License file: LICENSE (sha256 c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4)
 
-------------------------------------------------------------------------------
-Module:    go.yaml.in/yaml/v2
-Version:   v2.4.2
-License:   Apache 2.0 License
-SPDX-License-Identifier: Apache-2.0
+License Terms:
+
+    Licensed under the Apache 2.0 License, version 2.0. See the applicable
+    Apache 2.0 License text in the LICENSE file at the root of this
+    repository.
+
+go.yaml.in/yaml/v2
+
+Module: go.yaml.in/yaml/v2
+Version: v2.4.2
+License: Apache 2.0 License
 Copyright: Copyright (c) 2006 Kirill Simonov
-License file: LICENSE (sha256 b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1)
-
-This module is dual-licensed under MIT and Apache-2.0, and is listed under
-each. This entry covers its LICENSE file.
-
-Attribution notices, reproduced from this module's NOTICE file as required
-by Apache License 2.0 section 4(d):
-
-    Copyright 2011-2016 Canonical Ltd.
-
-    Licensed under the Apache License, Version 2.0 (the "License");
-    you may not use this file except in compliance with the License.
-    You may obtain a copy of the License at
-
-        http://www.apache.org/licenses/LICENSE-2.0
-
-    Unless required by applicable law or agreed to in writing, software
-    distributed under the License is distributed on an "AS IS" BASIS,
-    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-    See the License for the specific language governing permissions and
-    limitations under the License.
-
-------------------------------------------------------------------------------
-Module:    gopkg.in/go-jose/go-jose.v2
-Version:   v2.6.3
-License:   Apache 2.0 License
 SPDX-License-Identifier: Apache-2.0
+License file: LICENSE (sha256 b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1)
+Dual-licensed under MIT and Apache-2.0; listed under each.
+
+License Terms:
+
+    Licensed under the Apache 2.0 License, version 2.0. See the applicable
+    Apache 2.0 License text in the LICENSE file at the root of this
+    repository.
+
+    Attribution information from the NOTICE file of this Apache module:
+
+        Copyright 2011-2016 Canonical Ltd.
+
+        Licensed under the Apache License, Version 2.0 (the "License");
+        you may not use this file except in compliance with the License.
+        You may obtain a copy of the License at
+
+            http://www.apache.org/licenses/LICENSE-2.0
+
+        Unless required by applicable law or agreed to in writing, software
+        distributed under the License is distributed on an "AS IS" BASIS,
+        WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+        See the License for the specific language governing permissions and
+        limitations under the License.
+
+gopkg.in/go-jose/go-jose.v2
+
+Module: gopkg.in/go-jose/go-jose.v2
+Version: v2.6.3
+License: Apache 2.0 License
 Copyright: Copyright 2014 Square Inc.
+SPDX-License-Identifier: Apache-2.0
 License file: LICENSE (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
 
-------------------------------------------------------------------------------
-Module:    gopkg.in/yaml.v3
-Version:   v3.0.1
-License:   Apache 2.0 License
-SPDX-License-Identifier: Apache-2.0
+License Terms:
+
+    Licensed under the Apache 2.0 License, version 2.0. See the applicable
+    Apache 2.0 License text in the LICENSE file at the root of this
+    repository.
+
+gopkg.in/yaml.v3
+
+Module: gopkg.in/yaml.v3
+Version: v3.0.1
+License: Apache 2.0 License
 Copyright: Copyright (c) 2006-2010 Kirill Simonov
            Copyright (c) 2006-2011 Kirill Simonov
            Copyright (c) 2011-2019 Canonical Ltd
+SPDX-License-Identifier: Apache-2.0
 License file: LICENSE (sha256 d18f6323b71b0b768bb5e9616e36da390fbd39369a81807cca352de4e4e6aa0b)
+Dual-licensed under MIT and Apache-2.0; listed under each.
 
-This module is dual-licensed under MIT and Apache-2.0, and is listed under
-each. This entry covers its LICENSE file.
-
-Attribution notices, reproduced from this module's NOTICE file as required
-by Apache License 2.0 section 4(d):
-
-    Copyright 2011-2016 Canonical Ltd.
-
-    Licensed under the Apache License, Version 2.0 (the "License");
-    you may not use this file except in compliance with the License.
-    You may obtain a copy of the License at
-
-        http://www.apache.org/licenses/LICENSE-2.0
-
-    Unless required by applicable law or agreed to in writing, software
-    distributed under the License is distributed on an "AS IS" BASIS,
-    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-    See the License for the specific language governing permissions and
-    limitations under the License.
-
-License Terms, reproduced from this module's LICENSE file:
+License Terms:
 
 
     This project is covered by two different licenses: MIT and Apache.
@@ -1796,22 +1920,37 @@ License Terms, reproduced from this module's LICENSE file:
     See the License for the specific language governing permissions and
     limitations under the License.
 
+    Attribution information from the NOTICE file of this Apache module:
 
-==============================================================================
+        Copyright 2011-2016 Canonical Ltd.
+
+        Licensed under the Apache License, Version 2.0 (the "License");
+        you may not use this file except in compliance with the License.
+        You may obtain a copy of the License at
+
+            http://www.apache.org/licenses/LICENSE-2.0
+
+        Unless required by applicable law or agreed to in writing, software
+        distributed under the License is distributed on an "AS IS" BASIS,
+        WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+        See the License for the specific language governing permissions and
+        limitations under the License.
+
+
+----------------------------
+
 BSD 3-Clause License Components
-==============================================================================
 
-OpenTAMS uses the 11 components listed below under the BSD 3-Clause License.
+github.com/google/uuid
 
-------------------------------------------------------------------------------
-Module:    github.com/google/uuid
-Version:   v1.6.0
-License:   The BSD 3-Clause License
-SPDX-License-Identifier: BSD-3-Clause
+Module: github.com/google/uuid
+Version: v1.6.0
+License: The BSD 3-Clause License
 Copyright: Copyright (c) 2009,2014 Google Inc. All rights reserved.
+SPDX-License-Identifier: BSD-3-Clause
 License file: LICENSE (sha256 0a8d61ed3cbfd5312326e8126c31ce9c627a283adc99131b56896d29ada04b2d)
 
-License Terms, reproduced from this module's LICENSE file:
+License Terms:
 
     Copyright (c) 2009,2014 Google Inc. All rights reserved.
 
@@ -1841,15 +1980,16 @@ License Terms, reproduced from this module's LICENSE file:
     (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
     OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-------------------------------------------------------------------------------
-Module:    github.com/gorilla/mux
-Version:   v1.8.1
-License:   The BSD 3-Clause License
-SPDX-License-Identifier: BSD-3-Clause
+github.com/gorilla/mux
+
+Module: github.com/gorilla/mux
+Version: v1.8.1
+License: The BSD 3-Clause License
 Copyright: Copyright (c) 2023 The Gorilla Authors. All rights reserved.
+SPDX-License-Identifier: BSD-3-Clause
 License file: LICENSE (sha256 0b77fdea862f869ef4f201ac5649bdbd38ccb055c7f6454dffae9e2adb4941c1)
 
-License Terms, reproduced from this module's LICENSE file:
+License Terms:
 
     Copyright (c) 2023 The Gorilla Authors. All rights reserved.
 
@@ -1879,15 +2019,16 @@ License Terms, reproduced from this module's LICENSE file:
     (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
     OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-------------------------------------------------------------------------------
-Module:    github.com/munnerz/goautoneg
-Version:   v0.0.0-20191010083416-a7dc8b61c822
-License:   The BSD 3-Clause License
-SPDX-License-Identifier: BSD-3-Clause
+github.com/munnerz/goautoneg
+
+Module: github.com/munnerz/goautoneg
+Version: v0.0.0-20191010083416-a7dc8b61c822
+License: The BSD 3-Clause License
 Copyright: Copyright (c) 2011, Open Knowledge Foundation Ltd.
+SPDX-License-Identifier: BSD-3-Clause
 License file: LICENSE (sha256 aa1376b9bc5dea6f30cdefde40c176a254f247d2814d0a9929395138631b2ae0)
 
-License Terms, reproduced from this module's LICENSE file:
+License Terms:
 
     Copyright (c) 2011, Open Knowledge Foundation Ltd.
     All rights reserved.
@@ -1921,19 +2062,18 @@ License Terms, reproduced from this module's LICENSE file:
     (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
     OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-------------------------------------------------------------------------------
-Module:    github.com/oasdiff/yaml
-Version:   v0.0.0-20250309154309-f31be36b4037
-License:   The BSD 3-Clause License
-SPDX-License-Identifier: BSD-3-Clause
+github.com/oasdiff/yaml
+
+Module: github.com/oasdiff/yaml
+Version: v0.0.0-20250309154309-f31be36b4037
+License: The BSD 3-Clause License
 Copyright: Copyright (c) 2014 Sam Ghods
            Copyright (c) 2012 The Go Authors. All rights reserved.
+SPDX-License-Identifier: BSD-3-Clause
 License file: LICENSE (sha256 24653fd8a39354396da1a265d68316399edc39b1df48c5866d55f9f06484fa9a)
+Dual-licensed under MIT and BSD-3-Clause; listed under each.
 
-This module is dual-licensed under MIT and BSD-3-Clause, and is listed under
-each. This entry covers its LICENSE file.
-
-License Terms, reproduced from this module's LICENSE file:
+License Terms:
 
     The MIT License (MIT)
 
@@ -1986,16 +2126,17 @@ License Terms, reproduced from this module's LICENSE file:
     (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
     OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-------------------------------------------------------------------------------
-Module:    github.com/spf13/pflag
-Version:   v1.0.9
-License:   The BSD 3-Clause License
-SPDX-License-Identifier: BSD-3-Clause
+github.com/spf13/pflag
+
+Module: github.com/spf13/pflag
+Version: v1.0.9
+License: The BSD 3-Clause License
 Copyright: Copyright (c) 2012 Alex Ogier. All rights reserved.
            Copyright (c) 2012 The Go Authors. All rights reserved.
+SPDX-License-Identifier: BSD-3-Clause
 License file: LICENSE (sha256 b8514c577c1c4b46cee454d5a882b15fa411e72c5bd7f801f241591789fce61a)
 
-License Terms, reproduced from this module's LICENSE file:
+License Terms:
 
     Copyright (c) 2012 Alex Ogier. All rights reserved.
     Copyright (c) 2012 The Go Authors. All rights reserved.
@@ -2026,15 +2167,16 @@ License Terms, reproduced from this module's LICENSE file:
     (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
     OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-------------------------------------------------------------------------------
-Module:    golang.org/x/crypto
-Version:   v0.53.0
-License:   The BSD 3-Clause License
-SPDX-License-Identifier: BSD-3-Clause
+golang.org/x/crypto
+
+Module: golang.org/x/crypto
+Version: v0.53.0
+License: The BSD 3-Clause License
 Copyright: Copyright 2009 The Go Authors.
+SPDX-License-Identifier: BSD-3-Clause
 License file: LICENSE (sha256 911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad)
 
-License Terms, reproduced from this module's LICENSE file:
+License Terms:
 
     Copyright 2009 The Go Authors.
 
@@ -2064,15 +2206,16 @@ License Terms, reproduced from this module's LICENSE file:
     (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
     OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-------------------------------------------------------------------------------
-Module:    golang.org/x/net
-Version:   v0.56.0
-License:   The BSD 3-Clause License
-SPDX-License-Identifier: BSD-3-Clause
+golang.org/x/net
+
+Module: golang.org/x/net
+Version: v0.56.0
+License: The BSD 3-Clause License
 Copyright: Copyright 2009 The Go Authors.
+SPDX-License-Identifier: BSD-3-Clause
 License file: LICENSE (sha256 911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad)
 
-License Terms, reproduced from this module's LICENSE file:
+License Terms:
 
     Copyright 2009 The Go Authors.
 
@@ -2102,15 +2245,16 @@ License Terms, reproduced from this module's LICENSE file:
     (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
     OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-------------------------------------------------------------------------------
-Module:    golang.org/x/sync
-Version:   v0.21.0
-License:   The BSD 3-Clause License
-SPDX-License-Identifier: BSD-3-Clause
+golang.org/x/sync
+
+Module: golang.org/x/sync
+Version: v0.21.0
+License: The BSD 3-Clause License
 Copyright: Copyright 2009 The Go Authors.
+SPDX-License-Identifier: BSD-3-Clause
 License file: LICENSE (sha256 911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad)
 
-License Terms, reproduced from this module's LICENSE file:
+License Terms:
 
     Copyright 2009 The Go Authors.
 
@@ -2140,15 +2284,16 @@ License Terms, reproduced from this module's LICENSE file:
     (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
     OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-------------------------------------------------------------------------------
-Module:    golang.org/x/sys
-Version:   v0.46.0
-License:   The BSD 3-Clause License
-SPDX-License-Identifier: BSD-3-Clause
+golang.org/x/sys
+
+Module: golang.org/x/sys
+Version: v0.46.0
+License: The BSD 3-Clause License
 Copyright: Copyright 2009 The Go Authors.
+SPDX-License-Identifier: BSD-3-Clause
 License file: LICENSE (sha256 911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad)
 
-License Terms, reproduced from this module's LICENSE file:
+License Terms:
 
     Copyright 2009 The Go Authors.
 
@@ -2178,15 +2323,16 @@ License Terms, reproduced from this module's LICENSE file:
     (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
     OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-------------------------------------------------------------------------------
-Module:    golang.org/x/text
-Version:   v0.39.0
-License:   The BSD 3-Clause License
-SPDX-License-Identifier: BSD-3-Clause
+golang.org/x/text
+
+Module: golang.org/x/text
+Version: v0.39.0
+License: The BSD 3-Clause License
 Copyright: Copyright 2009 The Go Authors.
+SPDX-License-Identifier: BSD-3-Clause
 License file: LICENSE (sha256 911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad)
 
-License Terms, reproduced from this module's LICENSE file:
+License Terms:
 
     Copyright 2009 The Go Authors.
 
@@ -2216,15 +2362,16 @@ License Terms, reproduced from this module's LICENSE file:
     (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
     OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-------------------------------------------------------------------------------
-Module:    google.golang.org/protobuf
-Version:   v1.36.10
-License:   The BSD 3-Clause License
-SPDX-License-Identifier: BSD-3-Clause
+google.golang.org/protobuf
+
+Module: google.golang.org/protobuf
+Version: v1.36.10
+License: The BSD 3-Clause License
 Copyright: Copyright (c) 2018 The Go Authors. All rights reserved.
+SPDX-License-Identifier: BSD-3-Clause
 License file: LICENSE (sha256 4835612df0098ca95f8e7d9e3bffcb02358d435dbb38057c844c99d7f725eb20)
 
-License Terms, reproduced from this module's LICENSE file:
+License Terms:
 
     Copyright (c) 2018 The Go Authors. All rights reserved.
 
@@ -2255,21 +2402,20 @@ License Terms, reproduced from this module's LICENSE file:
     OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-==============================================================================
+----------------------------
+
 Zero-Clause BSD License Components
-==============================================================================
 
-OpenTAMS uses the 1 component listed below under the Zero-Clause BSD License.
+github.com/woodsbury/decimal128
 
-------------------------------------------------------------------------------
-Module:    github.com/woodsbury/decimal128
-Version:   v1.3.0
-License:   Zero-Clause BSD License
-SPDX-License-Identifier: 0BSD
+Module: github.com/woodsbury/decimal128
+Version: v1.3.0
+License: Zero-Clause BSD License
 Copyright: Copyright (c) 2022 Wade Smith
+SPDX-License-Identifier: 0BSD
 License file: LICENCE (sha256 5cf77ef8bcb04d991cbb944d5ca2bbb30bf329db46eb2e25262683931032d90b)
 
-License Terms, reproduced from this module's LICENCE file:
+License Terms:
 
     BSD Zero Clause License
 
