@@ -10,13 +10,12 @@
 // cache, classifies it, and pulls out the copyright notices. Modules are then
 // grouped by licence family, one section each.
 //
-// Within a family the licence text is printed once, after the component list,
-// rather than repeated under every module. That is the standard attribution
-// layout and it still satisfies the reproduce-the-notice conditions: each
-// module's own copyright line is listed, and the shared terms follow. A module
-// whose licence text is NOT the canonical template for its family is the
-// exception — its text is reproduced verbatim in full, so a locally modified
-// or unusual licence can never be silently collapsed into the standard one.
+// Every component reproduces its own licence file verbatim, because the notice
+// that has to travel with it is specific to that module. The exception is an
+// Apache-2.0 file whose terms match this repository's LICENSE: those refer to
+// LICENSE rather than repeating ~10 KB of identical text some thirty times.
+// The match is checked, not assumed, so a dependency shipping a modified
+// Apache licence is still reproduced in full.
 //
 //	go run ./tools/gennotices          # rewrite THIRD-PARTY-NOTICES.txt
 //	go run ./tools/gennotices -check   # fail if the committed files are stale
@@ -58,9 +57,12 @@ type licenseDoc struct {
 	// sha256 of the licence file as shipped in the module cache. It anchors
 	// this entry to an exact upstream file, so a silent relicensing upstream
 	// shows up as a changed digest rather than passing unnoticed.
-	sha256    string
-	canonical bool
-	combined  bool
+	sha256 string
+	// sameAsRepoLicense is set when an Apache-2.0 licence file carries the
+	// same terms as this repository's own LICENSE. Only then may the entry
+	// point at LICENSE instead of reproducing its text.
+	sameAsRepoLicense bool
+	combined          bool
 }
 
 type module struct {
@@ -86,7 +88,7 @@ type entry struct {
 }
 
 func main() {
-	check := flag.Bool("check", false, "verify the committed files are up to date instead of writing them")
+	check := flag.Bool("check", false, "verify the committed file is up to date instead of writing it")
 	flag.Parse()
 
 	root, err := repoRoot()
@@ -102,8 +104,20 @@ func main() {
 		fatal(fmt.Errorf("no third-party modules resolved from ./cmd/... — is the module cache populated?"))
 	}
 
+	// An Apache-2.0 component may only refer to LICENSE for its terms when
+	// its licence file actually carries those terms, so LICENSE is the
+	// reference every Apache component is checked against.
+	repoLicense, err := os.ReadFile(filepath.Join(root, "LICENSE"))
+	if err != nil {
+		fatal(fmt.Errorf("reading LICENSE: %w", err))
+	}
+	repoApacheTerms := apacheTerms(string(repoLicense))
+	if repoApacheTerms == "" {
+		fatal(fmt.Errorf("LICENSE does not look like the Apache License 2.0"))
+	}
+
 	for i := range mods {
-		if err := mods[i].classify(); err != nil {
+		if err := mods[i].classify(repoApacheTerms); err != nil {
 			fatal(fmt.Errorf("%s: %w", mods[i].Path, err))
 		}
 	}
@@ -220,7 +234,7 @@ var (
 	spaceRE       = regexp.MustCompile(`\s+`)
 )
 
-func (m *module) classify() error {
+func (m *module) classify(repoApacheTerms string) error {
 	dirEntries, err := os.ReadDir(m.Dir)
 	if err != nil {
 		return fmt.Errorf("reading module dir: %w", err)
@@ -250,9 +264,10 @@ func (m *module) classify() error {
 					text:     text,
 					sha256:   hex.EncodeToString(sum[:]),
 					combined: len(fams) > 1,
-					// A file covering several licences can never be replaced
-					// by one family's shared text, so it is always reproduced.
-					canonical: len(fams) == 1 && matchesCanonical(fam, text),
+					// A file covering several licences is never the same as
+					// LICENSE, so it is always reproduced.
+					sameAsRepoLicense: len(fams) == 1 && fam == "Apache-2.0" &&
+						apacheTerms(text) == repoApacheTerms,
 				})
 			}
 		case noticeNameRE.MatchString(name) && m.noticeText == "":
@@ -498,40 +513,20 @@ func normalize(s string) string {
 	return spaceRE.ReplaceAllString(strings.ToLower(quoteFolder.Replace(s)), " ")
 }
 
-// grantAnchor is the first phrase of the operative grant in each family's
-// text. Everything before it — the licence title, the copyright line, the
-// occasional preamble — varies between projects without changing the terms,
-// so the comparison starts at the anchor and ignores the lead-in.
-var grantAnchor = map[string]string{
-	"MIT":          "permission is hereby granted, free of charge",
-	"BSD-3-Clause": "redistribution and use in source and binary forms",
-	"BSD-2-Clause": "redistribution and use in source and binary forms",
-	"0BSD":         "permission to use, copy, modify",
-	"ISC":          "permission to use, copy, modify",
-}
-
-// canonicalBody reduces a licence text to its operative terms, normalized for
-// comparison. A module whose body matches the family template is covered by
-// the shared terms printed once per family; anything else gets reproduced in
-// full under its own entry.
-func canonicalBody(fam, text string) string {
+// apacheTerms reduces an Apache 2.0 licence file to its operative terms,
+// normalized for comparison: everything from the "TERMS AND CONDITIONS"
+// heading up to the "END OF TERMS AND CONDITIONS" marker. That drops the
+// title block, the appendix, and the trailing marker itself, none of which
+// carry terms and all of which upstream projects format differently.
+func apacheTerms(text string) string {
 	n := normalize(text)
-	if anchor, ok := grantAnchor[fam]; ok {
-		if i := strings.Index(n, anchor); i >= 0 {
-			n = n[i:]
-		}
+	if i := strings.Index(n, "terms and conditions for use, reproduction, and distribution"); i >= 0 {
+		n = n[i:]
+	}
+	if i := strings.Index(n, "end of terms and conditions"); i > 0 {
+		n = n[:i]
 	}
 	return strings.TrimSpace(n)
-}
-
-func matchesCanonical(fam, text string) bool {
-	tmpl, ok := licenseTemplates[fam]
-	if !ok {
-		// Apache-2.0 is verified by family detection alone: the text is long,
-		// and every module ships the same upstream file.
-		return fam == "Apache-2.0"
-	}
-	return canonicalBody(fam, text) == canonicalBody(fam, tmpl)
 }
 
 // render builds the whole THIRD-PARTY-NOTICES file.
@@ -608,30 +603,29 @@ func renderFamily(fam string, entries []entry) string {
 
 // reproduce decides whether a component's own licence text is printed.
 //
-// Everything is reproduced except a stock Apache-2.0 licence file. Repeating
-// the Apache text would add roughly 10 KB per module for ~30 modules, all of
-// it identical to the repository's own LICENSE, which already travels with
-// every artefact and is what section 4(a) requires. A non-standard or
+// Everything is reproduced except an Apache-2.0 licence file whose terms match
+// this repository's LICENSE. Repeating the Apache text would add roughly 10 KB
+// per module for ~30 modules, all of it identical to LICENSE, which already
+// travels with every artefact and is what section 4(a) requires. A modified or
 // multi-licence Apache file is still reproduced, because then the text is no
-// longer the one in LICENSE.
+// longer the one LICENSE carries.
 func reproduce(fam string, lic licenseDoc) bool {
 	if fam != "Apache-2.0" {
 		return true
 	}
-	return lic.combined || !lic.canonical
+	return lic.combined || !lic.sameAsRepoLicense
 }
 
-// familyNames carries the three ways each licence has to be named: the
-// section heading, the value of the per-component "License:" field, and the
-// form that reads correctly inside a sentence.
-var familyNames = map[string]struct{ heading, field, prose string }{
-	"MIT":          {"MIT License", "The MIT License", "MIT License"},
-	"Apache-2.0":   {"Apache 2.0 License", "Apache 2.0 License", "Apache License, Version 2.0"},
-	"BSD-3-Clause": {"BSD 3-Clause License", "The BSD 3-Clause License", "BSD 3-Clause License"},
-	"BSD-2-Clause": {"BSD 2-Clause License", "The BSD 2-Clause License", "BSD 2-Clause License"},
-	"0BSD":         {"Zero-Clause BSD License", "Zero-Clause BSD License", "Zero-Clause BSD License"},
-	"ISC":          {"ISC License", "ISC License", "ISC License"},
-	"MPL-2.0":      {"Mozilla Public License 2.0", "Mozilla Public License 2.0", "Mozilla Public License 2.0"},
+// familyNames carries the two ways each licence has to be named: the section
+// heading, and the value of the per-component "License:" field.
+var familyNames = map[string]struct{ heading, field string }{
+	"MIT":          {"MIT License", "The MIT License"},
+	"Apache-2.0":   {"Apache 2.0 License", "Apache 2.0 License"},
+	"BSD-3-Clause": {"BSD 3-Clause License", "The BSD 3-Clause License"},
+	"BSD-2-Clause": {"BSD 2-Clause License", "The BSD 2-Clause License"},
+	"0BSD":         {"Zero-Clause BSD License", "Zero-Clause BSD License"},
+	"ISC":          {"ISC License", "ISC License"},
+	"MPL-2.0":      {"Mozilla Public License 2.0", "Mozilla Public License 2.0"},
 }
 
 // licenseFamilies lists the distinct licence families a module is under.
@@ -647,16 +641,8 @@ func licenseFamilies(m module) []string {
 	return out
 }
 
-func plural(n int, one, many string) string {
-	if n == 1 {
-		return one
-	}
-	return many
-}
-
 func familyHeading(fam string) string { return familyNames[fam].heading }
 func familyField(fam string) string   { return familyNames[fam].field }
-func familyProse(fam string) string   { return familyNames[fam].prose }
 
 func indent(s, pad string) string {
 	lines := strings.Split(s, "\n")
