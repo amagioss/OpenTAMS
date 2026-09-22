@@ -7,12 +7,15 @@ review requests.
 
 ## Current maintainers
 
-| Name | GitHub | Affiliation | Area |
-|---|---|---|---|
-| Akshay Narayan Pai | [@Akshay-Narayan-Pai](https://github.com/Akshay-Narayan-Pai) | Amagi Media Labs | Overall; API contract, release and supply chain |
-| Hamza U | [@hamza-u](https://github.com/hamza-u) | Amagi Media Labs | Store and metastore, migrations |
-| Yash Bagdi | [@yashbagdi](https://github.com/yashbagdi) | Amagi Media Labs | Deployment, Terraform, Helm |
-| Naveen Rathore | [@naveenrathore81](https://github.com/naveenrathore81) | Amagi Media Labs | Service layer, observability |
+| Name | GitHub | Affiliation |
+|---|---|---|
+| Akshay Narayan Pai | [@Akshay-Narayan-Pai](https://github.com/Akshay-Narayan-Pai) | Amagi Media Labs |
+| Hamza U | [@hamza-u](https://github.com/hamza-u) | Amagi Media Labs |
+| Yash Bagdi | [@yashbagdi](https://github.com/yashbagdi) | Amagi Media Labs |
+| Naveen Rathore | [@naveenrathore81](https://github.com/naveenrathore81) | Amagi Media Labs |
+
+Every maintainer maintains the whole tree. There is no per-area split and no
+area that belongs to one person.
 
 Maintainers are listed with their affiliation so that reviewers and users can
 see where the project's decision-making currently sits. OpenTAMS is presently
@@ -34,9 +37,9 @@ that the project's history stays legible.
 - Is expected to respond, or hand off explicitly, rather than let a review go
   silent.
 
-Maintainers are not required to review every area. The **Area** column above is
-a routing hint, not a restriction, and it does not create an exclusive right of
-review over that area.
+No maintainer holds an exclusive right of review over any part of the tree, and
+none is expected to review every change. [`.github/CODEOWNERS`](.github/CODEOWNERS)
+requests the whole group, and any one of them can approve.
 
 ## Reaching the maintainers
 
