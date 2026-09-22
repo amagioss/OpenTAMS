@@ -4,5 +4,8 @@
 # See https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
 #
 # Roster: MAINTAINERS.md. Review thresholds: GOVERNANCE.md.
+#
+# The team must keep write access to this repository. Without it GitHub
+# ignores the rule silently and requests no reviewers.
 
-*   @Akshay-Narayan-Pai @hamza-u
+*   @amagioss/opentams-maintainers

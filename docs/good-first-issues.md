@@ -67,7 +67,7 @@ With `--json`, designed for parsing:
 
 ### Who to ping
 
-- `@Akshay-Narayan-Pai` or `@hamza-u` (general)
+- `@amagioss/opentams-maintainers` (general)
 - For ldflags / release-pipeline questions: anyone who's recently touched [`.goreleaser.yml`](../.goreleaser.yml) or [`.github/workflows/release.yml`](../.github/workflows/release.yml).
 
 ---
@@ -142,7 +142,7 @@ type Validator interface {
 
 ### Who to ping
 
-- `@Akshay-Narayan-Pai` or `@hamza-u`
+- `@amagioss/opentams-maintainers`
 - For the specific package's domain: see the package's existing maintainer history (`git log pkg/<name>/`) — the most recent contributor is usually the most context-rich reviewer.
 
 ---
@@ -196,7 +196,7 @@ In practice, a handful of `MUST` rules don't yet have an explicit regression tes
 
 ### Who to ping
 
-- `@Akshay-Narayan-Pai` or `@hamza-u`
+- `@amagioss/opentams-maintainers`
 - For spec-interpretation questions: anyone who's recently touched [`docs/requirements.md`](requirements.md) (`git log docs/requirements.md`).
 
 ---
