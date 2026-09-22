@@ -4,10 +4,5 @@
 # See https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
 #
 # Roster: MAINTAINERS.md. Review thresholds: GOVERNANCE.md.
-#
-# Every maintainer owns the whole tree. GOVERNANCE.md asks for one approval on
-# any change, so a per-path split would only decide which name the request
-# lands on, at the cost of blocking a path on one person's availability. The
-# request goes to the whole group and any one of them can approve it.
 
-*   @Akshay-Narayan-Pai @hamza-u @yashbagdi @naveenrathore81
+*   @Akshay-Narayan-Pai @hamza-u
