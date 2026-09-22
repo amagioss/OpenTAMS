@@ -276,7 +276,7 @@ OpenTAMS is developed and maintained by [Amagi Media Labs Limited](https://www.a
 - **Discussions, design questions, "is this in scope?"** — open a [GitHub Discussion](https://github.com/amagioss/opentams/discussions) or a regular issue.
 - **Bug reports, feature requests** — GitHub issues with the appropriate template.
 - **Security findings** — the channels in [SECURITY.md](SECURITY.md), not public issues.
-- **Code-of-Conduct concerns** — `conduct@amagi.com` (see [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)).
+- **Code-of-Conduct concerns** — `akshay.narayan@amagi.com` (see [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)).
 
 We try to respond to issues and PRs within a few business days. If something has gone quiet for more than a week, please ping the issue or PR — that's a signal we missed it, not that we're ignoring you.
 

@@ -49,4 +49,4 @@ token drops in without a code change. See
   cursor format.
 - [`api/opentams-api-bundled.yaml`](../api/opentams-api-bundled.yaml) —
   the full spec. Rendered at
-  [amagimedia.github.io/OpenTAMS](https://amagimedia.github.io/OpenTAMS/).
+  [amagioss.github.io/OpenTAMS](https://amagioss.github.io/OpenTAMS/).

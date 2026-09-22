@@ -2,17 +2,17 @@
 
 This file is the authoritative roster. [`GOVERNANCE.md`](GOVERNANCE.md)
 describes what these roles may decide and how the roster changes;
-[`.github/CODEOWNERS`](.github/CODEOWNERS) turns the roster into automatic
-review requests.
+[`.github/CODEOWNERS`](.github/CODEOWNERS) lists the maintainers who review
+pull requests.
 
 ## Current maintainers
 
-| Name | GitHub | Affiliation | Area |
-|---|---|---|---|
-| Akshay Narayan Pai | [@Akshay-Narayan-Pai](https://github.com/Akshay-Narayan-Pai) | Amagi Media Labs | Overall; API contract, release and supply chain |
-| Hamza U | [@hamza-u](https://github.com/hamza-u) | Amagi Media Labs | Store and metastore, migrations |
-| Yash Bagdi | [@yashbagdi](https://github.com/yashbagdi) | Amagi Media Labs | Deployment, Terraform, Helm |
-| Naveen Rathore | [@naveenrathore81](https://github.com/naveenrathore81) | Amagi Media Labs | Service layer, observability |
+| Name | GitHub | Affiliation |
+|---|---|---|
+| Akshay Narayan Pai | [@Akshay-Narayan-Pai](https://github.com/Akshay-Narayan-Pai) | Amagi Media Labs |
+| Hamza U | [@hamza-u](https://github.com/hamza-u) | Amagi Media Labs |
+| Yash Bagdi | [@yashbagdi](https://github.com/yashbagdi) | Amagi Media Labs |
+| Naveen Rathore | [@naveenrathore81](https://github.com/naveenrathore81) | Amagi Media Labs |
 
 Maintainers are listed with their affiliation so that reviewers and users can
 see where the project's decision-making currently sits. OpenTAMS is presently
@@ -34,9 +34,9 @@ that the project's history stays legible.
 - Is expected to respond, or hand off explicitly, rather than let a review go
   silent.
 
-Maintainers are not required to review every area. The **Area** column above is
-a routing hint, not a restriction, and it does not create an exclusive right of
-review over that area.
+Review is done by the maintainers listed in
+[`.github/CODEOWNERS`](.github/CODEOWNERS), which is where a pull request's
+reviewers are drawn from.
 
 ## Reaching the maintainers
 
@@ -48,7 +48,7 @@ Use a private channel when the subject genuinely cannot be public:
 
 - **Security vulnerabilities** — the reporting channels in
   [`SECURITY.md`](SECURITY.md). Not a public issue.
-- **Code-of-Conduct concerns** — `conduct@amagi.com`, as described in
+- **Code-of-Conduct concerns** — `akshay.narayan@amagi.com`, as described in
   [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
 
 ## Becoming a maintainer

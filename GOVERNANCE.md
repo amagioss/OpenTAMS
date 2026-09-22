@@ -40,8 +40,8 @@ when someone approves and nobody has objected.
 | Typo, comment, docs clarification | One maintainer approval. |
 | Bug fix, test, internal refactor | One maintainer approval. |
 | New feature, new configuration surface | One maintainer approval; give other maintainers 2 business days to weigh in before merging. |
-| API contract, database migration, release or supply-chain tooling | Two maintainer approvals. These are the paths pinned in [`CODEOWNERS`](.github/CODEOWNERS). |
-| Governance, licensing, security policy, maintainer roster | Two maintainer approvals and 5 business days of visibility. |
+| API contract, database migration, release or supply-chain tooling | One maintainer approval. Give other maintainers 2 business days to weigh in before merging. |
+| Governance, licensing, security policy, maintainer roster | One maintainer approval and 5 business days of visibility. |
 
 **An objection must carry a reason.** A maintainer can block a change, but a
 block is an argument, not a veto — it has to say what is wrong and, where
@@ -122,7 +122,7 @@ violation occurred without republishing the details of the report.
 ## Changing this document
 
 Governance changes follow the governance row of the table above: a pull
-request, two maintainer approvals, and 5 business days of visibility. There is
+request, one maintainer approval, and 5 business days of visibility. There is
 no mechanism for changing governance outside of a public pull request.
 
 ## Concentration of maintainership
@@ -190,5 +190,5 @@ Agent-specific repository conventions are in [`AGENTS.md`](AGENTS.md).
 ## Code of Conduct
 
 All participation is governed by [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
-Enforcement is a maintainer responsibility; reports go to `conduct@amagi.com`.
+Enforcement is a maintainer responsibility; reports go to `akshay.narayan@amagi.com`.
 A maintainer who is the subject of a report recuses themselves from handling it.

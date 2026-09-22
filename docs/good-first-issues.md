@@ -67,7 +67,7 @@ With `--json`, designed for parsing:
 
 ### Who to ping
 
-- `@amagioss/maintainers` (general)
+- `@amagioss/opentams-maintainers` (general)
 - For ldflags / release-pipeline questions: anyone who's recently touched [`.goreleaser.yml`](../.goreleaser.yml) or [`.github/workflows/release.yml`](../.github/workflows/release.yml).
 
 ---
@@ -142,7 +142,7 @@ type Validator interface {
 
 ### Who to ping
 
-- `@amagioss/maintainers`
+- `@amagioss/opentams-maintainers`
 - For the specific package's domain: see the package's existing maintainer history (`git log pkg/<name>/`) — the most recent contributor is usually the most context-rich reviewer.
 
 ---
@@ -196,7 +196,7 @@ In practice, a handful of `MUST` rules don't yet have an explicit regression tes
 
 ### Who to ping
 
-- `@amagioss/maintainers`
+- `@amagioss/opentams-maintainers`
 - For spec-interpretation questions: anyone who's recently touched [`docs/requirements.md`](requirements.md) (`git log docs/requirements.md`).
 
 ---
@@ -205,7 +205,5 @@ In practice, a handful of `MUST` rules don't yet have an explicit regression tes
 
 Before filing these issues:
 
-- [ ] Confirm the `good first issue` label exists on the repo (the Tier 2 audit flagged this as outstanding repo-admin work).
-- [ ] Confirm `@amagioss/maintainers` is a real GitHub team or update the "Who to ping" sections to a personal handle.
 - [ ] Confirm the `docs/requirements.md` REQ IDs cited above match the current spec — they were correct as of the document's last review (2026-05-04), but the spec evolves.
 - [ ] After filing each issue, link it back here (or remove this file once they're filed; either is fine).

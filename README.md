@@ -276,7 +276,7 @@ Amagi engineers should start with [`CONTRIBUTING.md`](CONTRIBUTING.md) — it co
 - **Bugs**: [open a bug report](https://github.com/amagioss/opentams/issues/new?template=bug_report.yml).
 - **Features**: [open a feature request](https://github.com/amagioss/opentams/issues/new?template=feature_request.yml). The project tracks every behavioural decision against the requirements spec, so the issue is where a proposal gets discussed.
 - **Security issues**: please **do not** open a public issue. See [`SECURITY.md`](SECURITY.md) for the private reporting channels (GitHub Security Advisories preferred; email fallback to `security@amagi.com`).
-- **Code-of-Conduct concerns**: see [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md). Reports go to `conduct@amagi.com`.
+- **Code-of-Conduct concerns**: see [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md). Reports go to `akshay.narayan@amagi.com`.
 
 You are welcome to fork this repository to add features, address issues, or adapt the implementation to your own requirements, under the [Apache 2.0 license](LICENSE). Amagi trademarks are not licensed with it — see the Trademarks section of [`NOTICE`](NOTICE).
 
