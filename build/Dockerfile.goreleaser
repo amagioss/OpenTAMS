@@ -15,6 +15,11 @@ FROM gcr.io/distroless/static-debian12:nonroot
 
 COPY opentams /opentams
 
+# Supplied through .goreleaser.yml's dockers[].extra_files. The image
+# redistributes every statically linked dependency, so it carries the licence
+# and attribution notices with it.
+COPY LICENSE NOTICE THIRD-PARTY-NOTICES.txt /licenses/
+
 EXPOSE 8080
 USER nonroot:nonroot
 ENTRYPOINT ["/opentams"]

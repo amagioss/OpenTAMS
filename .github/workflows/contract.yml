@@ -6,6 +6,10 @@
 #                 generated Go must be reproducible from it. `make api-check`
 #                 regenerates both and fails if either differs, which is the
 #                 only way a hand-edit of gen/ gets caught.
+#   * notices   — THIRD-PARTY-NOTICES is generated from the module cache, so a
+#                 dependency bump silently invalidates it. `make notices-check`
+#                 regenerates and fails on any difference, which keeps the
+#                 attribution shipped in the release artefacts truthful.
 #   * helm      — the chart must render. Linted against the committed
 #                 ci/*-values.yaml, because the chart legitimately requires
 #                 values: a bare `helm lint` fails its own values.schema.json
@@ -60,6 +64,23 @@ jobs:
 
       - name: Check bundle and generated code are current
         run: make api-check
+
+  notices:
+    name: third-party notices drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Check THIRD-PARTY-NOTICES is current
+        run: make notices-check
 
   helm:
     name: helm lint

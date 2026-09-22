@@ -10,9 +10,14 @@ describe a foundation-scale structure it does not have.
 
 ## Roles
 
-**Contributor** — anyone who opens an issue, comments on one, reviews a pull
-request, or sends a change. No prior commitment and no application. Everything
-in [`CONTRIBUTING.md`](CONTRIBUTING.md) applies from the first contribution.
+**Contributor** — an Amagi Media Labs Limited engineer who sends a change,
+reviews a pull request, or triages an issue. Everything in
+[`CONTRIBUTING.md`](CONTRIBUTING.md) applies from the first contribution. Code
+contributions from outside the organisation are not accepted at present.
+
+**Reporter** — anyone, inside or outside Amagi, who opens an issue or comments
+on one. Bug reports and feature requests are welcome from everybody and are
+triaged by the maintainers.
 
 **Maintainer** — a contributor with write access, listed in
 [`MAINTAINERS.md`](MAINTAINERS.md). Maintainers merge changes, cut releases,
@@ -122,7 +127,7 @@ no mechanism for changing governance outside of a public pull request.
 
 ## Concentration of maintainership
 
-Every current maintainer is employed by Amagi Media Labs Ltd. We are stating
+Every current maintainer is employed by Amagi Media Labs Limited. We are stating
 that plainly rather than implying a broader base than exists. It has practical
 consequences a user should weigh:
 
@@ -142,7 +147,7 @@ history justifies it. Until that happens, this section stays as written.
 The Apache License 2.0 grants copyright and patent rights. Section 6 of that
 licence grants **no trademark rights**, and this project does not extend any.
 
-- "Amagi" and the Amagi logo are trademarks of Amagi Media Labs Ltd. You may
+- "Amagi" and the Amagi logo are trademarks of Amagi Media Labs Limited. You may
   fork, modify, and redistribute OpenTAMS freely. You may not name your fork or
   a derived product in a way that suggests it is Amagi's, nor use the Amagi name
   or logo to imply endorsement of it.

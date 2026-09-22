@@ -102,13 +102,23 @@ archives:
     formats: [binary]
     name_template: "{{ .ProjectName }}-{{ .Version }}-{{ .Os }}-{{ .Arch }}"
 
-  # tamsctl ships as a conventional .tar.gz per OS/arch (LICENSE + README are
-  # included by goreleaser's default file set). This is the only archive
-  # attached to the GitHub Release — see release.ids.
+  # tamsctl ships as a conventional .tar.gz per OS/arch. This is the only
+  # archive attached to the GitHub Release — see release.ids.
+  #
+  # `files` replaces goreleaser's default set rather than adding to it, so
+  # LICENSE and README are restated here. NOTICE and THIRD-PARTY-NOTICES.txt are
+  # the reason this block exists: the archive is a distribution of every
+  # statically linked dependency, so Apache 2.0 sections 4(a) and 4(d) and the
+  # MIT and BSD notice conditions apply to it.
   - id: tamsctl-archive
     ids: [tamsctl]
     formats: [tar.gz]
     name_template: "tamsctl-{{ .Version }}-{{ .Os }}-{{ .Arch }}"
+    files:
+      - LICENSE
+      - NOTICE
+      - README.md
+      - THIRD-PARTY-NOTICES.txt
 
 # Per-arch image builds. goreleaser hands the prebuilt binary to docker
 # build via the build context, so build/Dockerfile.goreleaser is small
@@ -123,6 +133,10 @@ dockers:
       - "ghcr.io/amagioss/opentams:v{{ .Version }}-amd64"
     dockerfile: build/Dockerfile.goreleaser
     use: buildx
+    extra_files:
+      - LICENSE
+      - NOTICE
+      - THIRD-PARTY-NOTICES.txt
     build_flag_templates:
       - "--platform=linux/amd64"
       - "--label=org.opencontainers.image.title={{ .ProjectName }}"
@@ -134,8 +148,8 @@ dockers:
       - "--label=org.opencontainers.image.version={{ .Version }}"
       - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
       - "--label=org.opencontainers.image.created={{ .Date }}"
-      - "--label=org.opencontainers.image.authors=OpenTAMS Authors"
-      - "--label=org.opencontainers.image.vendor=Amagi Media Labs Ltd."
+      - "--label=org.opencontainers.image.authors=Amagi Media Labs Limited"
+      - "--label=org.opencontainers.image.vendor=Amagi Media Labs Limited"
 
   - id: opentams-arm64
     goos: linux
@@ -145,6 +159,10 @@ dockers:
       - "ghcr.io/amagioss/opentams:v{{ .Version }}-arm64"
     dockerfile: build/Dockerfile.goreleaser
     use: buildx
+    extra_files:
+      - LICENSE
+      - NOTICE
+      - THIRD-PARTY-NOTICES.txt
     build_flag_templates:
       - "--platform=linux/arm64"
       - "--label=org.opencontainers.image.title={{ .ProjectName }}"
@@ -156,8 +174,8 @@ dockers:
       - "--label=org.opencontainers.image.version={{ .Version }}"
       - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
       - "--label=org.opencontainers.image.created={{ .Date }}"
-      - "--label=org.opencontainers.image.authors=OpenTAMS Authors"
-      - "--label=org.opencontainers.image.vendor=Amagi Media Labs Ltd."
+      - "--label=org.opencontainers.image.authors=Amagi Media Labs Limited"
+      - "--label=org.opencontainers.image.vendor=Amagi Media Labs Limited"
 
 # Multi-arch manifest. We publish three tag streams:
 #   ghcr.io/amagioss/opentams:vX.Y.Z      — exact version, immutable

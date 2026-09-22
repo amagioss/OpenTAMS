@@ -36,3 +36,11 @@ Makefile
 *.md
 !go.mod
 !go.sum
+
+# The licence and attribution notices DO ship inside the image — see the COPY
+# in build/Dockerfile. They are re-included explicitly so a future broadening
+# of the rules above (`**/*.md`, a `THIRD-PARTY*` glob) cannot silently drop
+# them from the build context and break the image's attribution.
+!LICENSE
+!NOTICE
+!THIRD-PARTY-NOTICES.txt

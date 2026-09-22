@@ -40,3 +40,6 @@ deployments/terraform/**/*_cli_log.txt
 .mcp.json
 .DS_Store
 
+# Stray binary from `go build ./tools/gennotices/` — the tool is meant to be
+# run with `make notices`, which uses `go run`.
+/gennotices

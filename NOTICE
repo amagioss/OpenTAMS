@@ -1,17 +1,9 @@
-OpenTAMS
-Copyright 2026 Amagi Media Labs Ltd. and the OpenTAMS contributors
+Amagi Media Labs Limited TAMS V8.0 Implementation (OpenTAMS)
+Copyright © 2026 Amagi Media Labs Limited
 
-This product includes software developed at Amagi Media Labs Ltd.
-(https://www.amagi.com).
-
---------------------------------------------------------------------------------
-BBC TAMS specification
---------------------------------------------------------------------------------
-
-OpenTAMS implements the Time-addressable Media Store (TAMS) API specification
-published by the British Broadcasting Corporation at
-https://github.com/bbc/tams, which is licensed under the Apache License,
-Version 2.0.
+This repository contains Amagi Media Labs Limited's implementation of the
+Time-Addressable Media Store (TAMS) Specification, published by the British
+Broadcasting Corporation (BBC), available at <https://github.com/bbc/tams>.
 
 The JSON Schema files under api/schemas/ are derived from that specification at
 tag 8.0 (commit b386c43f97f05274d838066c62eb1d9dad351ea6). They are MODIFIED
@@ -19,95 +11,78 @@ copies, not an upstream mirror: 17 of the 41 vendored files differ from
 upstream, and one file has no upstream counterpart. Every modification is
 catalogued in api/schemas/README.md.
 
-OpenTAMS is an independent implementation. Its TAMS conformance is
-self-assessed and documented, with its known gaps, in docs/conformance.md.
+By making this implementation publicly available, we aim to support TAMS
+interoperability and broader adoption. It provides a practical reference that
+users can examine, test, operate, and adapt to their own needs.
 
-Amagi thanks the BBC for publishing TAMS as an open specification.
 
---------------------------------------------------------------------------------
+License
+-------
+
+This OpenTAMS software project is licensed under the Apache License 2.0.
+
+You may use, modify, and distribute this software in accordance with the terms
+of the license. See the LICENSE file for full text of Apache 2.0 License.
+
+
 Trademarks
---------------------------------------------------------------------------------
+----------
 
-"Amagi" and the Amagi logo are trademarks of Amagi Media Labs Ltd. Apache
-License 2.0 section 6 grants no trademark rights. This licence permits you to
-use, modify, and redistribute the software; it does not permit you to use the
-Amagi name or logo to name your fork, to brand a derived product or service, or
-to suggest that Amagi endorses it.
+Amagi Media Labs Limited, its logos, product names, and associated marks are
+trademarks or registered trademarks of Amagi Media Labs Limited. No rights to
+use these trademarks are granted under this software license, except as
+necessary to identify the origin of the software.
 
-Other names and logos referenced in this repository are the property of their
-respective owners.
+Modified versions, forks, or redistributed versions must not use Amagi Media
+Labs Limited's trademarks or branding in a way that suggests endorsement,
+sponsorship, affiliation, or ownership by Amagi Media Labs Limited.
 
---------------------------------------------------------------------------------
-Third-party dependencies
---------------------------------------------------------------------------------
+All third-party trademarks, product names, logos, and other marks referenced in
+this repository are the property of their respective owners. Their use is for
+identification and informational purposes only and does not imply endorsement
+or affiliation.
 
-OpenTAMS links against third-party Go modules under the MIT, Apache 2.0, BSD
-3-Clause, and 0BSD licences. Direct dependencies are listed with their versions
-and licences in docs/third-party-notices.md. Reproduce the full transitive set
-with `go list -m all`.
 
-The attribution notices below are reproduced from the NOTICE files of the
-Apache 2.0 dependencies that OpenTAMS redistributes in its released binaries and
-container images, as required by Apache License 2.0 section 4(d).
+Third-Party Open Source Software Components
+-------------------------------------------
 
---- github.com/aws/aws-sdk-go-v2 ---
+OpenTAMS uses third-party open-source software components licensed under the
+MIT License, BSD 3-Clause License, Zero-Clause BSD (0BSD) License, and Apache
+License 2.0.
 
-AWS SDK for Go
-Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-Copyright 2014-2015 Stripe, Inc.
+Applicable third-party copyright notices, license terms, and attribution
+information are provided in the THIRD-PARTY-NOTICES.txt file.
 
---- github.com/aws/smithy-go ---
+Third-party components remain the property of their respective copyright
+holders and are provided under their respective license terms.
 
-Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 
---- github.com/prometheus/client_golang ---
+Contributions
+-------------
 
-Prometheus instrumentation library for Go applications
-Copyright 2012-2015 The Prometheus Authors
+This repository is maintained primarily for our internal product and
+engineering requirements.
 
-This product includes software developed at
-SoundCloud Ltd. (http://soundcloud.com/).
+1. Contribution Policy: Code contributions are accepted only from Amagi Media
+   Labs Limited personnel. We do not currently accept pull requests or code
+   contributions from outside the organisation. Bug reports and feature
+   requests are welcome from anyone through GitHub issues.
 
-The following components are included in this product:
+2. Development Priorities: Feature development and enhancements are driven by
+   our internal product requirements.
 
-perks - a fork of https://github.com/bmizerany/perks
-https://github.com/beorn7/perks
-Copyright 2013-2015 Blake Mizerany, Björn Rabenstein
-See https://github.com/beorn7/perks/blob/master/README.md for license details.
+3. Support & Warranty: This software is provided "AS IS", without technical
+   support, warranties, or guarantees of any kind whatsoever.
 
-Go support for Protocol Buffers - Google's data interchange format
-http://github.com/golang/protobuf/
-Copyright 2010 The Go Authors
-See source code for license details.
+4. Forking & Customization: You are welcome to fork this repository to add
+   features, address issues, or adapt the implementation to your own
+   requirements.
 
---- github.com/prometheus/client_model ---
 
-Data model artifacts for Prometheus.
-Copyright 2012-2015 The Prometheus Authors
+Acknowledgement
+---------------
 
-This product includes software developed at
-SoundCloud Ltd. (http://soundcloud.com/).
+This implementation is based on the TAMS Specification developed by the BBC.
 
---- github.com/prometheus/common ---
-
-Common libraries shared by Prometheus Go components.
-Copyright 2015 The Prometheus Authors
-
-This product includes software developed at
-SoundCloud Ltd. (http://soundcloud.com/).
-
---- github.com/oasdiff/yaml3, go.yaml.in/yaml/v2, gopkg.in/yaml.v3 ---
-
-Copyright 2011-2016 Canonical Ltd.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+For more information about Amagi Media Labs Limited, and our products, visit
+<https://www.amagi.com/>.
