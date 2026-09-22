@@ -6,6 +6,12 @@
 // tamsctl binaries and the published container images. Build- and test-only
 // modules are excluded because they are never redistributed.
 //
+// The set is the union across every platform we release for, not the one the
+// generator happens to run on. Build constraints make it platform-specific:
+// github.com/prometheus/procfs is linked on linux and not on darwin, so
+// generating on a Mac would omit a module that ships inside the linux
+// container images.
+//
 // For each module the tool reads the licence file shipped in the module
 // cache, classifies it, and pulls out the copyright notices. Modules are then
 // grouped by licence family, one section each.
@@ -41,6 +47,16 @@ const (
 	ownModule   = "github.com/amagioss/opentams"
 	copyrightCO = "Copyright © 2026 Amagi Media Labs Limited"
 )
+
+// releaseTargets are the GOOS/GOARCH pairs .goreleaser.yml builds: linux for
+// both binaries and the container images, darwin for the tamsctl archives.
+// Keep in step with the builds section there.
+var releaseTargets = []struct{ goos, goarch string }{
+	{"linux", "amd64"},
+	{"linux", "arm64"},
+	{"darwin", "amd64"},
+	{"darwin", "arm64"},
+}
 
 // familyOrder fixes the order the licence families appear in, both in the
 // index table and as files on disk. Alphabetical would put 0BSD first, which
@@ -179,17 +195,34 @@ func repoRoot() (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// linkedModules returns the third-party modules reachable from ./cmd/...,
-// deduplicated and sorted. Packages from the standard library carry no module
-// and are skipped, as is our own module.
+// linkedModules returns the third-party modules reachable from ./cmd/... on
+// any platform we release for, deduplicated and sorted. Packages from the
+// standard library carry no module and are skipped, as is our own module.
 func linkedModules(root string) ([]module, error) {
+	seen := map[string]module{}
+	for _, t := range releaseTargets {
+		if err := listForTarget(root, t.goos, t.goarch, seen); err != nil {
+			return nil, err
+		}
+	}
+
+	mods := make([]module, 0, len(seen))
+	for _, m := range seen {
+		mods = append(mods, m)
+	}
+	sort.Slice(mods, func(i, j int) bool { return mods[i].Path < mods[j].Path })
+	return mods, nil
+}
+
+func listForTarget(root, goos, goarch string, seen map[string]module) error {
 	cmd := exec.Command("go", "list", "-deps", "-json", "./cmd/...")
 	cmd.Dir = root
+	cmd.Env = append(os.Environ(), "GOOS="+goos, "GOARCH="+goarch, "CGO_ENABLED=0")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("go list -deps: %w: %s", err, stderr.String())
+		return fmt.Errorf("go list -deps for %s/%s: %w: %s", goos, goarch, err, stderr.String())
 	}
 
 	type pkg struct {
@@ -200,12 +233,11 @@ func linkedModules(root string) ([]module, error) {
 		}
 	}
 
-	seen := map[string]module{}
 	dec := json.NewDecoder(bytes.NewReader(out))
 	for dec.More() {
 		var p pkg
 		if err := dec.Decode(&p); err != nil {
-			return nil, fmt.Errorf("decoding go list output: %w", err)
+			return fmt.Errorf("decoding go list output for %s/%s: %w", goos, goarch, err)
 		}
 		if p.Module == nil || p.Module.Dir == "" {
 			continue
@@ -215,13 +247,7 @@ func linkedModules(root string) ([]module, error) {
 		}
 		seen[p.Module.Path] = module{Path: p.Module.Path, Version: p.Module.Version, Dir: p.Module.Dir}
 	}
-
-	mods := make([]module, 0, len(seen))
-	for _, m := range seen {
-		mods = append(mods, m)
-	}
-	sort.Slice(mods, func(i, j int) bool { return mods[i].Path < mods[j].Path })
-	return mods, nil
+	return nil
 }
 
 var (

@@ -1703,6 +1703,31 @@ License Terms:
         This product includes software developed at
         SoundCloud Ltd. (http://soundcloud.com/).
 
+github.com/prometheus/procfs
+
+Module: github.com/prometheus/procfs
+Version: v0.16.1
+License: Apache 2.0 License
+Copyright: Copyright 2014-2015 The Prometheus Authors
+SPDX-License-Identifier: Apache-2.0
+License file: LICENSE (sha256 c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4)
+
+License Terms:
+
+    Licensed under the Apache 2.0 License, version 2.0. See the applicable
+    Apache 2.0 License text in the LICENSE file at the root of this
+    repository.
+
+    Attribution information from the NOTICE file of this Apache module:
+
+        procfs provides functions to retrieve system, kernel and process
+        metrics from the pseudo-filesystem proc.
+
+        Copyright 2014-2015 The Prometheus Authors
+
+        This product includes software developed at
+        SoundCloud Ltd. (http://soundcloud.com/).
+
 github.com/santhosh-tekuri/jsonschema/v6
 
 Module: github.com/santhosh-tekuri/jsonschema/v6
