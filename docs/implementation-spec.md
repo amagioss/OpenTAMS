@@ -118,7 +118,7 @@ OpenTAMS/
 
 | Area | Choice | Rationale |
 |---|---|---|
-| `pkg/` for logger + metrics | Importable by other Amagi services | Both packages are context-agnostic — zero TAMS domain knowledge. TAMS injects its own fields at the call site. Graduation path to `github.com/amagimedia/go-commons` when 3+ consumers exist. |
+| `pkg/` for logger + metrics | Importable by other Amagi services | Both packages are context-agnostic — zero TAMS domain knowledge. TAMS injects its own fields at the call site. Graduation path to `github.com/amagioss/go-commons` when 3+ consumers exist. |
 | `internal/` for all app code | No `pkg/` for domain code | Everything else is service-specific and not intended for external import. |
 | `api/` at root | Not nested under `internal/` | Machine-readable contract belongs at root per golang-standards; tooling (linters, code-gen) expects it here. |
 | `test/` separate from `internal/` | Unit tests live alongside source (`_test.go`); integration tests in `test/integration/` | Integration tests need docker-compose; keeping them separate allows `go test ./internal/...` to run without infra. |

@@ -28,4 +28,4 @@
 | ID | Requirement |
 |---|---|
 | NFR-MET-RE01 | Zero TAMS domain knowledge. `pkg/metrics` is suitable for adoption by other Amagi services without modification. |
-| NFR-MET-RE02 | Graduation path: move to `github.com/amagimedia/go-commons` when 3+ Amagi services adopt it. |
+| NFR-MET-RE02 | Graduation path: move to `github.com/amagioss/go-commons` when 3+ Amagi services adopt it. |

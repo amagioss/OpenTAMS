@@ -3,7 +3,7 @@
 ## Purpose
 
 Reusable golang-migrate runner with zap logging. Zero TAMS domain knowledge.
-Graduation path: `github.com/amagimedia/go-commons` when 3+ Amagi services adopt.
+Graduation path: `github.com/amagioss/go-commons` when 3+ Amagi services adopt.
 
 ## Functional Requirements
 
