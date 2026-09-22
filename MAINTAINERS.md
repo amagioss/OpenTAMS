@@ -2,8 +2,8 @@
 
 This file is the authoritative roster. [`GOVERNANCE.md`](GOVERNANCE.md)
 describes what these roles may decide and how the roster changes;
-[`.github/CODEOWNERS`](.github/CODEOWNERS) turns the roster into automatic
-review requests.
+[`.github/CODEOWNERS`](.github/CODEOWNERS) lists the maintainers who review
+pull requests.
 
 ## Current maintainers
 
@@ -13,9 +13,6 @@ review requests.
 | Hamza U | [@hamza-u](https://github.com/hamza-u) | Amagi Media Labs |
 | Yash Bagdi | [@yashbagdi](https://github.com/yashbagdi) | Amagi Media Labs |
 | Naveen Rathore | [@naveenrathore81](https://github.com/naveenrathore81) | Amagi Media Labs |
-
-Every maintainer maintains the whole tree. There is no per-area split and no
-area that belongs to one person.
 
 Maintainers are listed with their affiliation so that reviewers and users can
 see where the project's decision-making currently sits. OpenTAMS is presently
@@ -37,9 +34,9 @@ that the project's history stays legible.
 - Is expected to respond, or hand off explicitly, rather than let a review go
   silent.
 
-No maintainer holds an exclusive right of review over any part of the tree, and
-none is expected to review every change. [`.github/CODEOWNERS`](.github/CODEOWNERS)
-requests the whole group, and any one of them can approve.
+Review is done by the maintainers listed in
+[`.github/CODEOWNERS`](.github/CODEOWNERS), which is where a pull request's
+reviewers are drawn from.
 
 ## Reaching the maintainers
 
