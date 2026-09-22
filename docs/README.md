@@ -29,7 +29,6 @@
 | [`deployment/`](deployment/) | Released images and deployment notes. |
 | [`development/`](development/) | Codebase tour for new contributors. |
 | [`good-first-issues.md`](good-first-issues.md) | Curated starting points for a first contribution. |
-| [`vulnerability-status.md`](vulnerability-status.md) | Current `govulncheck` status, and the upgrade sequence that clears it. |
 | [`../THIRD-PARTY-NOTICES.txt`](../THIRD-PARTY-NOTICES.txt) | Every dependency shipped in the released artefacts, with its licence and copyright. Generated. |
 
 ## Project and governance

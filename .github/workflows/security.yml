@@ -79,11 +79,11 @@ jobs:
 
       - name: Trivy filesystem scan
         # Secrets only, deliberately. Go dependency vulnerabilities are
-        # govulncheck's job (see `make vuln-gate` in the Test workflow):
-        # govulncheck does reachability analysis and the project justifies
-        # unreachable advisories in .govulncheck-allow.yaml. Trivy has no
-        # reachability analysis, so enabling its `vuln` scanner here would
-        # re-report those same justified advisories as failures, giving two
+        # govulncheck's job (see `make vuln` in the Test workflow):
+        # govulncheck does reachability analysis and fails only on advisories
+        # it can trace into our code. Trivy has no reachability analysis, so
+        # enabling its `vuln` scanner here would re-report advisories in
+        # modules we never call as failures, giving two
         # conflicting sources of truth and a permanently red gate.
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:

@@ -135,7 +135,7 @@ below.
 
 | Endpoint | Status | Notes |
 |---|---|---|
-| `POST /tams/v1/flows/{flowId}/storage` | Implemented | Two modes: `{"limit": N}` (server picks `object_id`s) and `{"object_ids": [...]}` (client picks; idempotent across retries). The two are mutually exclusive — supplying both is 400. Presigned URL TTL is `OBJECT_STORE_PRESIGN_EXPIRY` (default 1h). |
+| `POST /tams/v1/flows/{flowId}/storage` | Implemented | Two modes: `{"limit": N}` (server picks `object_id`s) and `{"object_ids": [...]}` (client picks; idempotent across retries). The two are mutually exclusive — supplying both is 400. Both modes are capped at 100 objects per request; above that the request is rejected with 400 rather than truncated, so ask again for the rest. `limit` below 1 is also 400. Presigned URL TTL is `OBJECT_STORE_PRESIGN_EXPIRY` (default 1h). |
 
 ## Media objects
 
@@ -195,6 +195,17 @@ OpenTAMS accepts the full TAMS time-range grammar documented in the spec, includ
 
 See `internal/timerange/timerange.go` for the parser. `internal/timerange/timerange_test.go` enumerates every shape we accept and reject, including the edge cases the spec is silent on.
 
+## Tag names
+
+Tag names are free-form strings and travel in the path: `/flows/{flowId}/tags/{name}`.
+Percent-encode any character that is not safe in a path segment.
+
+One known defect: **a tag name containing a literal `%` cannot be addressed**. The router
+percent-decodes the path segment and the parameter binder then decodes it a second time,
+so `%25` arrives as `%`, fails to parse as an escape, and the request is rejected with
+`400`. By the same double decode, a name containing a literal `%20` is folded to a space.
+Names are otherwise unrestricted, and a literal `+` is preserved.
+
 ## Pagination cursor format
 
 OpenTAMS surfaces pagination through two parallel response headers:
@@ -203,6 +214,8 @@ OpenTAMS surfaces pagination through two parallel response headers:
 - **`Link`** — a non-canonical RFC 8288 form: `<>; rel="next"; key="<cursor>"`. The URI slot is empty (`<>`) and the cursor lives in the `key=` parameter. Real RFC 8288 puts the next URL inside the angle brackets; OpenTAMS uses the non-canonical shape so the same pagination model works for cursor-based callers without rebuilding the full URL on the server.
 
 Both headers carry the same cursor. Use whichever your client library prefers. Companion headers `X-Paging-Limit`, `X-Paging-Count`, and `X-Paging-ReverseOrder` describe the page itself.
+
+`X-Paging-NextKey` and `Link` are **absent** on the last page — their presence is the signal that another page exists. Test for presence, not for an empty value. The companion headers behave the other way: `X-Paging-Limit`, `X-Paging-Count`, `X-Paging-Timerange`, and `X-Paging-Reverse-Order` are always sent, including at zero values, so a client never has to distinguish "absent" from "zero".
 
 ## JSON response encoding
 

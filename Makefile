@@ -5,7 +5,7 @@
 # to run the underlying commands directly can do so without diverging from
 # CI behaviour.
 
-.PHONY: help compile build build-server build-cli install-cli vet test test-short coverage lint fmt vuln vuln-gate integration perf \
+.PHONY: help compile build build-server build-cli install-cli vet test test-short coverage lint fmt vuln integration perf \
         docker-build docker-build-local ci tools-install clean \
         release-check snapshot release-dry-run \
         api-lint api-bundle api-gen api-check notices notices-check \
@@ -110,15 +110,16 @@ lint: ## Run golangci-lint with the strict project config
 fmt: ## Apply gofmt and goimports via golangci-lint formatters
 	$(call golangci,fmt)
 
-vuln-gate: ## Fail on reachable advisories not accepted in .govulncheck-allow.yaml
-	./scripts/govulncheck-gate.sh
-
-vuln: ## Report vulnerabilities govulncheck can reach from our code
+vuln: ## Fail on any advisory govulncheck can reach from our code
 	# Exits non-zero only on advisories reachable from OpenTAMS code.
 	# Advisories in modules we require but never call are reported in the
 	# summary and do not fail the target -- upgrading for those is a
-	# judgement call, not a gate. Current status and the remaining
-	# blocked upgrades: docs/vulnerability-status.md
+	# judgement call, not a gate.
+	#
+	# `ci` and the Test workflow both use this target. There is deliberately
+	# no suppression list: an advisory reachable from our code gets fixed, and
+	# until it is the gate stays red. Releases do not run this, so a red gate
+	# does not block a release.
 	$(GO) run $(GOVULNCHECK) ./...
 
 integration: ## Integration tests (testcontainers; also runs on every PR)
@@ -194,13 +195,13 @@ api-check: ## Fail if the committed bundle or generated code is stale
 	exit $$rc
 
 # --- licence notices --------------------------------------------------------
-notices: ## Regenerate THIRD-PARTY-NOTICES from the module cache
+notices: ## Regenerate THIRD-PARTY-NOTICES.txt from the module cache
 	$(GO) run ./tools/gennotices
 
-notices-check: ## Fail if THIRD-PARTY-NOTICES is stale after a dependency change
+notices-check: ## Fail if THIRD-PARTY-NOTICES.txt is stale after a dependency change
 	$(GO) run ./tools/gennotices -check
 
-ci: compile vet lint vuln-gate notices-check test ## Run the full CI gate locally (no integration)
+ci: compile vet lint vuln notices-check test ## Run the full CI gate locally (no integration)
 
 tools-install: ## Install pinned golangci-lint, goreleaser, and wire up the repo pre-commit hook
 	$(GO) install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_VERSION)

@@ -51,12 +51,12 @@ func (h *Handler) GetSources(ctx context.Context, req api.GetSourcesRequestObjec
 	resp := api.GetSources200JSONResponse{
 		Body: items,
 		Headers: api.GetSources200ResponseHeaders{
-			XPagingLimit: p.Limit,
+			XPagingLimit: ptr(p.Limit),
 		},
 	}
 	if page.NextCursor != nil {
-		resp.Headers.XPagingNextKey = *page.NextCursor
-		resp.Headers.Link = `<>; rel="next"; key="` + *page.NextCursor + `"`
+		resp.Headers.XPagingNextKey = ptr(*page.NextCursor)
+		resp.Headers.Link = ptr(`<>; rel="next"; key="` + *page.NextCursor + `"`)
 	}
 	return resp, nil
 }
@@ -80,12 +80,12 @@ func (h *Handler) HeadSources(ctx context.Context, req api.HeadSourcesRequestObj
 
 	resp := api.HeadSources200Response{
 		Headers: api.PagedListingHeadResponseHeaders{
-			XPagingLimit: p.Limit,
+			XPagingLimit: ptr(p.Limit),
 		},
 	}
 	if page.NextCursor != nil {
-		resp.Headers.XPagingNextKey = *page.NextCursor
-		resp.Headers.Link = `<>; rel="next"; key="` + *page.NextCursor + `"`
+		resp.Headers.XPagingNextKey = ptr(*page.NextCursor)
+		resp.Headers.Link = ptr(`<>; rel="next"; key="` + *page.NextCursor + `"`)
 	}
 	return resp, nil
 }

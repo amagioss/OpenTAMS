@@ -180,7 +180,7 @@ License Terms:
 github.com/getkin/kin-openapi
 
 Module: github.com/getkin/kin-openapi
-Version: v0.133.0
+Version: v0.144.0
 License: The MIT License
 Copyright: Copyright (c) 2017-2018 the project authors.
 SPDX-License-Identifier: MIT
@@ -643,39 +643,6 @@ License Terms:
     OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
     WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-github.com/josharian/intern
-
-Module: github.com/josharian/intern
-Version: v1.0.0
-License: The MIT License
-Copyright: Copyright (c) 2019 Josh Bleecher Snyder
-SPDX-License-Identifier: MIT
-License file: license.md (sha256 ad754e4f7d16f789dd0694828254cb4011928025b0d500339a5c4eded5a0c346)
-
-License Terms:
-
-    MIT License
-
-    Copyright (c) 2019 Josh Bleecher Snyder
-
-    Permission is hereby granted, free of charge, to any person obtaining a copy
-    of this software and associated documentation files (the "Software"), to deal
-    in the Software without restriction, including without limitation the rights
-    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-    copies of the Software, and to permit persons to whom the Software is
-    furnished to do so, subject to the following conditions:
-
-    The above copyright notice and this permission notice shall be included in all
-    copies or substantial portions of the Software.
-
-    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-    SOFTWARE.
-
 github.com/leodido/go-urn
 
 Module: github.com/leodido/go-urn
@@ -709,25 +676,6 @@ License Terms:
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
     SOFTWARE.
 
-github.com/mailru/easyjson
-
-Module: github.com/mailru/easyjson
-Version: v0.7.7
-License: The MIT License
-Copyright: Copyright (c) 2016 Mail.Ru Group
-SPDX-License-Identifier: MIT
-License file: LICENSE (sha256 87baa92c3100cf37441761262d622db99492ee386a063460d4676143db49af57)
-
-License Terms:
-
-    Copyright (c) 2016 Mail.Ru Group
-
-    Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
-
-    The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-
-    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
 github.com/mattn/go-isatty
 
 Module: github.com/mattn/go-isatty
@@ -749,43 +697,10 @@ License Terms:
 
     THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-github.com/mohae/deepcopy
-
-Module: github.com/mohae/deepcopy
-Version: v0.0.0-20170929034955-c48cc78d4826
-License: The MIT License
-Copyright: Copyright (c) 2014 Joel
-SPDX-License-Identifier: MIT
-License file: LICENSE (sha256 f10ae61f1256dcd24b2d826590b90662da5d8b3af10e1b8c19ebcf5f046217ff)
-
-License Terms:
-
-    The MIT License (MIT)
-
-    Copyright (c) 2014 Joel
-
-    Permission is hereby granted, free of charge, to any person obtaining a copy
-    of this software and associated documentation files (the "Software"), to deal
-    in the Software without restriction, including without limitation the rights
-    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-    copies of the Software, and to permit persons to whom the Software is
-    furnished to do so, subject to the following conditions:
-
-    The above copyright notice and this permission notice shall be included in all
-    copies or substantial portions of the Software.
-
-    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-    SOFTWARE.
-
 github.com/oasdiff/yaml
 
 Module: github.com/oasdiff/yaml
-Version: v0.0.0-20250309154309-f31be36b4037
+Version: v0.1.1
 License: The MIT License
 Copyright: Copyright (c) 2014 Sam Ghods
            Copyright (c) 2012 The Go Authors. All rights reserved.
@@ -849,7 +764,7 @@ License Terms:
 github.com/oasdiff/yaml3
 
 Module: github.com/oasdiff/yaml3
-Version: v0.0.0-20250309153720-d2182401db90
+Version: v0.0.14
 License: The MIT License
 Copyright: Copyright (c) 2006-2010 Kirill Simonov
            Copyright (c) 2006-2011 Kirill Simonov
@@ -926,39 +841,6 @@ License Terms:
 
     go-toml v2
     Copyright (c) 2021 - 2023 Thomas Pelletier
-
-    Permission is hereby granted, free of charge, to any person obtaining a copy
-    of this software and associated documentation files (the "Software"), to deal
-    in the Software without restriction, including without limitation the rights
-    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-    copies of the Software, and to permit persons to whom the Software is
-    furnished to do so, subject to the following conditions:
-
-    The above copyright notice and this permission notice shall be included in all
-    copies or substantial portions of the Software.
-
-    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-    SOFTWARE.
-
-github.com/perimeterx/marshmallow
-
-Module: github.com/perimeterx/marshmallow
-Version: v1.1.5
-License: The MIT License
-Copyright: Copyright (c) 2022 PerimeterX
-SPDX-License-Identifier: MIT
-License file: LICENSE (sha256 bf966fa94da4c07302f7f44df49278b6c5712f27660ea54e7f2fe3aa62e9b40b)
-
-License Terms:
-
-    MIT License
-
-    Copyright (c) 2022 PerimeterX
 
     Permission is hereby granted, free of charge, to any person obtaining a copy
     of this software and associated documentation files (the "Software"), to deal
@@ -1556,11 +1438,12 @@ License Terms:
 github.com/go-openapi/jsonpointer
 
 Module: github.com/go-openapi/jsonpointer
-Version: v0.21.0
+Version: v0.22.5
 License: Apache 2.0 License
-Copyright: Copyright 2013 sigu-399 ( https://github.com/sigu-399 )
+Copyright: Copyright 2015-2025 go-swagger maintainers
+           Copyright 2013 sigu-399 ( https://github.com/sigu-399 )
 SPDX-License-Identifier: Apache-2.0
-License file: LICENSE (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
+License file: LICENSE (sha256 c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4)
 
 License Terms:
 
@@ -1568,12 +1451,54 @@ License Terms:
     Apache 2.0 License text in the LICENSE file at the root of this
     repository.
 
-github.com/go-openapi/swag
+    Attribution information from the NOTICE file of this Apache module:
 
-Module: github.com/go-openapi/swag
-Version: v0.23.0
+        Copyright 2015-2025 go-swagger maintainers
+
+        // SPDX-FileCopyrightText: Copyright 2015-2025 go-swagger maintainers
+        // SPDX-License-Identifier: Apache-2.0
+
+        This software library, github.com/go-openapi/jsonpointer, includes software developed
+        by the go-swagger and go-openapi maintainers ("go-swagger maintainers").
+
+        Licensed under the Apache License, Version 2.0 (the "License");
+        you may not use this software except in compliance with the License.
+
+        You may obtain a copy of the License at
+
+          http://www.apache.org/licenses/LICENSE-2.0.
+
+        This software is copied from, derived from, and inspired by other original software products.
+        It ships with copies of other software which license terms are recalled below.
+
+        The original software was authored on 25-02-2013 by sigu-399 (https://github.com/sigu-399, sigu.399@gmail.com).
+
+        github.com/sigh-399/jsonpointer
+        ===========================
+
+        // SPDX-FileCopyrightText: Copyright 2013 sigu-399 ( https://github.com/sigu-399 )
+        // SPDX-License-Identifier: Apache-2.0
+
+        Copyright 2013 sigu-399 ( https://github.com/sigu-399 )
+
+        Licensed under the Apache License, Version 2.0 (the "License");
+        you may not use this file except in compliance with the License.
+        You may obtain a copy of the License at
+
+          http://www.apache.org/licenses/LICENSE-2.0
+
+        Unless required by applicable law or agreed to in writing, software
+        distributed under the License is distributed on an "AS IS" BASIS,
+        WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+        See the License for the specific language governing permissions and
+        limitations under the License.
+
+github.com/go-openapi/swag/jsonname
+
+Module: github.com/go-openapi/swag/jsonname
+Version: v0.25.5
 License: Apache 2.0 License
-Copyright: Copyright 2015 go-swagger maintainers
+Copyright: not stated by the module
 SPDX-License-Identifier: Apache-2.0
 License file: LICENSE (sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30)
 
@@ -1616,7 +1541,7 @@ License Terms:
 github.com/oasdiff/yaml3
 
 Module: github.com/oasdiff/yaml3
-Version: v0.0.0-20250309153720-d2182401db90
+Version: v0.0.14
 License: Apache 2.0 License
 Copyright: Copyright (c) 2006-2010 Kirill Simonov
            Copyright (c) 2006-2011 Kirill Simonov
@@ -1777,6 +1702,21 @@ License Terms:
 
         This product includes software developed at
         SoundCloud Ltd. (http://soundcloud.com/).
+
+github.com/santhosh-tekuri/jsonschema/v6
+
+Module: github.com/santhosh-tekuri/jsonschema/v6
+Version: v6.0.2
+License: Apache 2.0 License
+Copyright: not stated by the module
+SPDX-License-Identifier: Apache-2.0
+License file: LICENSE (sha256 c8858a5a76440bbca484e134cf7df46385d090dd18b2c58e650f939258802e5b)
+
+License Terms:
+
+    Licensed under the Apache 2.0 License, version 2.0. See the applicable
+    Apache 2.0 License text in the LICENSE file at the root of this
+    repository.
 
 github.com/spf13/cobra
 
@@ -2065,7 +2005,7 @@ License Terms:
 github.com/oasdiff/yaml
 
 Module: github.com/oasdiff/yaml
-Version: v0.0.0-20250309154309-f31be36b4037
+Version: v0.1.1
 License: The BSD 3-Clause License
 Copyright: Copyright (c) 2014 Sam Ghods
            Copyright (c) 2012 The Go Authors. All rights reserved.
@@ -2170,7 +2110,7 @@ License Terms:
 golang.org/x/crypto
 
 Module: golang.org/x/crypto
-Version: v0.53.0
+Version: v0.56.0
 License: The BSD 3-Clause License
 Copyright: Copyright 2009 The Go Authors.
 SPDX-License-Identifier: BSD-3-Clause
@@ -2209,7 +2149,7 @@ License Terms:
 golang.org/x/net
 
 Module: golang.org/x/net
-Version: v0.56.0
+Version: v0.57.0
 License: The BSD 3-Clause License
 Copyright: Copyright 2009 The Go Authors.
 SPDX-License-Identifier: BSD-3-Clause
@@ -2248,7 +2188,7 @@ License Terms:
 golang.org/x/sync
 
 Module: golang.org/x/sync
-Version: v0.21.0
+Version: v0.22.0
 License: The BSD 3-Clause License
 Copyright: Copyright 2009 The Go Authors.
 SPDX-License-Identifier: BSD-3-Clause
@@ -2287,7 +2227,7 @@ License Terms:
 golang.org/x/sys
 
 Module: golang.org/x/sys
-Version: v0.46.0
+Version: v0.47.0
 License: The BSD 3-Clause License
 Copyright: Copyright 2009 The Go Authors.
 SPDX-License-Identifier: BSD-3-Clause
@@ -2326,7 +2266,7 @@ License Terms:
 golang.org/x/text
 
 Module: golang.org/x/text
-Version: v0.39.0
+Version: v0.41.0
 License: The BSD 3-Clause License
 Copyright: Copyright 2009 The Go Authors.
 SPDX-License-Identifier: BSD-3-Clause
@@ -2400,35 +2340,4 @@ License Terms:
     THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
     (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
     OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-
-----------------------------
-
-Zero-Clause BSD License Components
-
-github.com/woodsbury/decimal128
-
-Module: github.com/woodsbury/decimal128
-Version: v1.3.0
-License: Zero-Clause BSD License
-Copyright: Copyright (c) 2022 Wade Smith
-SPDX-License-Identifier: 0BSD
-License file: LICENCE (sha256 5cf77ef8bcb04d991cbb944d5ca2bbb30bf329db46eb2e25262683931032d90b)
-
-License Terms:
-
-    BSD Zero Clause License
-
-    Copyright (c) 2022 Wade Smith
-
-    Permission to use, copy, modify, and/or distribute this software for any
-    purpose with or without fee is hereby granted.
-
-    THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
-    REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
-    AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
-    INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
-    LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
-    OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
-    PERFORMANCE OF THIS SOFTWARE.
 

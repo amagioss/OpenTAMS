@@ -37,10 +37,13 @@ and a URI, because the catalogue supplies all three together.
 
 One place writes error bodies. Strict handlers return an `error` and never touch the
 response writer — see [ADR-0007](0007-strict-server-code-generation.md) — and
-`middleware.ErrorHandler` converts it. Two adapters bring foreign errors into the same
-shape: `validatorErrorHandler` for kin-openapi's validation failures, and
-`paramParseErrorHandler` for oapi-codegen's parameter parsing, whose default emits
-`{"msg":"..."}`.
+`middleware.ErrorHandler` converts it. Three adapters bring foreign errors into the same
+shape: `validatorErrorHandler` for kin-openapi's validation failures,
+`paramParseErrorHandler` for oapi-codegen's parameter parsing, and the
+`StrictGinServerOptions` passed to `NewStrictHandlerWithOptions` for the strict handler's
+own error paths. All three exist for the same reason — each of those layers defaults to
+writing `{"msg":"..."}` itself, and `middleware.ErrorHandler` only runs while nothing has
+been written yet, so a default that writes its own body silently takes the response over.
 
 Per-segment failures inside a bulk response carry a subset of the same vocabulary rather
 than a second format. See [ADR-0023](0023-rfc9457-problem-details-for-per-segment-failures.md).

@@ -295,11 +295,11 @@ func (h *Handler) GetFlows(ctx context.Context, req api.GetFlowsRequestObject) (
 
 	resp := api.GetFlows200JSONResponse{
 		Body:    items,
-		Headers: api.GetFlows200ResponseHeaders{XPagingLimit: p.Limit},
+		Headers: api.GetFlows200ResponseHeaders{XPagingLimit: ptr(p.Limit)},
 	}
 	if page.NextCursor != nil {
-		resp.Headers.XPagingNextKey = *page.NextCursor
-		resp.Headers.Link = `<>; rel="next"; key="` + *page.NextCursor + `"`
+		resp.Headers.XPagingNextKey = ptr(*page.NextCursor)
+		resp.Headers.Link = ptr(`<>; rel="next"; key="` + *page.NextCursor + `"`)
 	}
 	return resp, nil
 }
@@ -316,11 +316,11 @@ func (h *Handler) HeadFlows(ctx context.Context, req api.HeadFlowsRequestObject)
 	}
 
 	resp := api.HeadFlows200Response{
-		Headers: api.PagedListingHeadResponseHeaders{XPagingLimit: p.Limit},
+		Headers: api.PagedListingHeadResponseHeaders{XPagingLimit: ptr(p.Limit)},
 	}
 	if page.NextCursor != nil {
-		resp.Headers.XPagingNextKey = *page.NextCursor
-		resp.Headers.Link = `<>; rel="next"; key="` + *page.NextCursor + `"`
+		resp.Headers.XPagingNextKey = ptr(*page.NextCursor)
+		resp.Headers.Link = ptr(`<>; rel="next"; key="` + *page.NextCursor + `"`)
 	}
 	return resp, nil
 }

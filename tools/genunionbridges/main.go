@@ -144,6 +144,12 @@ func collectDefinitionAliases(f *ast.File, marshalBearing map[string]bool) []bri
 			if ts.Name.Name == id.Name {
 				continue
 			}
+			// From oapi-codegen v2.7.0 the generator emits MarshalJSON for
+			// some of these named types itself. Bridging one of those would
+			// redeclare the method, so skip any type that already has one.
+			if marshalBearing[ts.Name.Name] {
+				continue
+			}
 			out = append(out, bridge{Named: ts.Name.Name, Underlying: id.Name})
 		}
 	}
