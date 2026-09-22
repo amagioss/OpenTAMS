@@ -14,7 +14,7 @@ no service-level agreement. Everything below is best-effort by the maintainers.
 | Report a bug | [New issue → Bug report](https://github.com/amagioss/opentams/issues/new/choose) |
 | Request a feature or a TAMS endpoint we don't implement yet | [New issue → Feature request](https://github.com/amagioss/opentams/issues/new/choose) |
 | Report a security vulnerability | [`SECURITY.md`](SECURITY.md) — **never a public issue** |
-| Report Code-of-Conduct behaviour | `conduct@amagi.com`, per [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) |
+| Report Code-of-Conduct behaviour | `akshay.narayan@amagi.com`, per [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) |
 | Contribute a change | [`CONTRIBUTING.md`](CONTRIBUTING.md) |
 
 ## Read these first

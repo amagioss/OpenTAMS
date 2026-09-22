@@ -4,61 +4,10 @@
 # See https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
 #
 # Roster: MAINTAINERS.md. Review thresholds: GOVERNANCE.md.
-# Order matters — a later rule replaces an earlier one for the same path.
 #
-# A rule listing several owners requests review from all of them; one approval
-# satisfies GitHub. Paths that GOVERNANCE.md requires two approvals for are
-# marked below, and that threshold is enforced by branch protection, not by
-# this file.
+# Every maintainer owns the whole tree. GOVERNANCE.md asks for one approval on
+# any change, so a per-path split would only decide which name the request
+# lands on, at the cost of blocking a path on one person's availability. The
+# request goes to the whole group and any one of them can approve it.
 
-# Default — every pull request goes to the full maintainer group.
-*                                       @Akshay-Narayan-Pai @hamza-u @yashbagdi @naveenrathore81
-
-# ---------------------------------------------------------------------------
-# Two-approval paths (see GOVERNANCE.md § How decisions get made)
-# ---------------------------------------------------------------------------
-
-# API contract — a breaking change here ripples to every TAMS client.
-# gen/ and the bundle are generated; they move only with the source spec.
-/api/                                   @Akshay-Narayan-Pai @hamza-u
-/gen/                                   @Akshay-Narayan-Pai @hamza-u
-
-# Database migrations — irreversible once released.
-/migrations/                            @Akshay-Narayan-Pai @hamza-u
-
-# Release and supply chain — image tags, signing, attestation.
-/.goreleaser.yml                        @Akshay-Narayan-Pai
-/.github/workflows/release.yml          @Akshay-Narayan-Pai
-/build/Dockerfile                       @Akshay-Narayan-Pai
-/build/Dockerfile.goreleaser            @Akshay-Narayan-Pai
-
-# CI — these workflows gate every merge, including their own.
-/.github/workflows/                     @Akshay-Narayan-Pai @hamza-u
-/.golangci.yml                          @Akshay-Narayan-Pai @hamza-u
-
-# Governance, licensing, and public posture. Owner review required even for
-# typo-level changes, so the published position stays deliberate.
-/LICENSE                                @Akshay-Narayan-Pai
-/NOTICE                                 @Akshay-Narayan-Pai
-/GOVERNANCE.md                          @Akshay-Narayan-Pai
-/MAINTAINERS.md                         @Akshay-Narayan-Pai
-/SECURITY.md                            @Akshay-Narayan-Pai
-/CODE_OF_CONDUCT.md                     @Akshay-Narayan-Pai
-/CONTRIBUTING.md                        @Akshay-Narayan-Pai
-/SUPPORT.md                             @Akshay-Narayan-Pai
-/AGENTS.md                              @Akshay-Narayan-Pai
-/.github/CODEOWNERS                     @Akshay-Narayan-Pai
-/docs/third-party-notices.md            @Akshay-Narayan-Pai
-
-# Architectural decision records — an ADR is a durable commitment.
-/docs/adr/                              @Akshay-Narayan-Pai @hamza-u
-
-# ---------------------------------------------------------------------------
-# Area routing (single approval; see MAINTAINERS.md for the area map)
-# ---------------------------------------------------------------------------
-
-/internal/objectstore/                  @hamza-u @Akshay-Narayan-Pai
-/internal/metastore/                    @hamza-u @Akshay-Narayan-Pai
-/deployments/                           @yashbagdi @Akshay-Narayan-Pai
-/internal/httpx/metrics/                @naveenrathore81 @Akshay-Narayan-Pai
-/internal/service/                      @naveenrathore81 @Akshay-Narayan-Pai
+*   @Akshay-Narayan-Pai @hamza-u @yashbagdi @naveenrathore81

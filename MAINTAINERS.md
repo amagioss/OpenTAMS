@@ -48,7 +48,7 @@ Use a private channel when the subject genuinely cannot be public:
 
 - **Security vulnerabilities** — the reporting channels in
   [`SECURITY.md`](SECURITY.md). Not a public issue.
-- **Code-of-Conduct concerns** — `conduct@amagi.com`, as described in
+- **Code-of-Conduct concerns** — `akshay.narayan@amagi.com`, as described in
   [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
 
 ## Becoming a maintainer

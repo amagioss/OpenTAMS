@@ -159,4 +159,4 @@ ffmpeg, see [`tools/opentamspub`](../../tools/opentamspub/) and
   example pages with.
 - [`api/opentams-api-bundled.yaml`](../../api/opentams-api-bundled.yaml)
   — the TAMS v8.0 spec OpenTAMS implements. Rendered at
-  [amagimedia.github.io/OpenTAMS](https://amagimedia.github.io/OpenTAMS/).
+  [amagioss.github.io/OpenTAMS](https://amagioss.github.io/OpenTAMS/).
