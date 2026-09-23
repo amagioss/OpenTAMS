@@ -3,7 +3,7 @@
 [![Test](https://github.com/amagioss/OpenTAMS/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/amagioss/OpenTAMS/actions/workflows/test.yml)
 [![Lint](https://github.com/amagioss/OpenTAMS/actions/workflows/lint.yml/badge.svg?branch=main)](https://github.com/amagioss/OpenTAMS/actions/workflows/lint.yml)
 [![Build](https://github.com/amagioss/OpenTAMS/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/amagioss/OpenTAMS/actions/workflows/build.yml)
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/amagioss/opentams/badge)](https://scorecard.dev/viewer/?uri=github.com/amagioss/opentams)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/amagioss/OpenTAMS/badge)](https://scorecard.dev/viewer/?uri=github.com/amagioss/OpenTAMS)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Go Version](https://img.shields.io/badge/go-1.26-00ADD8?logo=go)](go.mod)
 [![TAMS Spec](https://img.shields.io/badge/TAMS-v8.0-5C2D91)](https://bbc.github.io/tams/main/index.html)
