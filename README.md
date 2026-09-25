@@ -1,4 +1,12 @@
-# OpenTAMS
+<p align="center">
+  <img src="docs/assets/logo.png" alt="OpenTAMS — Time Addressable Media Store" width="420">
+</p>
+
+<p align="center">
+  <strong>Cloud-agnostic, open-source implementation of the BBC Time-Addressable Media Store (TAMS) v8.0 API.</strong>
+</p>
+
+<div align="center">
 
 [![Test](https://github.com/amagioss/OpenTAMS/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/amagioss/OpenTAMS/actions/workflows/test.yml)
 [![Lint](https://github.com/amagioss/OpenTAMS/actions/workflows/lint.yml/badge.svg?branch=main)](https://github.com/amagioss/OpenTAMS/actions/workflows/lint.yml)
@@ -8,7 +16,7 @@
 [![Go Version](https://img.shields.io/badge/go-1.26-00ADD8?logo=go)](go.mod)
 [![TAMS Spec](https://img.shields.io/badge/TAMS-v8.0-5C2D91)](https://bbc.github.io/tams/main/index.html)
 
-> **Cloud-agnostic, open-source implementation of the BBC Time-Addressable Media Store (TAMS) v8.0 API.**
+</div>
 
 > Specification source: [bbc/tams](https://github.com/bbc/tams) ([rendered docs](https://bbc.github.io/tams/main/index.html)).
 
