@@ -126,8 +126,8 @@ The following additions to M4 were required before M8 could be built:
 |---|---|
 | `ListFlowsParams.FrameWidth *int` | Filter by `essence_parameters->>'frame_width'` |
 | `ListFlowsParams.FrameHeight *int` | Filter by `essence_parameters->>'frame_height'` |
-| `ListFlowsParams.Timerange *timerange.TimeRange` | Filter flows with overlapping segments |
-| `FlowStore.GetFlowTimerange(ctx, id) (*string, error)` | Returns `MIN/MAX(lower_ns/upper_ns)` as TAMS bracket notation; nil if no segments |
+| `ListFlowsParams.Timerange *timerange.TimeRange` | Filter flows that have a segment overlapping the timerange. An empty timerange returns only flows with no segments (pending, BR-META-21). |
+| `FlowStore.GetFlowTimerange(ctx, id) (*string, error)` | Returns the flow's span: the start of its first segment joined to the end of its last segment, both parsed from the stored client strings and rendered canonically; nil if no segments (pending, BR-META-12). Today it renders `MIN(lower_ns)` and `MAX(upper_ns)` directly, which loses the markers. |
 | `migrations/000003_gin_index.up.sql` | GIN index on `flows.essence_parameters` for frame_width/frame_height queries |
 
 ## Test strategy

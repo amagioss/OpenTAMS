@@ -1,5 +1,8 @@
 # Functional Design — internal/httpx/conversion
 
+> Rules marked **(pending)** follow a proposed ADR ([ADR-0039](../../../adr/0039-timerange-stored-as-client-string-with-half-open-bounds.md))
+> and are not implemented yet.
+
 ## Purpose
 
 The only place where generated wire types (`gen/api`) and domain types
@@ -55,6 +58,24 @@ conversion stamps on the way in, the handler projects on the way out.
 synthesises a value. `TSOffset` round-trips verbatim including negative offsets —
 the mappers are shape-only and do not editorialise about the timeline.
 
+**BR-CONV-08 — Client time strings are carried, not re-rendered (pending).**
+`SegmentFromAPI` keeps the exact wire string of `timerange`, `ts_offset`,
+`object_timerange`, and `last_duration` next to the parsed value, in
+`domain.Segment.TimerangeRaw`, `TSOffsetRaw`, `ObjectTimerangeRaw`, and
+`LastDurationRaw`. `SegmentToAPI` writes the raw string, never `String()` of the parsed
+value. A client that sends `[10:0]` reads back `[10:0]`, not `[10:0_10:0]`.
+
+The parsed values stay, because the service and the metastore need them for validation
+and `timerange.NsBounds`. The raw strings are the only values that reach the wire.
+
+**BR-CONV-09 — Syntax errors fail the request; semantic errors fail the segment (pending).**
+A timerange or timestamp that does not parse is a request-level
+`schema-validation` 400, as today. A timerange that parses but is not a valid segment
+timerange (empty, unbounded, exclusive start, out of range) is not decided here. The
+service reports it as a per-segment failure (BR-SEG-02). Query parameters follow the same
+split: a parse error is a 400 here, and an empty range is passed through as a valid value
+(BR-META-21).
+
 **BR-CONV-05 — `limit` is normalised here, not downstream.**
 A missing `limit` becomes the server default of 100; a value above 1000 is clamped
 to 1000; a value below 1 is rejected as `schema-validation`. The wire's "absent"
@@ -76,7 +97,9 @@ letting it surface as a silently empty field.
 ## Round-trip contract
 
 `SegmentFromAPI(SegmentToAPI(s))` equals `s` except for `FlowID`, which is
-path-derived, and `GetURLs`, which the handler projects. Drift between the two
+path-derived, and `GetURLs`, which the handler projects. In the other direction, each
+time string in `SegmentToAPI(SegmentFromAPI(w))` is byte-for-byte the string in `w`
+(pending, BR-CONV-08). Drift between the two
 directions would be silent — it shows up as ghost data, not as an error — so the
 round-trip is asserted in tests rather than left to review.
 

@@ -50,6 +50,9 @@ stays useful long after the feature ships.
 | [0035](0035-ci-on-hosted-runners-with-pinned-actions.md) | Run CI on GitHub-hosted runners, with every action pinned by commit SHA | accepted |
 | [0036](0036-rate-limiting-is-the-operators-responsibility.md) | Leave rate limiting to the operator | accepted |
 | [0037](0037-object-garbage-collection.md) | Reclaim Object storage from a separate worker | proposed |
+| [0038](0038-tams-timestamp-and-timerange-grammar.md) | Parse timestamps and timeranges by the TAMS grammar, and use the BBC reference library where the grammar is silent | proposed |
+| [0039](0039-timerange-stored-as-client-string-with-half-open-bounds.md) | Store the client's timerange string, and derive half-open nanosecond bounds for comparison only | proposed |
+| [0040](0040-segment-timerange-invariants.md) | Require a bounded, non-empty, start-inclusive segment timerange, and keep the database constraints as backstops | proposed |
 
 <!-- Add a row per ADR, in number order. Keep the status column in sync with the file's front matter. -->
 

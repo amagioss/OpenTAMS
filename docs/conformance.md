@@ -90,8 +90,8 @@ Last reviewed against TAMS v8.0 on 2026-06-09, against OpenTAMS HEAD `38570fc`.
 |---|---|---|
 | `GET /tams/v1/flows/{flowId}/segments` | Implemented, with a divergence | Query params: `timerange` (intersection filter), `object_id`, `reverse_order`, `verbose_storage`, `accept_get_urls`, `accept_storage_ids`, `presigned`, `include_object_timerange`, plus `page`/`limit` pagination. **On an unknown flow OpenTAMS returns 404, where the spec asks for an empty list** (REQ-BEH-16) — see below. `Accept: text/event-stream` for streamed reads is **Not implemented**. |
 | `HEAD /tams/v1/flows/{flowId}/segments` | Implemented | |
-| `POST /tams/v1/flows/{flowId}/segments` | Implemented, with a divergence | Requires `X-Idempotency-Key` (REQ-IDEM-01). Body is a single segment or a JSON array of up to 1000. Per-segment failures come back as `flow-segment-bulk-failure`. **Overlapping timeranges reject the whole batch with 422 and no `failed_segments`, rather than the spec's first-wins ordering** (REQ-BEH-15) — see below. |
-| `DELETE /tams/v1/flows/{flowId}/segments` | Implemented | Bulk delete by query params (`timerange`, `object_id`); returns count and creates a `flow-delete-request` if the operation is asynchronous. |
+| `POST /tams/v1/flows/{flowId}/segments` | Implemented, with a divergence | Requires `X-Idempotency-Key` (REQ-IDEM-01). Body is a single segment or a JSON array of up to 1000. Per-segment failures come back as `flow-segment-bulk-failure`. **Overlapping timeranges reject the whole batch with 422 and no `failed_segments`, rather than the spec's first-wins ordering** (REQ-BEH-15) — see below. **A segment timerange must be bounded, non-empty, and start-inclusive, or the segment is a per-segment `invalid-timerange` failure** (pending, ADR-0040) — see below. |
+| `DELETE /tams/v1/flows/{flowId}/segments` | Implemented, with a known defect | Bulk delete by query params (`timerange`, `object_id`); returns count and creates a `flow-delete-request` if the operation is asynchronous. **The spec deletes only segments completely covered by `timerange`. Today OpenTAMS deletes every segment that intersects it, including boundary segments.** The fix is pending (ADR-0039). |
 
 ### Deliberate divergences on this path
 
@@ -125,6 +125,19 @@ other error in the API — rather than the upstream `type`/`summary`/`time`. Rec
 for `error.summary` and finds nothing. Because the field is required, that surfaces as a
 missing-key error rather than an empty string. `error.time` and the optional
 `error.traceback` are also gone; OpenTAMS never populated either meaningfully.
+
+**Segment timeranges must be bounded, non-empty, and start-inclusive** (pending,
+[ADR-0040](adr/0040-segment-timerange-invariants.md)). The segment schema accepts any
+`TimeRange`. TAMS App Note 0012 describes a segment timerange as starting, inclusively, at
+the first sample and ending at the last sample, and says that "samples don't generally
+exist into infinity". OpenTAMS makes that description a rule. A segment whose timerange is
+empty, has no start or no end, or has an exclusive start is reported in
+`failed_segments` with type `invalid-timerange`. The other segments in the batch are
+processed. An inclusive end is accepted: `[0:0]` is valid.
+
+*What breaks for a conformant client:* one that registers an open-ended segment such as
+`[5:0_`, or a segment with an exclusive start such as `(0:0_10:0)`, gets that segment back
+in `failed_segments`. Send a bounded range with an inclusive start.
 
 **Objects are not reclaimed on delete.** `DELETE /segments` removes metadata and
 decrements the object ref-count inside its transaction; deleting the bytes is the
@@ -186,14 +199,47 @@ below.
 
 ## Time-range syntax
 
-OpenTAMS accepts the full TAMS time-range grammar documented in the spec, including:
+> The rules below follow [ADR-0038](adr/0038-tams-timestamp-and-timerange-grammar.md) and
+> [ADR-0039](adr/0039-timerange-stored-as-client-string-with-half-open-bounds.md), which
+> are proposed and not implemented yet. The current differences are listed after them.
 
-- `[start_end)` half-open intervals (the canonical form): `[0:0_10:0)` = 0–10s.
-- Open-start `(_end)` and open-end `[start_)` for "before" / "after" queries.
-- Relative + absolute timestamps (seconds:nanoseconds, ISO 8601 with `T`).
-- `()` empty range — explicitly **rejected** with 400 per REQ-SEG-04 (the spec allows it; we don't, because it's never useful and it's a footgun for client code).
+OpenTAMS accepts the TAMS timestamp and time-range grammar from `timestamp.json`,
+`timerange.json`, and App Note 0008:
 
-See `internal/timerange/timerange.go` for the parser. `internal/timerange/timerange_test.go` enumerates every shape we accept and reject, including the edge cases the spec is silent on.
+- Timestamps are `{sign?}{seconds}:{nanoseconds}`. The sign applies to the whole value:
+  `-1:500000000` is −1.5 s, and `-0:500000000` is −0.5 s.
+- `[start_end)`, `[start_end]`, `(start_end)`, and `(start_end]`.
+- One-sided ranges: `(5:0_` has no end, and `_10:0)` has no start. A marker next to an
+  omitted timestamp is ignored.
+- A missing marker next to a timestamp means inclusive: `0:0_10:0` is `[0:0_10:0]`. App
+  Note 0008 does not say this. OpenTAMS follows the BBC `mediatimestamp` library.
+- Instantaneous ranges: `[10:0]` and `10:0`.
+- `_` is eternity. `()` is empty. A range whose end is before its start, or whose equal
+  ends have an exclusive marker, is also empty.
+
+In a query, an empty range matches nothing: `GET` segments returns an empty list,
+`DELETE` deletes nothing, and `GET /flows?timerange=` returns only flows with no segments.
+For a segment timerange, see the rule under [Segments](#segments).
+
+Every time string a client sends (`timerange`, `ts_offset`, `object_timerange`,
+`last_duration`) is returned exactly as sent. Values the server derives, such as a flow's
+`timerange` and `X-Paging-Timerange`, use a canonical form with `[ts]` for an
+instantaneous range. OpenTAMS compares timeranges at nanosecond resolution on the TAI
+timeline between about 1677 and 2262. A bound outside that span is rejected with
+`invalid-timerange`.
+
+**Current differences, fixed by the ADRs above:**
+
+- A negative timestamp with non-zero nanoseconds is read with the wrong value
+  (`-1:500000000` as −0.5 s), and `-0:x` is rejected.
+- One-sided ranges, a bare timestamp, a marker on an omitted timestamp, and an end before
+  the start are rejected with 400.
+- The markers are ignored when a segment timerange is stored, so `[0:0]` fails with 500
+  and some overlapping segments are accepted.
+- The server returns a re-rendered string: `[10:0]` is read back as `[10:0_10:0]`.
+
+See `internal/timerange/timerange.go` for the parser and
+`internal/timerange/timerange_test.go` for the accepted and rejected shapes.
 
 ## Tag names
 
