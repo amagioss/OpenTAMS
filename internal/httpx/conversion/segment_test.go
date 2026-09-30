@@ -64,6 +64,11 @@ func canonicalSegment(t *testing.T) domain.Segment {
 		},
 		SampleOffset: &so,
 		SampleCount:  &sc,
+
+		TimerangeRaw:       "[0:0_10:0)",
+		TSOffsetRaw:        "1:40000000",
+		ObjectTimerangeRaw: "[0:0_10:0)",
+		LastDurationRaw:    "0:40000000",
 	}
 }
 
@@ -275,9 +280,9 @@ func Test_SCN_CONV_06_RegisterParams_FromAPI_NeitherShape(t *testing.T) {
 // SCN-CONV-07 — RegisterAcceptedToAPI maps every accepted segment.
 func Test_SCN_CONV_07_RegisterResult_FromAPI_AllAccepted(t *testing.T) {
 	segs := []domain.Segment{
-		{ObjectID: "a", Timerange: mustParseTR(t, "[0:0_1:0)")},
-		{ObjectID: "b", Timerange: mustParseTR(t, "[1:0_2:0)")},
-		{ObjectID: "c", Timerange: mustParseTR(t, "[2:0_3:0)")},
+		{ObjectID: "a", Timerange: mustParseTR(t, "[0:0_1:0)"), TimerangeRaw: "[0:0_1:0)"},
+		{ObjectID: "b", Timerange: mustParseTR(t, "[1:0_2:0)"), TimerangeRaw: "[1:0_2:0)"},
+		{ObjectID: "c", Timerange: mustParseTR(t, "[2:0_3:0)"), TimerangeRaw: "[2:0_3:0)"},
 	}
 	out := conversion.RegisterAcceptedToAPI(segs)
 	if len(out) != 3 {
@@ -294,7 +299,7 @@ func Test_SCN_CONV_07_RegisterResult_FromAPI_AllAccepted(t *testing.T) {
 func Test_SCN_CONV_08_RegisterResult_FromAPI_PartialFailure(t *testing.T) {
 	failed := []domain.FailedSegment{
 		{
-			Segment: domain.Segment{ObjectID: "obj-X", Timerange: mustParseTR(t, "[5:0_6:0)")},
+			Segment: domain.Segment{ObjectID: "obj-X", Timerange: mustParseTR(t, "[5:0_6:0)"), TimerangeRaw: "[5:0_6:0)"},
 			Reason:  "overlap with existing segment",
 			Type:    "https://github.com/amagioss/opentams/problems/segment-overlap",
 			Title:   "Segment Overlap",
@@ -326,9 +331,9 @@ func Test_SCN_CONV_08_RegisterResult_FromAPI_PartialFailure(t *testing.T) {
 // SCN-CONV-08b — RegisterFailureToAPI handles 3 failed entries; empty input → []
 func Test_SCN_CONV_08b_RegisterResult_FromAPI_AllRejected(t *testing.T) {
 	failed := []domain.FailedSegment{
-		{Segment: domain.Segment{ObjectID: "x1", Timerange: mustParseTR(t, "[0:0_1:0)")}, Type: "t", Title: "T"},
-		{Segment: domain.Segment{ObjectID: "x2", Timerange: mustParseTR(t, "[1:0_2:0)")}, Type: "t", Title: "T"},
-		{Segment: domain.Segment{ObjectID: "x3", Timerange: mustParseTR(t, "[2:0_3:0)")}, Type: "t", Title: "T"},
+		{Segment: domain.Segment{ObjectID: "x1", Timerange: mustParseTR(t, "[0:0_1:0)"), TimerangeRaw: "[0:0_1:0)"}, Type: "t", Title: "T"},
+		{Segment: domain.Segment{ObjectID: "x2", Timerange: mustParseTR(t, "[1:0_2:0)"), TimerangeRaw: "[1:0_2:0)"}, Type: "t", Title: "T"},
+		{Segment: domain.Segment{ObjectID: "x3", Timerange: mustParseTR(t, "[2:0_3:0)"), TimerangeRaw: "[2:0_3:0)"}, Type: "t", Title: "T"},
 	}
 	out := conversion.RegisterFailureToAPI(failed)
 	if len(out.FailedSegments) != 3 {
@@ -354,7 +359,7 @@ func Test_SCN_CONV_08b_RegisterResult_FromAPI_AllRejected(t *testing.T) {
 // SCN-CONV-09 — Bulk-failure JSON snapshot.
 func Test_SCN_CONV_09_FailedSegment_Snapshot(t *testing.T) {
 	failed := []domain.FailedSegment{{
-		Segment: domain.Segment{ObjectID: "obj-fail", Timerange: mustParseTR(t, "[0:0_1:0)")},
+		Segment: domain.Segment{ObjectID: "obj-fail", Timerange: mustParseTR(t, "[0:0_1:0)"), TimerangeRaw: "[0:0_1:0)"},
 		Reason:  "overlap",
 		Type:    "https://github.com/amagioss/opentams/problems/segment-overlap",
 		Title:   "Segment Overlap",
@@ -382,7 +387,7 @@ func Test_SCN_CONV_09_FailedSegment_Snapshot(t *testing.T) {
 // SCN-CONV-10 — Nil ObjectTimerange round-trips and is omitted from JSON.
 func Test_SCN_CONV_10_ObjectTimerange_NilPreserved(t *testing.T) {
 	s := canonicalSegment(t)
-	s.ObjectTimerange = nil
+	s.ObjectTimerange, s.ObjectTimerangeRaw = nil, ""
 	wire := conversion.SegmentToAPI(s)
 	if wire.ObjectTimerange != nil {
 		t.Errorf("wire ObjectTimerange = %v, want nil", wire.ObjectTimerange)
@@ -424,7 +429,7 @@ func Test_SCN_CONV_11_ObjectTimerange_NonNilPreserved(t *testing.T) {
 func Test_SCN_CONV_12_TSOffset_NegativePreserved(t *testing.T) {
 	s := canonicalSegment(t)
 	neg := mustParseTS(t, "-1:0")
-	s.TSOffset = &neg
+	s.TSOffset, s.TSOffsetRaw = &neg, "-1:0"
 	wire := conversion.SegmentToAPI(s)
 	if wire.TsOffset == nil || *wire.TsOffset != "-1:0" {
 		t.Errorf("wire TsOffset = %v", wire.TsOffset)
@@ -442,8 +447,8 @@ func Test_SCN_CONV_12_TSOffset_NegativePreserved(t *testing.T) {
 func Test_SCN_CONV_12b_SegmentPage_BodyShape(t *testing.T) {
 	page := domain.SegmentPage{
 		Items: []domain.Segment{
-			{ObjectID: "p1", Timerange: mustParseTR(t, "[0:0_1:0)")},
-			{ObjectID: "p2", Timerange: mustParseTR(t, "[1:0_2:0)")},
+			{ObjectID: "p1", Timerange: mustParseTR(t, "[0:0_1:0)"), TimerangeRaw: "[0:0_1:0)"},
+			{ObjectID: "p2", Timerange: mustParseTR(t, "[1:0_2:0)"), TimerangeRaw: "[1:0_2:0)"},
 		},
 		NextCursor: "abc",
 	}

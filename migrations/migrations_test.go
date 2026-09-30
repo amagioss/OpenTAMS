@@ -6,8 +6,8 @@ import (
 )
 
 // TC-MIG-05: migration 000005 (objects.storage_id + reaping + both
-// partial indexes + segments upper_ns CHECK) is embedded and contains
-// the expected DDL fragments.
+// partial indexes + segments bounds invariants, ADR-0040 rule 4) is
+// embedded and contains the expected DDL fragments.
 func TestMigration_000005_Embedded(t *testing.T) {
 	up, err := FS.ReadFile("000005_objects_storage_id_reaping.up.sql")
 	if err != nil {
@@ -21,11 +21,22 @@ func TestMigration_000005_Embedded(t *testing.T) {
 		"WHERE ref_count = 0 AND reaping = false",
 		"CREATE INDEX IF NOT EXISTS objects_gc_retry_idx",
 		"WHERE reaping = true",
-		"segments_upper_ns_positive",
-		"CHECK (upper_ns IS NULL OR upper_ns > 0)",
+		"ALTER COLUMN upper_ns SET NOT NULL",
+		"DROP CONSTRAINT IF EXISTS segments_bounds_nonempty",
+		"ADD CONSTRAINT segments_bounds_nonempty",
+		"CHECK (upper_ns > lower_ns)",
 	} {
 		if !strings.Contains(upStr, want) {
 			t.Errorf("up.sql missing %q", want)
+		}
+	}
+	for _, gone := range []string{
+		"segments_upper_ns_positive",
+		"upper_ns IS NULL OR upper_ns > 0",
+		"R15",
+	} {
+		if strings.Contains(upStr, gone) {
+			t.Errorf("up.sql still contains %q", gone)
 		}
 	}
 
@@ -35,7 +46,8 @@ func TestMigration_000005_Embedded(t *testing.T) {
 	}
 	downStr := string(down)
 	for _, want := range []string{
-		"DROP CONSTRAINT IF EXISTS segments_upper_ns_positive",
+		"DROP CONSTRAINT IF EXISTS segments_bounds_nonempty",
+		"ALTER COLUMN upper_ns DROP NOT NULL",
 		"DROP INDEX IF EXISTS objects_gc_retry_idx",
 		"DROP INDEX IF EXISTS objects_gc_claim_idx",
 		"DROP COLUMN IF EXISTS reaping",

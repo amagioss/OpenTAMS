@@ -1,27 +1,39 @@
 ---
 unit: M1 internal/timerange
 stage: Functional Design
-status: Complete (retroactive backfill)
+status: Complete (retroactive backfill), revised for ADR-0038 and ADR-0039
 ---
 
 # Business Logic Model — internal/timerange
 
 ## Purpose
 
-Shared domain module for TAI timestamp and timerange parsing, validation, and predicate logic. Used by the metadata store layer for overlap enforcement and by HTTP handlers for query parameter parsing.
+Shared domain module for TAI timestamps and timeranges: parsing, validation, predicates,
+and the one conversion to nanosecond bounds. The metadata store uses it for overlap
+enforcement and every timerange query. HTTP handlers use it to parse query parameters.
 
 ## Core Concepts
 
 ### Timestamp
-A TAI instant with nanosecond precision. Format: `{sign?}{seconds}:{nanoseconds}`. Seconds may be negative; nanoseconds are always non-negative and in [0, 999_999_999].
+A TAI instant with nanosecond precision. Wire format: `{sign?}{seconds}:{nanoseconds}`.
+The sign applies to the whole value, so `-1:500000000` is −1.5 s (BR-TR-01).
 
 ### TimeRange
-A TAI time interval in TAMS bracket notation. Bounds are inclusive `[`/`]` or exclusive `(`/`)`. Special forms: eternity `_` (unbounded both ends), never `()` (empty, no bounds).
+A TAI interval in TAMS notation. Each bound is inclusive (`[`, `]`), exclusive (`(`,
+`)`), or unbounded (timestamp omitted). Special forms: eternity `_`, empty `()`, and the
+instantaneous form `[ts]` or `ts` (BR-TR-04 to BR-TR-06).
+
+### NsBounds
+The half-open `int64` nanosecond interval `[Lower, Upper)` of a non-empty range, with an
+explicit flag for each unbounded side. It exists only so that the database can compare
+ranges. No code renders it back to text (BR-TR-10).
 
 ## Data Model
 
 ```
 Timestamp { Seconds int64, Nanoseconds int32 }
+// floor-normalised: Nanoseconds in [0, 999_999_999],
+// value = Seconds*1e9 + Nanoseconds; -1.5 s = {-2, 500000000}
 
 BoundType = Inclusive | Exclusive | Unbounded
 
@@ -31,17 +43,25 @@ TimeRange {
     End       *Timestamp  // nil when EndType == Unbounded
     EndType   BoundType
 }
+
+NsBounds {                  // half-open [Lower, Upper)
+    Lower                          int64 // inclusive
+    Upper                          int64 // exclusive
+    LowerUnbounded, UpperUnbounded bool
+}
 ```
 
 ## Operations
 
 | Operation | Description |
 |---|---|
-| `ParseTimestamp(s)` | Parse `{sign?}{sec}:{ns}` string → Timestamp or error |
-| `Timestamp.String()` | Canonical string representation |
-| `Parse(s)` | Parse bracket-notation timerange string → TimeRange or error |
-| `TimeRange.String()` | Canonical bracket-notation string |
-| `TimeRange.IsEmpty()` | True if range contains no points |
-| `TimeRange.IsEternity()` | True if unbounded on both ends |
-| `TimeRange.Contains(ts)` | True if timestamp falls within range |
-| `TimeRange.Overlaps(other)` | True if two ranges share at least one point |
+| `ParseTimestamp(s)` | Parse `{sign?}{sec}:{ns}` into a floor-normalised `Timestamp`, or return an error |
+| `Timestamp.String()` | Canonical string, sign-magnitude |
+| `Parse(s)` | Parse TAMS timerange notation into a `TimeRange`, or return an error. An empty range is a result, not an error. |
+| `TimeRange.String()` | Canonical string, for server-derived values only (BR-TR-12) |
+| `TimeRange.IsEmpty()` | True if the range contains no instant |
+| `TimeRange.IsEternity()` | True if unbounded on both sides |
+| `TimeRange.Contains(ts)` | True if the timestamp is in the range |
+| `TimeRange.Overlaps(other)` | True if the two ranges share an instant. Agrees with the `NsBounds` comparison. |
+| `TimeRange.NsBounds()` | Half-open `int64` bounds, or `ErrOutOfRange` / `ErrEmptyRange` (BR-TR-10) |
+| `TimestampFromDuration(d)` | A `time.Duration` as a floor-normalised `Timestamp`, for duration fields such as `min_object_timeout` (BR-TR-14) |

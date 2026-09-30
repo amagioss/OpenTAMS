@@ -1,6 +1,8 @@
 package conversion
 
 import (
+	"fmt"
+
 	api "github.com/amagioss/opentams/gen/api"
 	"github.com/amagioss/opentams/internal/apperror"
 	"github.com/amagioss/opentams/internal/domain"
@@ -29,22 +31,17 @@ type getUrlEntry = struct {
 // `Controlled` projection are intentionally lossy on this direction —
 // the wire shape does not carry them; the handler stamps Controlled at
 // GET time when projecting controlled get_urls.
+//
+// Time fields are the client's exact strings (BR-CONV-08); an empty raw
+// string means the client omitted the field. The parsed values are never
+// rendered back.
 func SegmentToAPI(s domain.Segment) api.FlowSegment {
 	out := api.FlowSegment{
-		ObjectId:  s.ObjectID,
-		Timerange: s.Timerange.String(),
-	}
-	if s.TSOffset != nil {
-		v := s.TSOffset.String()
-		out.TsOffset = &v
-	}
-	if s.ObjectTimerange != nil {
-		v := s.ObjectTimerange.String()
-		out.ObjectTimerange = &v
-	}
-	if s.LastDuration != nil {
-		v := s.LastDuration.String()
-		out.LastDuration = &v
+		ObjectId:        s.ObjectID,
+		Timerange:       s.TimerangeRaw,
+		TsOffset:        optionalRaw(s.TSOffsetRaw),
+		ObjectTimerange: optionalRaw(s.ObjectTimerangeRaw),
+		LastDuration:    optionalRaw(s.LastDurationRaw),
 	}
 	if s.KeyFrameCount != nil {
 		v := int(*s.KeyFrameCount)
@@ -76,38 +73,13 @@ func SegmentToAPI(s domain.Segment) api.FlowSegment {
 }
 
 // SegmentFromAPI is the read-back path. Returns *apperror.AppError
-// (wrapping ErrSchemaValidation) on malformed `timerange` strings.
+// (wrapping ErrSchemaValidation) on a time string that does not parse.
 // FlowID is path-derived upstream; GetURLs are server-projected on read,
 // so neither is reconstructed here.
 func SegmentFromAPI(a api.FlowSegment) (domain.Segment, error) {
-	tr, err := timerange.Parse(a.Timerange)
-	if err != nil {
-		return domain.Segment{}, apperror.New(apperror.ErrSchemaValidation, "timerange: "+err.Error())
-	}
-	out := domain.Segment{
-		ObjectID:  a.ObjectId,
-		Timerange: tr,
-	}
-	if a.TsOffset != nil {
-		ts, err := timerange.ParseTimestamp(*a.TsOffset)
-		if err != nil {
-			return domain.Segment{}, apperror.New(apperror.ErrSchemaValidation, "ts_offset: "+err.Error())
-		}
-		out.TSOffset = &ts
-	}
-	if a.ObjectTimerange != nil {
-		otr, err := timerange.Parse(*a.ObjectTimerange)
-		if err != nil {
-			return domain.Segment{}, apperror.New(apperror.ErrSchemaValidation, "object_timerange: "+err.Error())
-		}
-		out.ObjectTimerange = &otr
-	}
-	if a.LastDuration != nil {
-		ld, err := timerange.ParseTimestamp(*a.LastDuration)
-		if err != nil {
-			return domain.Segment{}, apperror.New(apperror.ErrSchemaValidation, "last_duration: "+err.Error())
-		}
-		out.LastDuration = &ld
+	out := domain.Segment{ObjectID: a.ObjectId}
+	if err := setTimeFields(&out, a.Timerange, a.TsOffset, a.ObjectTimerange, a.LastDuration); err != nil {
+		return domain.Segment{}, apperror.New(apperror.ErrSchemaValidation, err.Error())
 	}
 	if a.KeyFrameCount != nil {
 		v := int64(*a.KeyFrameCount)
@@ -122,6 +94,49 @@ func SegmentFromAPI(a api.FlowSegment) (domain.Segment, error) {
 		out.SampleCount = &v
 	}
 	return out, nil
+}
+
+// setTimeFields parses the four client time strings onto seg and keeps
+// each exact string next to its parsed value (BR-CONV-08). A string that
+// does not parse is an error naming the field; a parsed empty range is a
+// valid value (BR-CONV-09).
+func setTimeFields(seg *domain.Segment, tr string, tsOffset, objectTimerange, lastDuration *string) error {
+	parsed, err := timerange.Parse(tr)
+	if err != nil {
+		return fmt.Errorf("timerange: %w", err)
+	}
+	seg.Timerange, seg.TimerangeRaw = parsed, tr
+	if tsOffset != nil {
+		ts, err := timerange.ParseTimestamp(*tsOffset)
+		if err != nil {
+			return fmt.Errorf("ts_offset: %w", err)
+		}
+		seg.TSOffset, seg.TSOffsetRaw = &ts, *tsOffset
+	}
+	if objectTimerange != nil {
+		otr, err := timerange.Parse(*objectTimerange)
+		if err != nil {
+			return fmt.Errorf("object_timerange: %w", err)
+		}
+		seg.ObjectTimerange, seg.ObjectTimerangeRaw = &otr, *objectTimerange
+	}
+	if lastDuration != nil {
+		ld, err := timerange.ParseTimestamp(*lastDuration)
+		if err != nil {
+			return fmt.Errorf("last_duration: %w", err)
+		}
+		seg.LastDuration, seg.LastDurationRaw = &ld, *lastDuration
+	}
+	return nil
+}
+
+// optionalRaw maps an absent raw string ("") to an omitted wire field.
+func optionalRaw(raw string) *string {
+	if raw == "" {
+		return nil
+	}
+	v := raw
+	return &v
 }
 
 // RegisterAcceptedToAPI maps the accepted slice of a RegisterResult to
@@ -160,10 +175,9 @@ func RegisterFailureToAPI(failed []domain.FailedSegment) api.FlowSegmentBulkFail
 	entries := make([]failedEntry, len(failed))
 	for i := range failed {
 		f := &failed[i]
-		tr := f.Segment.Timerange.String()
 		entries[i] = failedEntry{
 			ObjectId:  f.Segment.ObjectID,
-			Timerange: &tr,
+			Timerange: optionalRaw(f.Segment.TimerangeRaw),
 		}
 		entries[i].Error.Type = f.Type
 		entries[i].Error.Title = f.Title

@@ -130,8 +130,22 @@ func (e *benchEnv) shallowDepth() (int64, error) {
 // index, as a parsed TimeRange. Mirrors the generator's chunk layout
 // (segIdx*chunk .. (segIdx+1)*chunk seconds).
 func (e *benchEnv) chunkRange(segIdx int64) (timerange.TimeRange, error) {
+	return timerange.Parse(e.chunkRangeString(segIdx))
+}
+
+func (e *benchEnv) chunkRangeString(segIdx int64) string {
 	chunk := int64(e.plan.ChunkDurationSec)
-	return timerange.Parse(fmt.Sprintf("[%d:0_%d:0)", segIdx*chunk, (segIdx+1)*chunk))
+	return fmt.Sprintf("[%d:0_%d:0)", segIdx*chunk, (segIdx+1)*chunk)
+}
+
+// chunkSegment builds the segment at segIdx. The store keeps the client
+// string, so the segment carries the string it was parsed from.
+func (e *benchEnv) chunkSegment(segIdx int64, objectID string) (domain.Segment, error) {
+	tr, err := e.chunkRange(segIdx)
+	if err != nil {
+		return domain.Segment{}, err
+	}
+	return domain.Segment{ObjectID: objectID, Timerange: tr, TimerangeRaw: e.chunkRangeString(segIdx)}, nil
 }
 
 // appendInsert builds an InsertBatch that appends one controlled segment
@@ -139,14 +153,14 @@ func (e *benchEnv) chunkRange(segIdx int64) (timerange.TimeRange, error) {
 // it cannot overlap), with a bench-unique object_id that cannot collide
 // with any loaded object.
 func (e *benchEnv) appendInsert(flowIdx, segIdx int64, objectID string) (metastore.InsertBatch, error) {
-	tr, err := e.chunkRange(segIdx)
+	seg, err := e.chunkSegment(segIdx, objectID)
 	if err != nil {
 		return metastore.InsertBatch{}, err
 	}
 	return metastore.InsertBatch{
 		FlowID:              e.gen.Flow(flowIdx).ID,
 		ControlledStorageID: benchControlledStorageID,
-		Segments:            []domain.Segment{{ObjectID: objectID, Timerange: tr}},
+		Segments:            []domain.Segment{seg},
 	}, nil
 }
 
@@ -197,11 +211,11 @@ func runRegisterBulk(ctx context.Context, e *benchEnv) (report.BucketResult, err
 		base := region + int64(i)*benchBulkSize
 		segs := make([]domain.Segment, benchBulkSize)
 		for j := range benchBulkSize {
-			tr, terr := e.chunkRange(base + int64(j))
-			if terr != nil {
-				return terr
+			seg, serr := e.chunkSegment(base+int64(j), fmt.Sprintf("bench-bulk-%d-%d", i, j))
+			if serr != nil {
+				return serr
 			}
-			segs[j] = domain.Segment{ObjectID: fmt.Sprintf("bench-bulk-%d-%d", i, j), Timerange: tr}
+			segs[j] = seg
 		}
 		_, ierr := e.store.InsertSegments(ctx, metastore.InsertBatch{
 			FlowID:              e.gen.Flow(fi).ID,
@@ -222,14 +236,14 @@ func runOverlapRejection(ctx context.Context, e *benchEnv) (report.BucketResult,
 		fi := int64(i) % e.plan.DeepFlowCount
 		// Overlap an EXISTING loaded segment within [0, depth).
 		existing := int64(i) % depth
-		tr, terr := e.chunkRange(existing)
-		if terr != nil {
-			return terr
+		seg, serr := e.chunkSegment(existing, fmt.Sprintf("bench-ovl-%d", i))
+		if serr != nil {
+			return serr
 		}
 		_, ierr := e.store.InsertSegments(ctx, metastore.InsertBatch{
 			FlowID:              e.gen.Flow(fi).ID,
 			ControlledStorageID: benchControlledStorageID,
-			Segments:            []domain.Segment{{ObjectID: fmt.Sprintf("bench-ovl-%d", i), Timerange: tr}},
+			Segments:            []domain.Segment{seg},
 		})
 		// The rejection IS the measured path: ErrSegmentOverlap is success.
 		if errors.Is(ierr, metastore.ErrSegmentOverlap) {

@@ -91,3 +91,27 @@ func TestHeadStorageBackends_returns200(t *testing.T) {
 	_, ok := resp.(api.HeadStorageBackends200Response)
 	assert.True(t, ok)
 }
+
+// BR-TR-14: min_object_timeout is a TAMS timestamp built by
+// timerange.TimestampFromDuration, so a negative duration keeps a
+// non-negative nanoseconds field.
+func TestGetService_minObjectTimeoutIsTimestamp(t *testing.T) {
+	for _, tc := range []struct {
+		d    time.Duration
+		want string
+	}{
+		{90 * time.Second, "90:0"},
+		{1500 * time.Millisecond, "1:500000000"},
+		{-1500 * time.Millisecond, "-1:500000000"},
+	} {
+		t.Run(tc.want, func(t *testing.T) {
+			cfg := testConfig()
+			cfg.ObjectStorePresignExpiry = tc.d
+			resp, err := newHandler(cfg).GetService(context.Background(), api.GetServiceRequestObject{})
+			require.NoError(t, err)
+			body, ok := resp.(api.GetService200JSONResponse)
+			require.True(t, ok)
+			assert.Equal(t, tc.want, body.MinObjectTimeout)
+		})
+	}
+}
