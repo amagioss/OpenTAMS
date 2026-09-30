@@ -180,7 +180,11 @@ func apiFlowToMetastore(flowID uuid.UUID, base apiFlowBase) *metastore.Flow {
 	return f
 }
 
-func parseGetFlowsParams(params api.GetFlowsParams) metastore.ListFlowsParams {
+// parseGetFlowsParams maps the GET /flows query onto the store filter. HEAD
+// /flows has the same parameters and uses this function too, so HEAD
+// filters exactly as GET does (ADR-0039 rule 7). A timerange that does not
+// parse is an error; an empty range is a valid filter (BR-CONV-09).
+func parseGetFlowsParams(params api.GetFlowsParams) (metastore.ListFlowsParams, error) {
 	p := metastore.ListFlowsParams{Limit: 100}
 	if params.Limit != nil {
 		p.Limit = *params.Limit
@@ -218,62 +222,27 @@ func parseGetFlowsParams(params api.GetFlowsParams) metastore.ListFlowsParams {
 		}
 	}
 	if params.Timerange != nil {
-		if parsed, err := timerange.Parse(string(*params.Timerange)); err == nil {
-			p.Timerange = &parsed
+		parsed, err := timerange.Parse(string(*params.Timerange))
+		if err != nil {
+			return metastore.ListFlowsParams{}, err
 		}
+		p.Timerange = &parsed
 	}
-	return p
-}
-
-func parseHeadFlowsParams(params api.HeadFlowsParams) metastore.ListFlowsParams {
-	p := metastore.ListFlowsParams{Limit: 100}
-	if params.Limit != nil {
-		p.Limit = *params.Limit
-		if p.Limit > 1000 {
-			p.Limit = 1000
-		}
-	}
-	if params.Page != nil {
-		s := string(*params.Page)
-		p.PageFrom = &s
-	}
-	if params.Format != nil {
-		s := string(*params.Format)
-		p.Format = &s
-	}
-	if params.Codec != nil {
-		s := string(*params.Codec)
-		p.Codec = &s
-	}
-	if params.Label != nil {
-		s := string(*params.Label)
-		p.Label = &s
-	}
-	if params.FrameWidth != nil {
-		v := *params.FrameWidth
-		p.FrameWidth = &v
-	}
-	if params.FrameHeight != nil {
-		v := *params.FrameHeight
-		p.FrameHeight = &v
-	}
-	if params.SourceId != nil {
-		if sid, err := uuid.Parse(string(*params.SourceId)); err == nil {
-			p.SourceID = &sid
-		}
-	}
-	if params.Timerange != nil {
-		if parsed, err := timerange.Parse(string(*params.Timerange)); err == nil {
-			p.Timerange = &parsed
-		}
-	}
-	return p
+	return p, nil
 }
 
 func (h *Handler) GetFlows(ctx context.Context, req api.GetFlowsRequestObject) (api.GetFlowsResponseObject, error) {
 	log := logger.FromContext(ctx, h.log)
 
-	p := parseGetFlowsParams(req.Params)
+	p, err := parseGetFlowsParams(req.Params)
+	if err != nil {
+		t, ti, d, st := problemPtrs(problemType("invalid-timerange"), "Bad Request", "timerange: "+err.Error(), 400)
+		return api.GetFlows400ApplicationProblemPlusJSONResponse{
+			BadRequestApplicationProblemPlusJSONResponse: api.BadRequestApplicationProblemPlusJSONResponse{
+				Type: t, Title: ti, Detail: d, Status: st,
+			},
+		}, nil
+	}
 
 	log.Info("listing flows", zap.Int("limit", p.Limit))
 
@@ -307,7 +276,10 @@ func (h *Handler) GetFlows(ctx context.Context, req api.GetFlowsRequestObject) (
 func (h *Handler) HeadFlows(ctx context.Context, req api.HeadFlowsRequestObject) (api.HeadFlowsResponseObject, error) {
 	log := logger.FromContext(ctx, h.log)
 
-	p := parseHeadFlowsParams(req.Params)
+	p, err := parseGetFlowsParams(api.GetFlowsParams(req.Params))
+	if err != nil {
+		return api.HeadFlows400ApplicationProblemPlusJSONResponse{}, nil
+	}
 
 	page, err := h.flows.ListFlows(ctx, p)
 	if err != nil {

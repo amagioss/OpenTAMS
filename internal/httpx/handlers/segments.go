@@ -77,6 +77,9 @@ func (h *Handler) GetFlowSegments(ctx context.Context, req api.GetFlowSegmentsRe
 		case errors.Is(err, metastore.ErrInvalidCursor):
 			return getSegments400(problemType("invalid-cursor"), "Bad Request", err.Error()), nil
 		}
+		if detail, ok := invalidTimerangeDetail(err); ok {
+			return getSegments400(problemType("invalid-timerange"), "Bad Request", detail), nil
+		}
 		log.Error("List failed", zap.Error(err))
 		return nil, err
 	}
@@ -117,6 +120,17 @@ func listParamsErrorType(err error) string {
 		return problemType("schema-validation")
 	}
 	return problemType("invalid-timerange")
+}
+
+// invalidTimerangeDetail reports whether err is the service's
+// invalid-timerange error for a query timerange (BR-SEG-09), and returns
+// its detail.
+func invalidTimerangeDetail(err error) (string, bool) {
+	var ae *apperror.AppError
+	if errors.As(err, &ae) && ae.Code == apperror.ErrInvalidTimerange {
+		return ae.Detail, true
+	}
+	return "", false
 }
 
 // sanitiseHeaderValue strips CR and LF bytes from a string destined
@@ -165,6 +179,9 @@ func (h *Handler) HeadFlowSegments(ctx context.Context, req api.HeadFlowSegments
 
 	page, err := h.segments.List(ctx, params)
 	if err != nil {
+		if _, ok := invalidTimerangeDetail(err); ok {
+			return api.HeadFlowSegments400ApplicationProblemPlusJSONResponse{}, nil
+		}
 		log.Error("HeadFlowSegments: List failed", zap.Error(err))
 		return nil, err
 	}
@@ -287,7 +304,11 @@ func (h *Handler) PostFlowSegments(ctx context.Context, req api.PostFlowSegments
 			finalised = h.completeWithBody(ctx, log, key, 409, resp)
 			return resp, nil
 		}
-		log.Error("RegisterBatch failed (transient); releasing idempotency key", zap.Error(err))
+		// Anything else is a 5xx: a dependency failure, or a server defect
+		// such as a database constraint violation, which the service's
+		// validation makes unreachable from client input (ADR-0040 rule 3).
+		// A 5xx is never cached; the key is released (BR-IDMP-02).
+		log.Error("RegisterBatch failed; releasing idempotency key", zap.Error(err))
 		bgCtx, cancel := context.WithTimeout(context.Background(), segIdempotencyFinaliseTimeout)
 		defer cancel()
 		if rerr := h.idempotency.Release(bgCtx, key); rerr == nil {
@@ -423,6 +444,9 @@ func (h *Handler) DeleteFlowSegments(ctx context.Context, req api.DeleteFlowSegm
 			return deleteSegments404("flow not found"), nil
 		case errors.Is(err, segment.ErrFlowReadOnly):
 			return deleteSegments403("flow is read-only"), nil
+		}
+		if detail, ok := invalidTimerangeDetail(err); ok {
+			return deleteSegments400(problemType("invalid-timerange"), detail), nil
 		}
 		log.Error("Delete failed", zap.Error(err))
 		return nil, err
