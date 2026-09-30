@@ -94,7 +94,7 @@ The rules:
    | `DELETE /flows/{flowId}/segments` | Containment | "completely covered by the given timerange" |
 
 8. **An empty query timerange matches as TAMS says.** This includes an end before the
-   start ([ADR-0038](0038-tams-timestamp-and-timerange-grammar.md)). `GET` segments
+   start ([ADR-0038](0038-tams-timestamp-and-timerange-format.md)). `GET` segments
    returns an empty list. `DELETE` deletes nothing. `GET /flows` returns only flows with
    no segments ("An empty timerange returns Flows with no content").
 9. **The server renders derived values in canonical form.** The flow timerange joins
@@ -123,7 +123,7 @@ The rules:
 ## More Information
 
 * Supersedes [ADR-0014](0014-timerange-stored-as-string-and-bounds.md) when accepted.
-* Grammar and value model: [ADR-0038](0038-tams-timestamp-and-timerange-grammar.md).
+* Format and value model: [ADR-0038](0038-tams-timestamp-and-timerange-format.md).
 * Segment invariants and schema: [ADR-0040](0040-segment-timerange-invariants.md).
 * Specification: `GET`, `POST`, and `DELETE /flows/{flowId}/segments` and `GET /flows` in
   the upstream `TimeAddressableMediaStore.yaml`, and

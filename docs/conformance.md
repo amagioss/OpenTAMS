@@ -197,14 +197,14 @@ below.
 | `text/event-stream` for streamed segment reads | Not implemented | The OpenAPI spec calls it out; OpenTAMS supports the polling JSON path only today. |
 | Live ingest hints (segment chunking, ts_offset semantics) | Implemented | The data shape is honoured; OpenTAMS does not enforce live-vs-archive distinctions, treats both uniformly. |
 
-## Time-range syntax
+## Time-range format
 
-> The rules in this section follow [ADR-0038](adr/0038-tams-timestamp-and-timerange-grammar.md)
+> The rules in this section follow [ADR-0038](adr/0038-tams-timestamp-and-timerange-format.md)
 > and [ADR-0039](adr/0039-timerange-stored-as-client-string-with-half-open-bounds.md).
 > These ADRs are proposed and not implemented yet. The list at the end of this section
 > gives the current differences.
 
-OpenTAMS accepts the TAMS timestamp and time-range grammar from `timestamp.json`,
+OpenTAMS accepts the TAMS timestamp and time-range format from `timestamp.json`,
 `timerange.json`, and App Note 0008:
 
 - Timestamps are `{sign?}{seconds}:{nanoseconds}`. The sign applies to the whole value:

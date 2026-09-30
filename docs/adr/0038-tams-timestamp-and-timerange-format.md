@@ -6,13 +6,13 @@ consulted: OpenTAMS maintainers
 informed: OpenTAMS contributors
 ---
 
-# Parse timestamps and timeranges by the TAMS grammar, and use the BBC reference library where the grammar is silent
+# Parse timestamps and timeranges in the TAMS format, and use the BBC reference library where App Note 0008 is silent
 
 ## Context and Problem Statement
 
 TAMS defines the timestamp and timerange syntax in `timestamp.json`, `timerange.json`,
 and [App Note 0008](https://github.com/bbc/tams/blob/main/docs/appnotes/0008-timestamps-in-TAMS.md).
-The parser in `internal/timerange` accepts a narrower and partly different language:
+The parser in `internal/timerange` accepts a narrower and partly different format:
 
 | Input | TAMS meaning | Parser today |
 |---|---|---|
@@ -52,7 +52,7 @@ The rules:
    `Nanoseconds` is in `[0, 999_999_999]` and the value is
    `Seconds × 10⁹ + Nanoseconds`. −1.5 s is `{Seconds: -2, Nanoseconds: 500000000}`.
    Only `ParseTimestamp` and `String` deal with the sign.
-3. **Grammar.** The grammar is `{start marker}{start timestamp}_{end timestamp}{end marker}`,
+3. **Format.** The TimeRange format is `{start marker}{start timestamp}_{end timestamp}{end marker}`,
    and each part is optional. The parser also accepts `_` (eternity), `()` (empty), and a
    single timestamp with `[]` or with no markers (instantaneous).
 4. **Omitted timestamp.** The range extends to infinity on that side. The parser ignores a
@@ -70,7 +70,7 @@ The rules:
    instantaneous range, because the schema says "The short syntax is preferred". It writes
    `_` for eternity and `()` for an empty range. It writes a marker for every present
    timestamp, and no marker for an absent timestamp.
-8. **The grammar only widens.** A string that the parser accepts once must stay accepted.
+8. **The accepted format only widens.** A string that the parser accepts once must stay accepted.
    The metastore parses stored client strings again on read. As a result, a narrower
    parser breaks existing rows.
 
@@ -85,7 +85,7 @@ The rules:
   must handle them. ADR-0039 and ADR-0040 say how.
 * Bad, because two rules rest on a library, not on the specification text. If BBC
   clarifies App Note 0008 differently, a new ADR must supersede this one.
-* Bad, because rule 8 makes a future tightening of the grammar a data migration, not a
+* Bad, because rule 8 makes a future tightening of the accepted format a data migration, not a
   code change.
 
 ## More Information

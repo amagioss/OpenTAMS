@@ -15,7 +15,7 @@ A timestamp is `{sign?}{seconds}:{nanoseconds}`. `seconds` is a non-negative int
 no leading zeros. `nanoseconds` is an integer in `[0, 999_999_999]` with no leading zeros.
 
 The sign applies to the whole value: `value = sign × (seconds × 10⁹ + nanoseconds)`.
-`-1:500000000` is −1.5 s, not −0.5 s. Source: [ADR-0038](../../../adr/0038-tams-timestamp-and-timerange-grammar.md)
+`-1:500000000` is −1.5 s, not −0.5 s. Source: [ADR-0038](../../../adr/0038-tams-timestamp-and-timerange-format.md)
 rule 1, which follows the BBC `mediatimestamp` library.
 
 ## BR-TR-02: Negative zero (pending)
@@ -51,7 +51,7 @@ A single timestamp is an instantaneous range, with `[]` markers or with no marke
 errors, because the schema says "Instantaneous TimeRanges cannot use exclusive markers".
 
 ## BR-TR-06: Omitted timestamps and markers (pending)
-The grammar is `{start marker}{start timestamp}_{end timestamp}{end marker}`, and every
+The TimeRange format is `{start marker}{start timestamp}_{end timestamp}{end marker}`, and every
 part is optional. These rules apply:
 - An omitted timestamp makes that side unbounded. `(5:0_` starts after `5:0` and has no
   end. `_10:0)` has no start.
@@ -137,7 +137,7 @@ The canonical form follows these rules:
 - It writes a timestamp as `{-}{seconds}:{nanoseconds}` of the absolute value. The value
   −1.5 s, stored as `{-2, 500000000}`, renders as `-1:500000000`.
 
-## BR-TR-13: The grammar only widens (pending)
+## BR-TR-13: The accepted format only widens (pending)
 A string that the parser accepts once stays accepted. The metastore parses stored client
 strings again on read (BR-META-19). As a result, a narrower parser breaks existing rows. A change that
-narrows the grammar needs a data migration and a new ADR.
+narrows the accepted format needs a data migration and a new ADR.
