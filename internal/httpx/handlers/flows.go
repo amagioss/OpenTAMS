@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strconv"
 	"time"
 
@@ -236,18 +237,16 @@ func (h *Handler) GetFlows(ctx context.Context, req api.GetFlowsRequestObject) (
 
 	p, err := parseGetFlowsParams(req.Params)
 	if err != nil {
-		t, ti, d, st := problemPtrs(problemType("invalid-timerange"), "Bad Request", "timerange: "+err.Error(), 400)
-		return api.GetFlows400ApplicationProblemPlusJSONResponse{
-			BadRequestApplicationProblemPlusJSONResponse: api.BadRequestApplicationProblemPlusJSONResponse{
-				Type: t, Title: ti, Detail: d, Status: st,
-			},
-		}, nil
+		return getFlows400InvalidTimerange("timerange: " + err.Error()), nil
 	}
 
 	log.Info("listing flows", zap.Int("limit", p.Limit))
 
 	page, err := h.flows.ListFlows(ctx, p)
 	if err != nil {
+		if errors.Is(err, timerange.ErrOutOfRange) {
+			return getFlows400InvalidTimerange("timerange: " + err.Error()), nil
+		}
 		log.Error("ListFlows failed", zap.Error(err))
 		return nil, err
 	}
@@ -283,6 +282,9 @@ func (h *Handler) HeadFlows(ctx context.Context, req api.HeadFlowsRequestObject)
 
 	page, err := h.flows.ListFlows(ctx, p)
 	if err != nil {
+		if errors.Is(err, timerange.ErrOutOfRange) {
+			return api.HeadFlows400ApplicationProblemPlusJSONResponse{}, nil
+		}
 		log.Error("HeadFlows: ListFlows failed", zap.Error(err))
 		return nil, err
 	}
@@ -995,4 +997,16 @@ func (h *Handler) PutFlowReadOnly(ctx context.Context, req api.PutFlowReadOnlyRe
 	}
 	log.Info("flow read_only updated")
 	return api.PutFlowReadOnly204Response{}, nil
+}
+
+// getFlows400InvalidTimerange is the 400 for a GET /flows timerange that
+// does not parse (SCN-HTTP-08) or does not fit in int64 nanoseconds
+// (BR-META-21).
+func getFlows400InvalidTimerange(detail string) api.GetFlows400ApplicationProblemPlusJSONResponse {
+	t, ti, d, st := problemPtrs(problemType("invalid-timerange"), "Bad Request", detail, 400)
+	return api.GetFlows400ApplicationProblemPlusJSONResponse{
+		BadRequestApplicationProblemPlusJSONResponse: api.BadRequestApplicationProblemPlusJSONResponse{
+			Type: t, Title: ti, Detail: d, Status: st,
+		},
+	}
 }

@@ -29,7 +29,7 @@ import (
 //	                                they're free during COPY)
 //	"index:<name>"
 var allowedSegmentsSurvivors = []string{
-	"constraint:c:segments_upper_ns_positive", // CHECK; ~5ns/row, negligible vs FK/btree
+	"constraint:c:segments_bounds_nonempty", // CHECK; ~5ns/row, negligible vs FK/btree
 	"constraint:p:segments_pkey",              // PK; can never drop
 	"index:segments_pkey",                     // PK's backing index
 }
