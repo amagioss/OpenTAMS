@@ -314,11 +314,11 @@ Determined by whether the flow row existed before the upsert. Used by the HTTP h
 When a flow has one or more segments, `codec` and `essence_parameters` cannot be changed. If incoming values differ from stored, return `apperror.ErrImmutableField`.
 
 ### BR-META-05: Overlap enforcement is application-level first; DB constraint is safety net only
-`InsertSegments` enforces non-overlap itself rather than relying on the DB constraint. Both checks use the same rule: the `timerange.NsBounds` results of two segments are compared as half-open intervals (pending, [ADR-0040](../../../adr/0040-segment-timerange-invariants.md) rule 5). Two checks, in order:
-1. **Within-batch**, before any transaction is opened: every pair of candidate segments is compared by their bounds, `a.Lower < b.Upper && b.Lower < a.Upper`. This needs no round-trip, so a self-overlapping batch is rejected without touching Postgres.
+`InsertSegments` enforces non-overlap itself rather than relying on the DB constraint. Both checks use the same rule: they compare the `timerange.NsBounds` results of two segments as half-open intervals (pending, [ADR-0040](../../../adr/0040-segment-timerange-invariants.md) rule 5). Two checks, in order:
+1. **Within-batch**, before any transaction is opened: the store compares every pair of candidate segments by their bounds, `a.Lower < b.Upper && b.Lower < a.Upper`. This needs no round-trip, so a self-overlapping batch is rejected without touching Postgres.
 2. **Against existing**, inside the transaction and after the flow row is locked: one `int8range(lower_ns, upper_ns) && int8range($lo, $hi)` probe per candidate against `segments` for that flow.
 
-Today check 1 uses `timerange.Overlaps` and check 2 uses bounds from `nsRange`, which ignores the markers. The two disagree: `[0:0_10:0]` and `[10:0_20:0)` are rejected in one batch and accepted in two. Using one rule removes the disagreement.
+Today check 1 uses `timerange.Overlaps` and check 2 uses bounds from `nsRange`, which ignores the markers. The two disagree: the store rejects `[0:0_10:0]` and `[10:0_20:0)` in one batch and accepts them in two batches. One rule removes the disagreement.
 
 The store trusts that the service has already rejected empty, unbounded, and out-of-range timeranges (BR-SEG-02). The `segments_bounds_nonempty` check and the exclusion constraint are backstops for a server defect, not validation.
 
@@ -367,7 +367,7 @@ This is the same pattern used for sources in `UpsertFlow` (BR-META-01). See BR-M
 **Known limitation**: the upsert does not populate `objects.timerange` or `objects.key_frame_count` from `Segment.ObjectTimerange` / `Segment.KeyFrameCount`. The columns exist and are intended for first-write-wins denormalisation (REQ-DATA-06). The containment rule in BR-META-19 reads the earliest prior `segments.object_timerange` instead.
 
 ### BR-META-08: DeleteSegmentsByTimerange is atomic and leaves object cleanup to the GC
-Every segment whose timerange is **contained in** the query — optionally narrowed by `object_id` — is removed in one transaction, behind the same flow-row lock as an insert (pending, BR-META-21). TAMS says "Only delete Flow Segments that are completely covered by the given timerange". Today the code deletes every segment that *intersects* the query, which also removes boundary segments the client did not ask to delete. The `DELETE … RETURNING object_id` feeds a `GROUP BY`, so each object's `ref_count` is decremented once by the number of its segments that went away rather than once per row.
+The store removes every segment whose timerange is **contained in** the query, optionally narrowed by `object_id`. It removes them in one transaction, behind the same flow-row lock as an insert (pending, BR-META-21). TAMS says "Only delete Flow Segments that are completely covered by the given timerange". Today the code deletes every segment that *intersects* the query, which also removes boundary segments the client did not ask to delete. The `DELETE … RETURNING object_id` feeds a `GROUP BY`, so each object's `ref_count` is decremented once by the number of its segments that went away rather than once per row.
 
 Objects that reach `ref_count = 0` are **left in place**. `DeleteResult` carries only `DeletedCount`; there is no released-object list for a caller to act on. The GC worker owns cleanup, reading `objects WHERE ref_count = 0 AND reaping = false`, deleting the bytes, and reaping the rows. The rationale for keeping the object store off this path is in BR-SEG-10.
 
@@ -375,9 +375,9 @@ Objects that reach `ref_count = 0` are **left in place**. `DeleteResult` carries
 `DELETE FROM flows WHERE id=?` cascades to segments and flow_tags via FK. Before deletion, collect all `object_id` values from segments. After deletion, return those whose `ref_count` has reached zero.
 
 ### BR-META-10: Stored time values and bounds (pending)
-- **Client strings.** `segments.timerange`, `ts_offset`, `object_timerange`, and `last_duration` hold exactly the string the client sent, and reads return that string. The store never writes `TimeRange.String()` for a client value. Stored strings are parsed for semantic checks and never compared as text: `10:0`, `[10:0]`, and `[10:0_10:0]` are one range.
-- **Bounds.** `lower_ns` and `upper_ns` come only from `timerange.NsBounds` applied to the segment `timerange` (BR-TR-10). `ts_offset`, `object_timerange`, and `last_duration` have no bounds columns. The metastore has no conversion of its own: `nsRange` is removed, and so is the arithmetic in the `ListFlows` filter.
-- **Never rendered.** Bounds are used to filter, detect overlap, order, page, and select boundary rows. No code renders them back to text.
+- **Client strings.** `segments.timerange`, `ts_offset`, `object_timerange`, and `last_duration` hold exactly the string the client sent, and reads return that string. The store never writes `TimeRange.String()` for a client value. The store parses stored strings for semantic checks and never compares them as text: `10:0`, `[10:0]`, and `[10:0_10:0]` are one range.
+- **Bounds.** `lower_ns` and `upper_ns` come only from `timerange.NsBounds` applied to the segment `timerange` (BR-TR-10). `ts_offset`, `object_timerange`, and `last_duration` have no bounds columns. The metastore has no conversion of its own. This change removes `nsRange` and the arithmetic in the `ListFlows` filter.
+- **Never rendered.** The store uses bounds to filter, detect overlap, order, page, and select boundary rows. No code renders them back to text.
 
 Today `nsRange` in `segments.go` ignores the markers, so `[0:0]` becomes `(0, 0)` and fails the check constraint with a 500. That defect, and the rule it broke, are the subject of [ADR-0039](../../../adr/0039-timerange-stored-as-client-string-with-half-open-bounds.md).
 
@@ -385,14 +385,14 @@ Today `nsRange` in `segments.go` ignores the markers, so `[0:0]` becomes `(0, 0)
 Cursors are opaque base64-encoded values encoding the last-seen row's sort key (`created` + `id` for sources/flows, `lower_ns` + `id` for segments). `ListFlows`, `ListSources`, `ListSegments` all support `page_from` cursor and `limit`. Default limit: 100. Max limit: 1000.
 
 ### BR-META-12: Flow timerange is denormalized
-`flows.timerange` holds the span of the flow's segments as text. It is updated inside every successful `InsertSegments` and `DeleteSegmentsByTimerange` transaction, and is NULL when the flow has no segments.
+`flows.timerange` holds the span of the flow's segments as text. The store updates it inside every successful `InsertSegments` and `DeleteSegmentsByTimerange` transaction. It is NULL when the flow has no segments.
 
-The value is derived, so it is rendered canonically (pending, BR-TR-12):
+The value is derived, so the store renders it in canonical form (pending, BR-TR-12):
 1. Select the stored `timerange` string of the segment with the lowest `lower_ns`, and of the segment with the highest `upper_ns`.
 2. Parse both strings.
 3. Join the start bound of the first to the end bound of the second, and render the result with `TimeRange.String()`.
 
-`GetFlowTimerange` uses the same steps. Rendering happens in Go. Today both paths build the string from `lower_ns` and `upper_ns` in SQL or with integer division, which loses the markers and renders a negative bound such as −1.5 s as `-1:-500000000`.
+`GetFlowTimerange` uses the same steps. Rendering happens in Go. Today both paths build the string from `lower_ns` and `upper_ns`, in SQL or with integer division. This loses the markers. It also renders a negative bound such as −1.5 s as `-1:-500000000`.
 
 ### BR-META-13: GetFlow loads tags and collection in one round-trip
 `GetFlow` uses a single query joining `flows`, `flow_tags`, and `flow_collection`. Tags are aggregated as JSONB. Collection items ordered by `sort_order`.
@@ -465,7 +465,7 @@ Tests live in `schema_test.go` and use the same testcontainer Postgres as the re
 ### BR-META-19: object_timerange is validated lazily against the earliest stored value
 `Segment.ObjectTimerange` is a pointer: `nil` means the client did not supply one, and the metastore stores NULL. Nothing is ever computed on the client's behalf (REQ-DATA-06).
 
-When a segment *does* carry one, `InsertSegments` parses both strings (they are never compared as text, BR-META-10) and looks up the earliest prior non-NULL `object_timerange` recorded for the same `object_id` — across all flows, ordered by `created_at` — and requires the incoming range to be **contained** within it. A range extending beyond the stored one fails the batch with a wrapped `apperror.ErrInvalidObjectTimerange` naming both ranges.
+When a segment *does* carry one, `InsertSegments` looks up the earliest prior non-NULL `object_timerange` for the same `object_id`, across all flows, ordered by `created_at`. It parses both strings, because it never compares them as text (BR-META-10). It requires the incoming range to be **contained** within the stored range. A range extending beyond the stored one fails the batch with a wrapped `apperror.ErrInvalidObjectTimerange` naming both ranges.
 
 Validation is skipped entirely when either side is absent: an object seen for the first time, or a segment that supplies no `object_timerange`, has nothing to contradict. This is a first-write-wins rule — the first client to describe an object's extent defines it, and later registrations may only address a sub-range of those bytes.
 
@@ -479,7 +479,7 @@ Ordering is `(lower_ns, id)`, ascending by default and descending when `ReverseO
 `ListSegments` first calls `GetFlowForSegmentRead` and returns `ErrFlowNotFound` for an unknown flow, which the handler renders as 404. TAMS `REQ-BEH-16` asks for an empty list instead; the divergence is deliberate and recorded in [`docs/conformance.md`](../../../conformance.md).
 
 ### BR-META-21: Every timerange query uses NsBounds and a named predicate (pending)
-Every query that takes a timerange converts it with `timerange.NsBounds`. An unbounded side is passed as a SQL `NULL` parameter. Each site uses exactly one predicate:
+Every query that takes a timerange converts it with `timerange.NsBounds`. The store passes an unbounded side as a SQL `NULL` parameter. Each site uses exactly one predicate:
 
 | Site | Predicate | SQL shape |
 |---|---|---|
@@ -488,10 +488,10 @@ Every query that takes a timerange converts it with `timerange.NsBounds`. An unb
 | `ListFlows` timerange filter | A segment of the flow overlaps | the `ListSegments` shape inside `EXISTS` |
 | `DeleteSegmentsByTimerange` (BR-META-08) | Containment | `($lo IS NULL OR lower_ns >= $lo) AND ($hi IS NULL OR upper_ns <= $hi)` |
 
-An **empty** query timerange, including one whose end is before its start, matches as TAMS says. The store checks `TimeRange.IsEmpty()` before it calls `NsBounds`, so `ErrEmptyRange` never reaches a query caller:
+An **empty** query timerange, including one whose end is before its start, matches as TAMS says. The store checks `TimeRange.IsEmpty()` before it calls `NsBounds`, so `ErrEmptyRange` never gets to a query caller:
 - `ListSegments` returns an empty page.
 - `DeleteSegmentsByTimerange` deletes nothing.
-- `ListFlows` returns only flows that have no segments ("An empty timerange returns Flows with no content"). Today the filter is skipped for an empty range, so every flow is returned.
+- `ListFlows` returns only flows that have no segments ("An empty timerange returns Flows with no content"). Today the store skips the filter for an empty range, and returns every flow.
 
 A query timerange whose bounds do not fit in `int64` returns `timerange.ErrOutOfRange`. The caller maps it to 400 `invalid-timerange`.
 

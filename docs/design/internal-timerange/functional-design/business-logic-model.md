@@ -28,7 +28,7 @@ instantaneous form `[ts]` or `ts` (BR-TR-04 to BR-TR-06, pending).
 ### NsBounds (pending)
 The half-open `int64` nanosecond interval `[Lower, Upper)` of a non-empty range, with an
 explicit flag for each unbounded side. It exists only so that the database can compare
-ranges. It is never rendered back to text (BR-TR-10).
+ranges. No code renders it back to text (BR-TR-10).
 
 ## Data Model
 

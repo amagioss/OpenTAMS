@@ -58,23 +58,23 @@ conversion stamps on the way in, the handler projects on the way out.
 synthesises a value. `TSOffset` round-trips verbatim including negative offsets —
 the mappers are shape-only and do not editorialise about the timeline.
 
-**BR-CONV-08 — Client time strings are carried, not re-rendered (pending).**
+**BR-CONV-08 — Conversion carries client time strings and does not re-render them (pending).**
 `SegmentFromAPI` keeps the exact wire string of `timerange`, `ts_offset`,
-`object_timerange`, and `last_duration` next to the parsed value, in
+`object_timerange`, and `last_duration` next to each parsed value. The fields are
 `domain.Segment.TimerangeRaw`, `TSOffsetRaw`, `ObjectTimerangeRaw`, and
 `LastDurationRaw`. `SegmentToAPI` writes the raw string, never `String()` of the parsed
 value. A client that sends `[10:0]` reads back `[10:0]`, not `[10:0_10:0]`.
 
 The parsed values stay, because the service and the metastore need them for validation
-and `timerange.NsBounds`. The raw strings are the only values that reach the wire.
+and `timerange.NsBounds`. The raw strings are the only values that get to the wire.
 
-**BR-CONV-09 — Syntax errors fail the request; semantic errors fail the segment (pending).**
-A timerange or timestamp that does not parse is a request-level
-`schema-validation` 400, as today. A timerange that parses but is not a valid segment
-timerange (empty, unbounded, exclusive start, out of range) is not decided here. The
-service reports it as a per-segment failure (BR-SEG-02). Query parameters follow the same
-split: a parse error is a 400 here, and an empty range is passed through as a valid value
-(BR-META-21).
+**BR-CONV-09 — A syntax error fails the request, and a semantic error fails the segment (pending).**
+A timerange or timestamp that does not parse is a request-level `schema-validation` 400,
+as today. This package does not decide whether a parsed timerange is a valid segment
+timerange (empty, unbounded, exclusive start, out of range). The service reports an
+invalid segment timerange as a per-segment failure (BR-SEG-02). Query parameters follow
+the same split. A parse error is a 400 here. This package passes an empty range through
+as a valid value (BR-META-21).
 
 **BR-CONV-05 — `limit` is normalised here, not downstream.**
 A missing `limit` becomes the server default of 100; a value above 1000 is clamped

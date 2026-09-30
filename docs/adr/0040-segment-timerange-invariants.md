@@ -21,8 +21,9 @@ permits negative timestamps. It accepts an empty range such as `(5000000000, 500
 Its comment says that zero-width ranges cannot occur. They can.
 
 The two overlap checks also disagree. The within-batch check uses `TimeRange.Overlaps`,
-which honours the markers. The check against stored rows uses the integer bounds. So two
-segments can be rejected in one batch and accepted in two.
+which honours the markers. The check against stored rows uses the integer bounds. As a result,
+the store can reject two segments in one batch and accept the same two segments in two
+batches.
 
 Last, the parser accepts timeranges that cannot describe a segment. TAMS
 [App Note 0012](https://github.com/bbc/tams/blob/main/docs/appnotes/0012-using-flow-segment-timeranges.md)
@@ -62,18 +63,19 @@ The rules:
    start must be inclusive, and the range must not be empty. The end can be inclusive or
    exclusive. This is an OpenTAMS policy. It is consistent with App Note 0012, but the
    schema regex does not require it.
-2. **How a violation is reported.** A segment that breaks rule 1, or whose bounds do not
-   fit in `int64` nanoseconds, is a per-segment failure with type `invalid-timerange` in a
-   200 `flow-segment-bulk-failure` response. It is not a 400 for the whole request. TAMS
-   says that "processing should continue" and that "A 200 response should be returned
-   listing the failed Segments". A string that fails the schema regex is still a 400 for
-   the whole request, from spec validation.
+2. **How the service reports a violation.** A segment can break rule 1, or have bounds
+   that do not fit in `int64` nanoseconds. The service reports such a segment as a
+   per-segment failure with type `invalid-timerange`, in a 200
+   `flow-segment-bulk-failure` response. It is not a 400 for the whole request. TAMS says
+   that "processing should continue" and that "A 200 response should be returned listing
+   the failed Segments". Spec validation still rejects the whole request with 400 if a
+   string does not match the schema regex.
 3. **Validation comes first.** The service rejects every invalid segment before it calls
-   the store. No client input can reach a database constraint. A constraint violation is
-   therefore a server defect. It returns 500, and the idempotency key is released
-   (BR-IDMP-02, unchanged).
-4. **Schema.** `upper_ns` is `NOT NULL`. The check `segments_upper_ns_positive` is
-   replaced by:
+   the store. No client input can get to a database constraint. Thus a constraint
+   violation is a server defect. The server returns 500, and the handler releases the
+   idempotency key (BR-IDMP-02, unchanged).
+4. **Schema.** `upper_ns` is `NOT NULL`. This check replaces
+   `segments_upper_ns_positive`:
 
    ```sql
    CONSTRAINT segments_bounds_nonempty CHECK (upper_ns > lower_ns)
@@ -86,27 +88,27 @@ The rules:
    ([ADR-0039](0039-timerange-stored-as-client-string-with-half-open-bounds.md)).
    `TimeRange.Overlaps` can stay for other callers, and a property test must show that
    it agrees with the bounds comparison.
-6. **What the constraints guarantee.** Together, the check and the exclusion constraint
-   guarantee that no stored row is empty or inverted, and that no two stored rows on a
-   flow intersect as integer ranges. They do not detect a range that was converted
-   incorrectly. Only the tests for `timerange.NsBounds` cover that.
-7. **Migration.** `000005` is edited in place, not followed by a new migration, because
-   OpenTAMS is an alpha. `golang-migrate` records only the version number, so a database
-   already at version 5 does not run the edited file again. Operators of databases
-   created from `v0.1.0-alpha.0` must recompute the bounds, remove any empty or
-   open-ended rows, and then apply the schema change in rule 4 by hand.
+6. **What the constraints guarantee.** The check guarantees that no stored row is empty
+   or inverted. The exclusion constraint guarantees that no two stored rows on a flow
+   intersect as integer ranges. Neither constraint finds a range that `NsBounds`
+   converted incorrectly. Only the tests for `timerange.NsBounds` cover that case.
+7. **Migration.** We edit `000005` in place and do not add a new migration, because
+   OpenTAMS is an alpha. `golang-migrate` records only the version number. Thus a
+   database already at version 5 does not run the edited file again. Operators of
+   databases from `v0.1.0-alpha.0` must recompute the bounds by hand. Then they must
+   remove empty and open-ended rows, and apply the schema change in rule 4.
 
 ### Consequences
 
-* Good, because the TAMS example of an instantaneous data segment, `[0:0]`, is accepted,
-  and a segment that ends before `0:0` is no longer rejected.
-* Good, because the exclusion constraint cannot be bypassed by an empty range.
-* Good, because the batch outcome no longer depends on how the client splits its
+* Good, because the store accepts `[0:0]`, the TAMS form of an instantaneous data
+  segment. It also accepts a segment that ends before `0:0`.
+* Good, because an empty range cannot bypass the exclusion constraint.
+* Good, because the batch outcome does not depend on how the client splits its
   requests.
 * Good, because a client error never becomes a 500.
 * Bad, because a client written against another TAMS implementation can send `[5:0_` or
-  `(0:0_10:0)` and receive a failure only from OpenTAMS. This is recorded in
-  [`../conformance.md`](../conformance.md).
+  `(0:0_10:0)` and receive a failure only from OpenTAMS.
+  [`../conformance.md`](../conformance.md) records this difference.
 * Bad, because a `v0.1.0-alpha.0` database stays on the old constraint until an operator
   changes it by hand. Version 5 means two different schemas until then.
 * Bad, because the non-overlap rule still exists in two places, the service path and the
