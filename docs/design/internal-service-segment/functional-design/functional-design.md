@@ -1,8 +1,5 @@
 # Functional Design — internal/service/segment
 
-> Rules marked **(pending)** follow a proposed ADR ([ADR-0039](../../../adr/0039-timerange-stored-as-client-string-with-half-open-bounds.md),
-> [ADR-0040](../../../adr/0040-segment-timerange-invariants.md)) and are not implemented yet.
-
 ## Purpose
 
 Service layer between the HTTP handlers and the metastore for Segment operations.
@@ -54,8 +51,7 @@ never sent to the store. Every supplied `GetURL` also has `Controlled` stamped
 `false`; the conversion layer already does this for the HTTP path, so this is a
 safety net for direct callers.
 
-The service also examines each segment timerange (pending,
-[ADR-0040](../../../adr/0040-segment-timerange-invariants.md) rules 1 and 2). A segment
+The service also examines each segment timerange ([ADR-0040](../../../adr/0040-segment-timerange-invariants.md) rules 1 and 2). A segment
 fails if its timerange:
 - Is empty, including an end before the start
 - Has no start or no end (`_`, `(5:0_`, `[5:0_`, `_10:0)`)
@@ -141,7 +137,7 @@ segment submitted to such a deployment fails with
 `SampleOffset` and `SampleCount` (deprecated in TAMS v8) are persisted and returned
 unchanged. No business logic reads them. `TSOffset`, `ObjectTimerange`, and
 `LastDuration` round-trip as the exact string the client sent, including negative values
-(pending, BR-META-10). The service does no timeline arithmetic. `ObjectTimerange` is
+(BR-META-10). The service does no timeline arithmetic. `ObjectTimerange` is
 a pointer whose `nil` means "the client did not supply one"; the service never
 synthesises a value. Validating a supplied `object_timerange` against the one
 already recorded for that object is a metastore invariant (BR-META-19), not a
@@ -159,7 +155,7 @@ metastore; the cursor is opaque here and is never decoded, validated, or re-enco
 
 The service classifies a query `timerange` whose bounds do not fit in `int64`
 nanoseconds as `invalid-timerange` (400). An empty query timerange is not an error. It
-returns an empty page (pending, BR-META-21).
+returns an empty page (BR-META-21).
 
 The read path does not consult `ControlledStorageID`. Controlled-vs-BYOS is derived
 from the segment's own shape (`len(seg.GetURLs) == 0` ⇒ controlled), so no join onto
@@ -170,7 +166,7 @@ from the segment's own shape (`len(seg.GetURLs) == 0` ⇒ controlled), so no joi
 **BR-SEG-10 — Metadata removal only; the GC owns object cleanup**
 `Delete` forwards to `metastore.DeleteSegmentsByTimerange` and returns
 `DeleteResult{DeletedCount}`. The store deletes only segments that the query timerange
-contains, and an empty query timerange deletes nothing (pending, BR-META-08 and
+contains, and an empty query timerange deletes nothing (BR-META-08 and
 BR-META-21). The metastore decrements `objects.ref_count` inside
 the same transaction; rows that reach zero stay in `objects` until the GC worker
 sweeps them. The service does not call the object store and does not return released
@@ -207,13 +203,12 @@ are the database mutations its input describes, and it holds no internal state.
 metastore inside the same transaction as the segment write (BR-META-12). The service
 issues no second call.
 
-**BR-SEG-14 — Database constraints are backstops, not validation (pending)**
+**BR-SEG-14 — Database constraints are backstops, not validation**
 The service rejects every client input that can break a database constraint before it
 calls the store. BR-SEG-02 covers segments, and the query checks under `List` and
 `Delete` cover queries. Thus a constraint violation (SQLSTATE class `23`) is a server
 defect. The server returns 500, and the handler releases the idempotency key
-(BR-IDMP-02). Today an empty or unconverted timerange gets to
-`segments_upper_ns_positive`, and a client error returns 500. See
+(BR-IDMP-02). See
 [ADR-0040](../../../adr/0040-segment-timerange-invariants.md) rule 3.
 
 ## Observability
@@ -251,7 +246,7 @@ and reading `ToProblemDetails("", "").Type`. There are no `apperror.Type*` or
 |---|---|---|---|
 | BR-SEG-03 | `REQ-BEH-15` — first-wins ordering, overlapping entries reported per segment | Any overlap rejects the whole batch: 422, nothing persisted, no `failed_segments` | [ADR-0024](../../../adr/0024-whole-batch-reject-on-segment-overlap.md), [`conformance.md`](../../../conformance.md) |
 | BR-SEG-09 | `REQ-BEH-16` — `GET /flows/{flowId}/segments` on an unknown flow returns an empty list | Returns 404 `flow not found` | [`conformance.md`](../../../conformance.md) |
-| BR-SEG-02 | The segment schema accepts any `TimeRange`. App Note 0012 describes a bounded range with an inclusive start. | An unbounded, empty, or exclusive-start segment timerange is a per-segment `invalid-timerange` failure (pending) | [ADR-0040](../../../adr/0040-segment-timerange-invariants.md), [`conformance.md`](../../../conformance.md) |
+| BR-SEG-02 | The segment schema accepts any `TimeRange`. App Note 0012 describes a bounded range with an inclusive start. | An unbounded, empty, or exclusive-start segment timerange is a per-segment `invalid-timerange` failure | [ADR-0040](../../../adr/0040-segment-timerange-invariants.md), [`conformance.md`](../../../conformance.md) |
 
 ## Out of scope
 

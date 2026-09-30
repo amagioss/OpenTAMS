@@ -6,11 +6,7 @@ status: Complete (retroactive backfill), revised for ADR-0038 and ADR-0039
 
 # Business Rules — internal/timerange
 
-> Rules marked **(pending)** follow a proposed ADR and are not implemented yet. Until the
-> code lands, the code is the tie-breaker for current behaviour
-> (see [`docs/adr/README.md`](../../../adr/README.md)).
-
-## BR-TR-01: Timestamp format and value (pending)
+## BR-TR-01: Timestamp format and value
 A timestamp is `{sign?}{seconds}:{nanoseconds}`. `seconds` is a non-negative integer with
 no leading zeros. `nanoseconds` is an integer in `[0, 999_999_999]` with no leading zeros.
 
@@ -18,13 +14,13 @@ The sign applies to the whole value: `value = sign × (seconds × 10⁹ + nanose
 `-1:500000000` is −1.5 s, not −0.5 s. Source: [ADR-0038](../../../adr/0038-tams-timestamp-and-timerange-format.md)
 rule 1, which follows the BBC `mediatimestamp` library.
 
-## BR-TR-02: Negative zero (pending)
+## BR-TR-02: Negative zero
 `-0:x` is valid. `-0:500000000` is −0.5 s. `-0:0` equals `0:0`.
 
 This replaces the earlier rule that rejected every `-0:x`. That rule made every value
 between −1 s and 0 s impossible to write.
 
-## BR-TR-03: Internal form and bound types (pending)
+## BR-TR-03: Internal form and bound types
 `Timestamp{Seconds int64, Nanoseconds int32}` is floor-normalised. `Nanoseconds` is always
 in `[0, 999_999_999]`, and the value is `Seconds × 10⁹ + Nanoseconds`. The package stores
 −1.5 s as `{Seconds: -2, Nanoseconds: 500000000}`. Only `ParseTimestamp` and `Timestamp.String`
@@ -33,7 +29,7 @@ deal with the sign.
 A bound is `Inclusive`, `Exclusive`, or `Unbounded`. An unbounded bound has no timestamp
 (`Start` or `End` is nil). Either side can be unbounded on its own.
 
-## BR-TR-04: Empty ranges (pending)
+## BR-TR-04: Empty ranges
 A range is empty if it contains no instant:
 - `()`
 - End equal to start, with at least one exclusive marker: `[5:0_5:0)`, `(5:0_5:0]`,
@@ -49,7 +45,7 @@ treated as an empty TimeRange by implementations"). Each caller decides what an 
 range means for its operation. The segment service rejects it (BR-SEG-02). A query
 treats it as matching nothing (BR-META-21).
 
-## BR-TR-05: Instantaneous form (pending)
+## BR-TR-05: Instantaneous form
 A single timestamp is an instantaneous range, with `[]` markers or with no markers:
 `[10:0]` and `10:0` both mean `[10:0_10:0]`. `(10:0)`, `(10:0]`, `[10:0)`, `(10:0`, and
 `10:0)` are parse errors, because the schema says "Instantaneous TimeRanges cannot use exclusive markers".
@@ -61,7 +57,7 @@ drops the markers. OpenTAMS follows the schema text here, because the library ap
 only where the specification is silent
 ([ADR-0038](../../../adr/0038-tams-timestamp-and-timerange-format.md) rule 9).
 
-## BR-TR-06: Omitted timestamps and markers (pending)
+## BR-TR-06: Omitted timestamps and markers
 The TimeRange format is `{start marker}{start timestamp}_{end timestamp}{end marker}`, and every
 part is optional. These rules apply:
 - An omitted timestamp makes that side unbounded. `(5:0_` starts after `5:0` and has no
@@ -81,7 +77,7 @@ The schema regex matches the last three forms, and App Note 0008 does not define
 The parser gives them the meaning that `mediatimestamp` `TimeRange.from_str` gives them
 ([ADR-0038](../../../adr/0038-tams-timestamp-and-timerange-format.md) rules 3 and 4).
 
-## BR-TR-07: Overlap semantics (pending)
+## BR-TR-07: Overlap semantics
 Two ranges overlap if they share at least one instant, that is, one whole nanosecond
 (ADR-0038 rule 10). `_0:1)` and `(0:0_` do not overlap. Overlap is symmetric. Two ranges
 that touch at a boundary do not overlap if at least one of the touching bounds is
@@ -108,7 +104,7 @@ containment are wrong for sub-second ranges.
 nanoseconds ≤ 999_999_999) before `strconv.ParseInt`. This separates format errors from
 range errors, so the error message names the real problem.
 
-## BR-TR-10: NsBounds is the only conversion to nanoseconds (pending)
+## BR-TR-10: NsBounds is the only conversion to nanoseconds
 `TimeRange.NsBounds() (NsBounds, error)` converts a non-empty range into a half-open
 `int64` nanosecond interval `[Lower, Upper)`:
 
@@ -161,13 +157,13 @@ It also covers negative values inside one second, both overflow edges, and the s
 example of `[1:0_2:0)` followed by `[2:0]`. A property test compares `Overlaps` with the
 bounds comparison, as BR-TR-07 defines it.
 
-## BR-TR-11: Error sentinels (pending)
+## BR-TR-11: Error sentinels
 The package exports `ErrOutOfRange` and `ErrEmptyRange`. Callers match them with
 `errors.Is`.
 Callers map both to the `invalid-timerange` catalogue entry. The package does not import
 `internal/apperror`.
 
-## BR-TR-12: Canonical rendering is for derived values only (pending)
+## BR-TR-12: Canonical rendering is for derived values only
 `TimeRange.String()` and `Timestamp.String()` produce a canonical string. The server uses
 them only for values that it derives, such as the flow timerange and
 `X-Paging-Timerange`. The server returns a client value exactly as the client sent it
@@ -184,18 +180,17 @@ The canonical form follows these rules:
   `{-2, 500000000}`, renders as `-1:500000000`. The value zero renders as `0:0`, so
   `String()` never writes `-0:0`, even for a client that sent `-0:0`.
 
-## BR-TR-13: The accepted format only widens (pending)
+## BR-TR-13: The accepted format only widens
 A string that the parser accepts once stays accepted. The metastore parses stored client
 strings again on read (BR-META-19). As a result, a narrower parser breaks existing rows. A change that
 narrows the accepted format needs a data migration and a new ADR.
 
-## BR-TR-14: Durations use the Timestamp type (pending)
+## BR-TR-14: Durations use the Timestamp type
 TAMS uses the Timestamp type for durations too: `min_object_timeout` in `service.json` is
 a `timestamp.json` value, and so are `ts_offset` and `last_duration`. The package exports
 `TimestampFromDuration(d time.Duration) Timestamp`. The result is floor-normalised like
 every other `Timestamp`, and callers render it with `Timestamp.String()`.
 
-`durationToTAI` in `internal/httpx/handlers/root.go` builds this string with its own
-arithmetic. It is removed, and `GetService` calls `TimestampFromDuration` instead. The old
-function renders a negative duration as `-1:-500000000`. The configured presign expiry is
-positive, so that defect cannot occur today.
+`GetService` in `internal/httpx/handlers/root.go` renders `min_object_timeout` with
+`TimestampFromDuration`. It replaced `durationToTAI`, which did its own arithmetic and
+rendered a negative duration as `-1:-500000000`.

@@ -1,5 +1,5 @@
 ---
-status: "proposed"
+status: "accepted"
 date: 2026-09-28
 decision-makers: OpenTAMS maintainers
 consulted: OpenTAMS maintainers
@@ -116,7 +116,7 @@ The rules:
 
 ## More Information
 
-* Supersedes [ADR-0015](0015-gist-exclusion-constraint.md) when accepted.
+* Supersedes [ADR-0015](0015-gist-exclusion-constraint.md).
 * Batch rejection on overlap is unchanged: [ADR-0024](0024-whole-batch-reject-on-segment-overlap.md).
 * Per-segment failure shape: [ADR-0023](0023-rfc9457-problem-details-for-per-segment-failures.md).
 * Requirements: `REQ-BEH-14`, `REQ-BEH-15` in [`../requirements.md`](../requirements.md).

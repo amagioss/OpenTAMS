@@ -1,5 +1,5 @@
 ---
-status: "proposed"
+status: "accepted"
 date: 2026-09-28
 decision-makers: OpenTAMS maintainers
 consulted: OpenTAMS maintainers
@@ -128,7 +128,7 @@ The rules:
 
 ## More Information
 
-* Supersedes [ADR-0014](0014-timerange-stored-as-string-and-bounds.md) when accepted.
+* Supersedes [ADR-0014](0014-timerange-stored-as-string-and-bounds.md).
 * Format and value model: [ADR-0038](0038-tams-timestamp-and-timerange-format.md).
 * Segment invariants and schema: [ADR-0040](0040-segment-timerange-invariants.md).
 * Specification: `GET`, `POST`, and `DELETE /flows/{flowId}/segments` and `GET /flows` in

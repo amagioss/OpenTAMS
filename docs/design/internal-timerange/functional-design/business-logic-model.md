@@ -6,8 +6,6 @@ status: Complete (retroactive backfill), revised for ADR-0038 and ADR-0039
 
 # Business Logic Model — internal/timerange
 
-> Items marked **(pending)** follow a proposed ADR and are not implemented yet.
-
 ## Purpose
 
 Shared domain module for TAI timestamps and timeranges: parsing, validation, predicates,
@@ -18,14 +16,14 @@ enforcement and every timerange query. HTTP handlers use it to parse query param
 
 ### Timestamp
 A TAI instant with nanosecond precision. Wire format: `{sign?}{seconds}:{nanoseconds}`.
-The sign applies to the whole value, so `-1:500000000` is −1.5 s (BR-TR-01, pending).
+The sign applies to the whole value, so `-1:500000000` is −1.5 s (BR-TR-01).
 
 ### TimeRange
 A TAI interval in TAMS notation. Each bound is inclusive (`[`, `]`), exclusive (`(`,
 `)`), or unbounded (timestamp omitted). Special forms: eternity `_`, empty `()`, and the
-instantaneous form `[ts]` or `ts` (BR-TR-04 to BR-TR-06, pending).
+instantaneous form `[ts]` or `ts` (BR-TR-04 to BR-TR-06).
 
-### NsBounds (pending)
+### NsBounds
 The half-open `int64` nanosecond interval `[Lower, Upper)` of a non-empty range, with an
 explicit flag for each unbounded side. It exists only so that the database can compare
 ranges. No code renders it back to text (BR-TR-10).
@@ -35,7 +33,7 @@ ranges. No code renders it back to text (BR-TR-10).
 ```
 Timestamp { Seconds int64, Nanoseconds int32 }
 // floor-normalised: Nanoseconds in [0, 999_999_999],
-// value = Seconds*1e9 + Nanoseconds; -1.5 s = {-2, 500000000}   (pending)
+// value = Seconds*1e9 + Nanoseconds; -1.5 s = {-2, 500000000}
 
 BoundType = Inclusive | Exclusive | Unbounded
 
@@ -46,7 +44,7 @@ TimeRange {
     EndType   BoundType
 }
 
-NsBounds {                  // (pending) half-open [Lower, Upper)
+NsBounds {                  // half-open [Lower, Upper)
     Lower                          int64 // inclusive
     Upper                          int64 // exclusive
     LowerUnbounded, UpperUnbounded bool
@@ -65,5 +63,5 @@ NsBounds {                  // (pending) half-open [Lower, Upper)
 | `TimeRange.IsEternity()` | True if unbounded on both sides |
 | `TimeRange.Contains(ts)` | True if the timestamp is in the range |
 | `TimeRange.Overlaps(other)` | True if the two ranges share an instant. Agrees with the `NsBounds` comparison. |
-| `TimeRange.NsBounds()` (pending) | Half-open `int64` bounds, or `ErrOutOfRange` / `ErrEmptyRange` (BR-TR-10) |
-| `TimestampFromDuration(d)` (pending) | A `time.Duration` as a floor-normalised `Timestamp`, for duration fields such as `min_object_timeout` (BR-TR-14) |
+| `TimeRange.NsBounds()` | Half-open `int64` bounds, or `ErrOutOfRange` / `ErrEmptyRange` (BR-TR-10) |
+| `TimestampFromDuration(d)` | A `time.Duration` as a floor-normalised `Timestamp`, for duration fields such as `min_object_timeout` (BR-TR-14) |

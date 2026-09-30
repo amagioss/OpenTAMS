@@ -26,8 +26,8 @@ stays useful long after the feature ships.
 | [0011](0011-health-and-metrics-outside-codegen.md) | Keep `/healthz`, `/readyz`, and `/metrics` in the spec but out of codegen | accepted |
 | [0012](0012-postgresql-as-the-metadata-store.md) | Use PostgreSQL as the metadata store | accepted |
 | [0013](0013-pgx-without-database-sql.md) | Use pgx directly rather than through `database/sql` | accepted |
-| [0014](0014-timerange-stored-as-string-and-bounds.md) | Store a timerange as its wire string plus normalised integer bounds | accepted |
-| [0015](0015-gist-exclusion-constraint.md) | Enforce Segment non-overlap with a GiST exclusion constraint | accepted |
+| [0014](0014-timerange-stored-as-string-and-bounds.md) | Store a timerange as its wire string plus normalised integer bounds | superseded by ADR-0039 |
+| [0015](0015-gist-exclusion-constraint.md) | Enforce Segment non-overlap with a GiST exclusion constraint | superseded by ADR-0040 |
 | [0016](0016-keyset-pagination.md) | Paginate with opaque keyset cursors, never with `OFFSET` | accepted |
 | [0017](0017-expand-contract-schema-evolution.md) | Evolve the schema expand-contract, and treat the required version as a minimum | accepted |
 | [0018](0018-migrations-as-an-explicit-step.md) | Apply migrations as an explicit step, never at server startup | accepted |
@@ -50,9 +50,9 @@ stays useful long after the feature ships.
 | [0035](0035-ci-on-hosted-runners-with-pinned-actions.md) | Run CI on GitHub-hosted runners, with every action pinned by commit SHA | accepted |
 | [0036](0036-rate-limiting-is-the-operators-responsibility.md) | Leave rate limiting to the operator | accepted |
 | [0037](0037-object-garbage-collection.md) | Reclaim Object storage from a separate worker | proposed |
-| [0038](0038-tams-timestamp-and-timerange-format.md) | Parse timestamps and timeranges in the TAMS format, and use the BBC reference library where App Note 0008 is silent | proposed |
-| [0039](0039-timerange-stored-as-client-string-with-half-open-bounds.md) | Store the client's timerange string, and derive half-open nanosecond bounds for comparison only | proposed |
-| [0040](0040-segment-timerange-invariants.md) | Require a bounded, non-empty, start-inclusive segment timerange, and keep the database constraints as backstops | proposed |
+| [0038](0038-tams-timestamp-and-timerange-format.md) | Parse timestamps and timeranges in the TAMS format, and use the BBC reference library where App Note 0008 is silent | accepted |
+| [0039](0039-timerange-stored-as-client-string-with-half-open-bounds.md) | Store the client's timerange string, and derive half-open nanosecond bounds for comparison only | accepted |
+| [0040](0040-segment-timerange-invariants.md) | Require a bounded, non-empty, start-inclusive segment timerange, and keep the database constraints as backstops | accepted |
 
 <!-- Add a row per ADR, in number order. Keep the status column in sync with the file's front matter. -->
 

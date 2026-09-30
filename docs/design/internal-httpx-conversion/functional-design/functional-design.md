@@ -1,8 +1,5 @@
 # Functional Design — internal/httpx/conversion
 
-> Rules marked **(pending)** follow a proposed ADR ([ADR-0039](../../../adr/0039-timerange-stored-as-client-string-with-half-open-bounds.md))
-> and are not implemented yet.
-
 ## Purpose
 
 The only place where generated wire types (`gen/api`) and domain types
@@ -58,7 +55,7 @@ conversion stamps on the way in, the handler projects on the way out.
 synthesises a value. `TSOffset` round-trips verbatim including negative offsets —
 the mappers are shape-only and do not editorialise about the timeline.
 
-**BR-CONV-08 — Conversion carries client time strings and does not re-render them (pending).**
+**BR-CONV-08 — Conversion carries client time strings and does not re-render them.**
 `SegmentFromAPI` keeps the exact wire string of `timerange`, `ts_offset`,
 `object_timerange`, and `last_duration` next to each parsed value. The fields are
 `domain.Segment.TimerangeRaw`, `TSOffsetRaw`, `ObjectTimerangeRaw`, and
@@ -68,7 +65,7 @@ value. A client that sends `[10:0]` reads back `[10:0]`, not `[10:0_10:0]`.
 The parsed values stay, because the service and the metastore need them for validation
 and `timerange.NsBounds`. The raw strings are the only values that get to the wire.
 
-**BR-CONV-09 — A syntax error fails the request, and a semantic error fails the segment (pending).**
+**BR-CONV-09 — A syntax error fails the request, and a semantic error fails the segment.**
 A timerange or timestamp that does not parse is a request-level `schema-validation` 400,
 as today. Spec validation checks only the regex, so a string can pass spec validation and
 still fail to parse. For example, the regex accepts `(10:0)`, and the parser rejects it
@@ -103,7 +100,7 @@ letting it surface as a silently empty field.
 `SegmentFromAPI(SegmentToAPI(s))` equals `s` except for `FlowID`, which is
 path-derived, and `GetURLs`, which the handler projects. In the other direction, each
 time string in `SegmentToAPI(SegmentFromAPI(w))` is byte-for-byte the string in `w`
-(pending, BR-CONV-08). Drift between the two
+(BR-CONV-08). Drift between the two
 directions would be silent — it shows up as ghost data, not as an error — so the
 round-trip is asserted in tests rather than left to review.
 

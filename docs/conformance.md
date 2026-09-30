@@ -56,9 +56,9 @@ Last reviewed against TAMS v8.0 on 2026-06-09, against OpenTAMS HEAD `38570fc`.
 
 | Endpoint | Status | Notes |
 |---|---|---|
-| `GET /tams/v1/flows` | Implemented | Filterable by `source_id`, `timerange`, `format`, `codec`, `label`, `tag.{name}`, `tag_exists.{name}`, `frame_width`, `frame_height`. Pagination as Sources. (No `mime_type` filter — the spec uses `codec`.) **`timerange` matches a flow if one of its segments overlaps the range, so a range inside a gap between segments does not match.** TAMS does not define "Flows that overlap". An empty `timerange` returns only flows with no segments, as TAMS says for this parameter ("An empty timerange returns Flows with no content"). Today OpenTAMS ignores an empty `timerange` and returns every flow (pending, ADR-0039). |
+| `GET /tams/v1/flows` | Implemented | Filterable by `source_id`, `timerange`, `format`, `codec`, `label`, `tag.{name}`, `tag_exists.{name}`, `frame_width`, `frame_height`. Pagination as Sources. (No `mime_type` filter — the spec uses `codec`.) **`timerange` matches a flow if one of its segments overlaps the range, so a range inside a gap between segments does not match.** TAMS does not define "Flows that overlap". An empty `timerange` returns only flows with no segments, as TAMS says for this parameter ("An empty timerange returns Flows with no content"). A `timerange` that does not parse, or has a bound outside the `int64` nanosecond range, returns 400 `invalid-timerange`. |
 | `HEAD /tams/v1/flows` | Implemented | Same filters as `GET`, including the empty-`timerange` rule. The upstream text for `HEAD /flows` omits that rule. OpenTAMS applies it, because HEAD returns the headers of GET. |
-| `GET /tams/v1/flows/{flowId}` | Implemented, with a divergence | Supports `include_timerange` and `timerange` query params. **A `timerange` that does not parse returns 400 `invalid-timerange`. The upstream spec declares no 400 for this endpoint** (pending, BR-CONV-09). Before this change, the server ignored the parameter and returned the flow unfiltered. |
+| `GET /tams/v1/flows/{flowId}` | Implemented, with a divergence | Supports `include_timerange` and `timerange` query params. **A `timerange` that does not parse returns 400 `invalid-timerange`. The upstream spec declares no 400 for this endpoint** (BR-CONV-09). Before this change, the server ignored the parameter and returned the flow unfiltered. |
 | `HEAD /tams/v1/flows/{flowId}` | Implemented | |
 | `PUT /tams/v1/flows/{flowId}` | Implemented | Create or replace. The Flow's `id` in the body must match the path. |
 | `DELETE /tams/v1/flows/{flowId}` | Implemented | Soft-delete: creates a `flow-delete-request`. Synchronous deletion of metadata; underlying object reaping happens via M16 GC (deferred). |
@@ -90,8 +90,8 @@ Last reviewed against TAMS v8.0 on 2026-06-09, against OpenTAMS HEAD `38570fc`.
 |---|---|---|
 | `GET /tams/v1/flows/{flowId}/segments` | Implemented, with a divergence | Query params: `timerange` (intersection filter), `object_id`, `reverse_order`, `verbose_storage`, `accept_get_urls`, `accept_storage_ids`, `presigned`, `include_object_timerange`, plus `page`/`limit` pagination. **On an unknown flow OpenTAMS returns 404, where the spec asks for an empty list** (REQ-BEH-16) — see below. `Accept: text/event-stream` for streamed reads is **Not implemented**. |
 | `HEAD /tams/v1/flows/{flowId}/segments` | Implemented | |
-| `POST /tams/v1/flows/{flowId}/segments` | Implemented, with a divergence | Requires `X-Idempotency-Key` (REQ-IDEM-01). Body is a single segment or a JSON array of up to 1000. Per-segment failures come back as `flow-segment-bulk-failure`. **Overlapping timeranges reject the whole batch with 422 and no `failed_segments`, rather than the spec's first-wins ordering** (REQ-BEH-15). See [Deliberate divergences on this path](#deliberate-divergences-on-this-path). **A segment timerange must be bounded, non-empty, and start-inclusive, or the segment is a per-segment `invalid-timerange` failure** (pending, ADR-0040). See [Deliberate divergences on this path](#deliberate-divergences-on-this-path). |
-| `DELETE /tams/v1/flows/{flowId}/segments` | Implemented, with a known defect | Bulk delete by query params (`timerange`, `object_id`). Returns the count, and creates a `flow-delete-request` if the operation is asynchronous. **The spec deletes only segments completely covered by `timerange`. Today OpenTAMS deletes every segment that intersects it, including boundary segments.** The fix is pending (ADR-0039). |
+| `POST /tams/v1/flows/{flowId}/segments` | Implemented, with a divergence | Requires `X-Idempotency-Key` (REQ-IDEM-01). Body is a single segment or a JSON array of up to 1000. Per-segment failures come back as `flow-segment-bulk-failure`. **Overlapping timeranges reject the whole batch with 422 and no `failed_segments`, rather than the spec's first-wins ordering** (REQ-BEH-15). See [Deliberate divergences on this path](#deliberate-divergences-on-this-path). **A segment timerange must be bounded, non-empty, and start-inclusive, or the segment is a per-segment `invalid-timerange` failure** (ADR-0040). See [Deliberate divergences on this path](#deliberate-divergences-on-this-path). |
+| `DELETE /tams/v1/flows/{flowId}/segments` | Implemented | Bulk delete by query params (`timerange`, `object_id`). Returns the count, and creates a `flow-delete-request` if the operation is asynchronous. Deletes only the segments that `timerange` covers completely, as the spec says. An empty `timerange` deletes nothing. |
 
 ### Deliberate divergences on this path
 
@@ -126,8 +126,7 @@ for `error.summary` and finds nothing. Because the field is required, that surfa
 missing-key error rather than an empty string. `error.time` and the optional
 `error.traceback` are also gone; OpenTAMS never populated either meaningfully.
 
-**Segment timeranges must be bounded, non-empty, and start-inclusive** (pending,
-[ADR-0040](adr/0040-segment-timerange-invariants.md)). The segment schema accepts any
+**Segment timeranges must be bounded, non-empty, and start-inclusive** ([ADR-0040](adr/0040-segment-timerange-invariants.md)). The segment schema accepts any
 `TimeRange`. TAMS App Note 0012 describes a segment timerange as starting, inclusively, at
 the first sample and ending at the last sample, and says that "samples don't generally
 exist into infinity". OpenTAMS makes that description a rule. A segment timerange can be empty, have no start
@@ -201,8 +200,6 @@ below.
 
 > The rules in this section follow [ADR-0038](adr/0038-tams-timestamp-and-timerange-format.md)
 > and [ADR-0039](adr/0039-timerange-stored-as-client-string-with-half-open-bounds.md).
-> These ADRs are proposed and not implemented yet. The list at the end of this section
-> gives the current differences.
 
 OpenTAMS accepts the TAMS timestamp and time-range format from `timestamp.json`,
 `timerange.json`, and App Note 0008:
@@ -238,19 +235,8 @@ the `int64` nanosecond range (`-9223372036:854775808` to `9223372036:854775807`)
 OpenTAMS rejects a bound outside that span with
 `invalid-timerange`.
 
-**Current differences, which ADR-0038 and ADR-0039 fix:**
-
-- The parser reads a negative timestamp with non-zero nanoseconds with the wrong value
-  (`-1:500000000` as −0.5 s). It rejects `-0:x`.
-- The parser rejects one-sided ranges, a bare timestamp, a marker on an omitted
-  timestamp, and an end before the start, with 400.
-- The store ignores the markers when it stores a segment timerange. As a result, `[0:0]`
-  fails with 500, and the store accepts some overlapping segments.
-- The server returns a re-rendered string. A client that sends `[10:0]` reads back
-  `[10:0_10:0]`.
-
-See `internal/timerange/timerange.go` for the parser and
-`internal/timerange/timerange_test.go` for the accepted and rejected shapes.
+See `internal/timerange/timerange.go` for the parser, and
+`internal/timerange/*_test.go` for the accepted and rejected shapes.
 
 ## Tag names
 
