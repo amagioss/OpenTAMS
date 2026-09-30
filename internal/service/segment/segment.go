@@ -17,6 +17,7 @@ import (
 	"github.com/amagioss/opentams/internal/domain"
 	"github.com/amagioss/opentams/internal/metastore"
 	"github.com/amagioss/opentams/internal/service"
+	"github.com/amagioss/opentams/internal/timerange"
 )
 
 // Service is the segments service contract; see
@@ -136,9 +137,9 @@ func (s *segmentService) registerBatch(ctx context.Context, req domain.RegisterP
 		return domain.RegisterResult{}, fmt.Errorf("segment: register: empty batch: %w", ErrInvalidRequest)
 	}
 
-	// Per-segment validation the handler/openapi cannot cover: empty
-	// ObjectID. Empty Timerange is impossible because conversion
-	// rejects it during parse; defensive check kept for direct callers.
+	// Per-segment validation the OpenAPI layer cannot cover (BR-SEG-02):
+	// an empty ObjectID, and a timerange that breaks the segment policy
+	// of ADR-0040. Nothing that fails here reaches the store.
 	failed := make([]domain.FailedSegment, 0)
 	survivors := make([]domain.Segment, 0, len(req.Segments))
 	survivorIdx := make([]int, 0, len(req.Segments))
@@ -157,6 +158,17 @@ func (s *segmentService) registerBatch(ctx context.Context, req domain.RegisterP
 				Type:    apperror.New(apperror.ErrSchemaValidation, "").ToProblemDetails("", "").Type,
 				Title:   "Schema Validation Failed",
 				Status:  400,
+			})
+			continue
+		}
+		if reason := segmentTimerangeViolation(seg.Timerange); reason != "" {
+			pd := apperror.New(apperror.ErrInvalidTimerange, reason).ToProblemDetails("", "")
+			failed = append(failed, domain.FailedSegment{
+				Segment: seg,
+				Reason:  reason,
+				Type:    pd.Type,
+				Title:   pd.Title,
+				Status:  pd.Status,
 			})
 			continue
 		}
@@ -241,6 +253,34 @@ func (s *segmentService) registerBatch(ctx context.Context, req domain.RegisterP
 	return res, nil
 }
 
+// segmentTimerangeViolation returns the ADR-0040 rule that tr breaks, or
+// "" if tr is a valid segment timerange: bounded, non-empty, with an
+// inclusive start, and within int64 nanoseconds.
+func segmentTimerangeViolation(tr timerange.TimeRange) string {
+	switch {
+	case tr.IsEmpty():
+		return "segment timerange must not be empty"
+	case tr.Start == nil || tr.End == nil:
+		return "segment timerange must have a start and an end"
+	case tr.StartType != timerange.Inclusive:
+		return "segment timerange must have an inclusive start"
+	}
+	if _, err := tr.NsBounds(); err != nil {
+		return "segment timerange bounds must fit in int64 nanoseconds"
+	}
+	return ""
+}
+
+// checkQueryTimerange rejects a query timerange whose bounds do not fit in
+// int64 nanoseconds (BR-SEG-09). An empty range is valid: the store
+// matches nothing for it (BR-META-21).
+func checkQueryTimerange(tr timerange.TimeRange) error {
+	if _, err := tr.NsBounds(); errors.Is(err, timerange.ErrOutOfRange) {
+		return apperror.New(apperror.ErrInvalidTimerange, "timerange: "+err.Error())
+	}
+	return nil
+}
+
 // emitRegisterObservability emits the per-failed-segment WARN logs
 // (SCN-SEG-20 / NFR-SEG-OBS-03) and the outcome counters
 // (SCN-SEG-21 / NFR-SEG-OBS-02). Summary counts (segments_count /
@@ -256,7 +296,7 @@ func (s *segmentService) emitRegisterObservability(flowID string, res domain.Reg
 			zap.String("outcome", "partial_failure"),
 			zap.String("failure_type", fs.Type),
 			zap.String("object_id", fs.Segment.ObjectID),
-			zap.String("timerange", fs.Segment.Timerange.String()),
+			zap.String("timerange", fs.Segment.TimerangeRaw),
 			zap.String("flow_id", flowID),
 		)
 	}
@@ -294,6 +334,11 @@ func (s *segmentService) List(ctx context.Context, req domain.ListParams) (domai
 }
 
 func (s *segmentService) list(ctx context.Context, req domain.ListParams) (domain.SegmentPage, error) {
+	if req.Timerange != nil {
+		if err := checkQueryTimerange(*req.Timerange); err != nil {
+			return domain.SegmentPage{}, err
+		}
+	}
 	page, err := s.meta.ListSegments(ctx, metastore.ListQuery{
 		FlowID:                 req.FlowID,
 		Timerange:              req.Timerange,
@@ -330,6 +375,9 @@ func (s *segmentService) Delete(ctx context.Context, req domain.DeleteParams) (d
 }
 
 func (s *segmentService) delete(ctx context.Context, req domain.DeleteParams) (domain.DeleteResult, error) {
+	if err := checkQueryTimerange(req.Timerange); err != nil {
+		return domain.DeleteResult{}, err
+	}
 	mres, err := s.meta.DeleteSegmentsByTimerange(ctx, metastore.DeleteQuery{
 		FlowID:    req.FlowID,
 		Timerange: req.Timerange,
