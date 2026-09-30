@@ -30,8 +30,8 @@ import (
 //	"index:<name>"
 var allowedSegmentsSurvivors = []string{
 	"constraint:c:segments_bounds_nonempty", // CHECK; ~5ns/row, negligible vs FK/btree
-	"constraint:p:segments_pkey",              // PK; can never drop
-	"index:segments_pkey",                     // PK's backing index
+	"constraint:p:segments_pkey",            // PK; can never drop
+	"index:segments_pkey",                   // PK's backing index
 }
 
 // TestLoadEndToEnd_Small spins a Postgres testcontainer with the full

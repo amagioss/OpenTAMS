@@ -75,7 +75,9 @@ still fail to parse. For example, the regex accepts `(10:0)`, and the parser rej
 (BR-TR-05). That parse error is also a request-level 400. This package does not decide whether a parsed timerange is a valid segment
 timerange (empty, unbounded, exclusive start, out of range). The service reports an
 invalid segment timerange as a per-segment failure (BR-SEG-02). Query parameters follow
-the same split. A parse error is a 400 here. This package passes an empty range through
+the same split. A parse error in a query parameter is a 400 `invalid-timerange`, which
+keeps the contract of SCN-HTTP-08 for every timerange query: GET, HEAD, and DELETE
+segments, GET and HEAD `/flows`, and GET `/flows/{flowId}`. This package passes an empty range through
 as a valid value (BR-META-21).
 
 **BR-CONV-05 — `limit` is normalised here, not downstream.**
