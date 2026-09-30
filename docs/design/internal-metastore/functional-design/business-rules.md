@@ -95,11 +95,19 @@ the service can translate at one boundary.
 
 ## Domain Types
 
-The store takes and returns segments as `domain.Segment` (`internal/domain/segment.go`).
-This document does not copy that type. `InsertSegments` receives `InsertBatch.Segments
-[]domain.Segment`. BR-META-10 says which fields the store writes.
+This block copies the types that `internal/metastore` owns. The source of truth is the
+code: `internal/metastore/flows.go` and `internal/metastore/segments.go`. When a type
+changes, update this block in the same pull request.
+
+The store takes and returns segments as `domain.Segment`, and returns failures and pages
+as `domain.FailedSegment` and `domain.SegmentPage`. Those types belong to
+`internal/domain` ([`segment.go`](../../../../internal/domain/segment.go),
+[`segment_params.go`](../../../../internal/domain/segment_params.go)). This document does
+not copy them. BR-META-10 says which `domain.Segment` fields the store writes.
 
 ```go
+// internal/metastore/flows.go
+
 type Source struct {
     ID          uuid.UUID
     Format      string
@@ -120,8 +128,8 @@ type Flow struct {
     Label             *string
     Description       *string
     Tags              map[string]json.RawMessage
-    EssenceParameters json.RawMessage  // JSONB, format-specific
-    ContainerMapping  json.RawMessage  // JSONB
+    EssenceParameters json.RawMessage // JSONB, format-specific
+    ContainerMapping  json.RawMessage // JSONB
     FlowCollection    []CollectionItem
     AvgBitRate        *int64
     MaxBitRate        *int64
@@ -132,7 +140,7 @@ type Flow struct {
     Created           time.Time
     MetadataUpdated   time.Time
     SegmentsUpdated   *time.Time
-    Timerange         *string  // derived from the flow's first and last segments, canonical form (BR-META-12)
+    Timerange         *string // derived from the flow's first and last segments, canonical form (BR-META-12)
 }
 
 type CollectionItem struct {
@@ -141,15 +149,13 @@ type CollectionItem struct {
     ContainerMapping json.RawMessage
 }
 
-type FailedSegment struct {
-    Segment domain.Segment
-    Reason  string
-}
-
-// Pagination params
 type ListSourcesParams struct {
-    Limit    int
-    PageFrom *string // opaque cursor
+    Limit     int
+    PageFrom  *string // opaque cursor
+    Label     *string
+    Format    *string
+    TagExists map[string]struct{}
+    TagValues map[string]string
 }
 
 type ListFlowsParams struct {
@@ -157,18 +163,13 @@ type ListFlowsParams struct {
     Format      *string
     Label       *string
     Codec       *string
+    FrameWidth  *int
+    FrameHeight *int
+    Timerange   *timerange.TimeRange // BR-META-21
     TagExists   map[string]struct{}
     TagValues   map[string]string
-    Timerange   *timerange.Timerange
     Limit       int
-    PageFrom    *string
-}
-
-type ListSegmentsParams struct {
-    Timerange *timerange.Timerange
-    ObjectID  *string
-    Limit     int
-    PageFrom  *string
+    PageFrom    *string // opaque cursor
 }
 
 type SourcePage struct {
@@ -181,9 +182,47 @@ type FlowPage struct {
     NextCursor *string
 }
 
-type SegmentPage struct {
-    Items      []*domain.Segment
-    NextCursor *string
+// internal/metastore/segments.go
+
+type InsertBatch struct {
+    FlowID              uuid.UUID
+    Segments            []domain.Segment
+    ControlledStorageID string // BR-META-07, BR-SEG-07
+}
+
+type InsertResult struct {
+    AcceptedIndices []int
+    RejectedIndices []int // unused today: InsertSegments is all-or-nothing (BR-META-06)
+    RejectReasons   []RejectReason
+}
+
+type RejectReason struct {
+    Type   string
+    Detail string
+}
+
+type ListQuery struct { // input to ListSegments, which returns domain.SegmentPage
+    FlowID                 uuid.UUID
+    Timerange              *timerange.TimeRange // BR-META-21
+    ObjectID               *string
+    ReverseOrder           bool
+    VerboseStorage         bool
+    AcceptGetURLs          []string
+    AcceptStorageIDs       []string
+    Presigned              *bool
+    IncludeObjectTimerange bool
+    Page                   string // opaque cursor
+    Limit                  int    // 1..1000; the caller clamps (BR-META-20)
+}
+
+type DeleteQuery struct { // input to DeleteSegmentsByTimerange
+    FlowID    uuid.UUID
+    Timerange timerange.TimeRange // required; BR-META-08, BR-META-21
+    ObjectID  *string
+}
+
+type DeleteResult struct {
+    DeletedCount int64
 }
 ```
 
