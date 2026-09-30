@@ -11,6 +11,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/amagioss/opentams/gen/api"
+	"github.com/amagioss/opentams/internal/apperror"
 	"github.com/amagioss/opentams/internal/metastore"
 	"github.com/amagioss/opentams/internal/timerange"
 	"github.com/amagioss/opentams/pkg/logger"
@@ -311,9 +312,13 @@ func (h *Handler) GetFlow(ctx context.Context, req api.GetFlowRequestObject) (ap
 	includeTimerange := req.Params.IncludeTimerange != nil && *req.Params.IncludeTimerange
 	var trFilter *timerange.TimeRange
 	if req.Params.Timerange != nil {
-		if tr, err := timerange.Parse(string(*req.Params.Timerange)); err == nil {
-			trFilter = &tr
+		tr, err := timerange.Parse(string(*req.Params.Timerange))
+		if err != nil {
+			// The spec declares no 400 for this endpoint, so the error
+			// middleware writes the problem from the AppError.
+			return nil, apperror.New(apperror.ErrInvalidTimerange, "timerange: "+err.Error())
 		}
+		trFilter = &tr
 	}
 
 	f, err := h.flows.GetFlow(ctx, id, includeTimerange, trFilter)
