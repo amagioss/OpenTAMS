@@ -39,6 +39,10 @@ A range is empty if it contains no instant:
 - End equal to start, with at least one exclusive marker: `[5:0_5:0)`, `(5:0_5:0]`,
   `(5:0_5:0)`
 - End before start: `[10:0_5:0)`.
+- Both markers exclusive, and the end one nanosecond after the start: `(0:0_0:1)`.
+
+An instant is a whole nanosecond ([ADR-0038](../../../adr/0038-tams-timestamp-and-timerange-format.md)
+rule 10). The last case contains no whole nanosecond, so it is empty.
 
 An empty range is a valid parse result, not an error (App Note 0008: it "should be
 treated as an empty TimeRange by implementations"). Each caller decides what an empty
@@ -47,8 +51,8 @@ treats it as matching nothing (BR-META-21).
 
 ## BR-TR-05: Instantaneous form (pending)
 A single timestamp is an instantaneous range, with `[]` markers or with no markers:
-`[10:0]` and `10:0` both mean `[10:0_10:0]`. `(10:0)`, `(10:0]`, and `[10:0)` are parse
-errors, because the schema says "Instantaneous TimeRanges cannot use exclusive markers".
+`[10:0]` and `10:0` both mean `[10:0_10:0]`. `(10:0)`, `(10:0]`, `[10:0)`, `(10:0`, and
+`10:0)` are parse errors, because the schema says "Instantaneous TimeRanges cannot use exclusive markers".
 
 The `timerange.json` regex matches `(10:0)`, so spec validation lets it through. The
 parser rejects it because of the schema description, not the regex. BR-CONV-09 turns
@@ -65,10 +69,21 @@ part is optional. These rules apply:
 - The parser ignores a marker next to an omitted timestamp. `[_10:0)` equals `_10:0)`.
 - An omitted marker next to a timestamp means inclusive. `0:0_10:0` equals `[0:0_10:0]`.
   App Note 0008 does not state this. ADR-0038 rule 5 takes it from `mediatimestamp`.
-- `_` is eternity, which is unbounded on both sides.
+- `_` is eternity, which is unbounded on both sides. The parser ignores markers next to it:
+  `[_]`, `(_)`, `[_`, and `_)` are all eternity.
+- A string with no timestamp and no `_` is empty: `()`, `[]`, `[)`, `(]`,
+  `[`, `(`, `]`, and `)`. The empty string is a parse error, because the schema sets
+  `minLength: 1`.
+- A single timestamp with only one inclusive marker is instantaneous: `[10:0` and `10:0]`
+  equal `[10:0]`.
 
-## BR-TR-07: Overlap semantics
-Two ranges overlap if they share at least one instant. Overlap is symmetric. Two ranges
+The schema regex matches the last three forms, and App Note 0008 does not define them.
+The parser gives them the meaning that `mediatimestamp` `TimeRange.from_str` gives them
+([ADR-0038](../../../adr/0038-tams-timestamp-and-timerange-format.md) rules 3 and 4).
+
+## BR-TR-07: Overlap semantics (pending)
+Two ranges overlap if they share at least one instant, that is, one whole nanosecond
+(ADR-0038 rule 10). `_0:1)` and `(0:0_` do not overlap. Overlap is symmetric. Two ranges
 that touch at a boundary do not overlap if at least one of the touching bounds is
 exclusive. An empty range overlaps nothing, including itself.
 

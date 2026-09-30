@@ -2,6 +2,7 @@ package timerange
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -34,52 +35,61 @@ type TimeRange struct {
 }
 
 // ParseTimestamp parses a timestamp string of the form {sign?}{seconds}:{nanoseconds}.
+// The sign applies to the whole value, so "-1:500000000" is -1.5 s and
+// "-0:500000000" is -0.5 s. The result is floor-normalised.
 func ParseTimestamp(s string) (Timestamp, error) {
-	neg := false
-	rest := s
-	if strings.HasPrefix(s, "-") {
-		neg = true
-		rest = s[1:]
-	}
-
-	parts := strings.SplitN(rest, ":", 2)
-	if len(parts) != 2 {
+	neg := strings.HasPrefix(s, "-")
+	secStr, nsStr, ok := strings.Cut(strings.TrimPrefix(s, "-"), ":")
+	if !ok {
 		return Timestamp{}, fmt.Errorf("invalid timestamp %q: expected seconds:nanoseconds", s)
 	}
-
-	secStr, nsStr := parts[0], parts[1]
-
 	if !validInt(secStr) {
 		return Timestamp{}, fmt.Errorf("invalid timestamp %q: bad seconds field", s)
 	}
 	if !validNano(nsStr) {
 		return Timestamp{}, fmt.Errorf("invalid timestamp %q: bad nanoseconds field", s)
 	}
-	if neg && secStr == "0" {
-		return Timestamp{}, fmt.Errorf("invalid timestamp %q: negative zero", s)
-	}
 
-	sec, err := strconv.ParseInt(secStr, 10, 64)
+	mag, err := strconv.ParseUint(secStr, 10, 64)
 	if err != nil {
 		return Timestamp{}, fmt.Errorf("invalid timestamp %q: seconds out of range", s)
 	}
 	// validNano guarantees nsStr is valid digits ≤ 999_999_999, so ParseInt cannot fail here.
-	ns, _ := strconv.ParseInt(nsStr, 10, 64)
+	ns, _ := strconv.ParseInt(nsStr, 10, 32)
+	outOfRange := fmt.Errorf("invalid timestamp %q: seconds out of range", s)
 
-	if neg {
-		sec = -sec
+	switch {
+	case !neg || (mag == 0 && ns == 0):
+		if mag > math.MaxInt64 {
+			return Timestamp{}, outOfRange
+		}
+		return Timestamp{Seconds: int64(mag), Nanoseconds: int32(ns)}, nil //nolint:gosec // bounded above and by validNano
+	case ns == 0:
+		if mag > math.MaxInt64+1 {
+			return Timestamp{}, outOfRange
+		}
+		return Timestamp{Seconds: -int64(mag-1) - 1}, nil //nolint:gosec // mag-1 ≤ MaxInt64
+	default:
+		if mag > math.MaxInt64 {
+			return Timestamp{}, outOfRange
+		}
+		return Timestamp{Seconds: -int64(mag) - 1, Nanoseconds: int32(nsPerSec - ns)}, nil //nolint:gosec // bounded above and by validNano
 	}
-	// validNano above bounds ns to [0, 999_999_999] — far below MaxInt32 — so the
-	// int32 cast cannot overflow. Annotated to keep gosec G115 quiet.
-	return Timestamp{Seconds: sec, Nanoseconds: int32(ns)}, nil //nolint:gosec // bounded by validNano above
 }
 
-// String returns the canonical timestamp string.
+// String returns the canonical timestamp string: the magnitude as
+// seconds:nanoseconds, with a leading "-" only for a value below zero.
 func (ts Timestamp) String() string {
-	if ts.Seconds < 0 {
-		return fmt.Sprintf("-%d:%d", -ts.Seconds, ts.Nanoseconds)
+	if ts.Seconds >= 0 {
+		return fmt.Sprintf("%d:%d", ts.Seconds, ts.Nanoseconds)
 	}
-	return fmt.Sprintf("%d:%d", ts.Seconds, ts.Nanoseconds)
+	magSec := uint64(-(ts.Seconds + 1)) //nolint:gosec // Seconds+1 ≤ 0, so the negation is non-negative and fits
+	magNs := nsPerSec - int64(ts.Nanoseconds)
+	if ts.Nanoseconds == 0 {
+		magSec++
+		magNs = 0
+	}
+	return fmt.Sprintf("-%d:%d", magSec, magNs)
 }
 
 // before returns true if ts is strictly before other.
@@ -90,125 +100,141 @@ func (ts Timestamp) before(other Timestamp) bool {
 	return ts.Nanoseconds < other.Nanoseconds
 }
 
+// next returns the timestamp one nanosecond after ts. Callers only use it
+// when a later timestamp exists, so Seconds cannot overflow.
+func (ts Timestamp) next() Timestamp {
+	if ts.Nanoseconds < nsPerSec-1 {
+		return Timestamp{Seconds: ts.Seconds, Nanoseconds: ts.Nanoseconds + 1}
+	}
+	return Timestamp{Seconds: ts.Seconds + 1}
+}
+
 // equal returns true if ts == other.
 func (ts Timestamp) equal(other Timestamp) bool {
 	return ts.Seconds == other.Seconds && ts.Nanoseconds == other.Nanoseconds
 }
 
-// Parse parses a TAMS bracket-notation timerange string.
+// Parse parses a TAMS timerange string of the form
+// {start marker}{start timestamp}_{end timestamp}{end marker}, where every
+// part is optional:
 //
-// Valid forms:
+//	_              eternity; markers next to it are ignored
+//	()             empty; so is any other string with no timestamp and no "_"
+//	[ts_ts)        a bound range; an omitted marker means inclusive
+//	(ts_           unbounded end; a marker next to an omitted timestamp is ignored
+//	_ts)           unbounded start
+//	[ts] or ts     instantaneous, the same as [ts_ts]
 //
-//	_              eternity (unbounded both ends)
-//	()             never (canonical empty)
-//	[ts_ts)        half-open
-//	[ts_ts]        closed
-//	(ts_ts)        open
-//	(ts_ts]        half-open reversed
-//	[ts]           instantaneous — expands to [ts_ts]
-//	[ts_ts)        where end==start with exclusive bound — valid empty range
-//
-// Returns an error if end is strictly before start.
+// An end before its start parses as an empty range, not as an error.
+// An instantaneous range with an exclusive marker is an error.
 func Parse(s string) (TimeRange, error) {
-	if s == "_" {
-		return TimeRange{StartType: Unbounded, EndType: Unbounded}, nil
+	if s == "" {
+		return TimeRange{}, fmt.Errorf("invalid timerange %q: empty string", s)
 	}
-	if s == "()" {
-		return TimeRange{StartType: Exclusive, EndType: Exclusive}, nil
+	body := s
+	var startMarker, endMarker byte
+	if body[0] == '[' || body[0] == '(' {
+		startMarker = body[0]
+		body = body[1:]
 	}
-	if len(s) < 2 {
-		return TimeRange{}, fmt.Errorf("invalid timerange %q", s)
-	}
-
-	startBracket := s[0]
-	endBracket := s[len(s)-1]
-
-	if (startBracket != '[' && startBracket != '(') ||
-		(endBracket != ']' && endBracket != ')') {
-		return TimeRange{}, fmt.Errorf("invalid timerange %q: bad brackets", s)
+	if n := len(body); n > 0 && (body[n-1] == ']' || body[n-1] == ')') {
+		endMarker = body[n-1]
+		body = body[:n-1]
 	}
 
-	inner := s[1 : len(s)-1]
-
-	var startStr, endStr string
-	idx := strings.Index(inner, "_")
-	if idx == -1 {
-		// instantaneous: [ts] — no underscore, treat as [ts_ts]
-		if startBracket != '[' || endBracket != ']' {
-			return TimeRange{}, fmt.Errorf("invalid timerange %q: instantaneous form requires [] brackets", s)
+	startStr, endStr, hasSep := strings.Cut(body, "_")
+	if !hasSep {
+		if startStr == "" {
+			return TimeRange{StartType: Exclusive, EndType: Exclusive}, nil
 		}
-		startStr = inner
-		endStr = inner
-	} else {
-		startStr = inner[:idx]
-		endStr = inner[idx+1:]
+		if startMarker == '(' || endMarker == ')' {
+			return TimeRange{}, fmt.Errorf("invalid timerange %q: an instantaneous range cannot use exclusive markers", s)
+		}
+		ts, err := ParseTimestamp(startStr)
+		if err != nil {
+			return TimeRange{}, fmt.Errorf("invalid timerange %q: %w", s, err)
+		}
+		end := ts
+		return TimeRange{Start: &ts, StartType: Inclusive, End: &end, EndType: Inclusive}, nil
 	}
 
-	start, err := ParseTimestamp(startStr)
-	if err != nil {
-		return TimeRange{}, fmt.Errorf("invalid timerange %q: %w", s, err)
+	tr := TimeRange{StartType: Unbounded, EndType: Unbounded}
+	if startStr != "" {
+		ts, err := ParseTimestamp(startStr)
+		if err != nil {
+			return TimeRange{}, fmt.Errorf("invalid timerange %q: %w", s, err)
+		}
+		tr.Start, tr.StartType = &ts, Inclusive
+		if startMarker == '(' {
+			tr.StartType = Exclusive
+		}
 	}
-	end, err := ParseTimestamp(endStr)
-	if err != nil {
-		return TimeRange{}, fmt.Errorf("invalid timerange %q: %w", s, err)
+	if endStr != "" {
+		ts, err := ParseTimestamp(endStr)
+		if err != nil {
+			return TimeRange{}, fmt.Errorf("invalid timerange %q: %w", s, err)
+		}
+		tr.End, tr.EndType = &ts, Inclusive
+		if endMarker == ')' {
+			tr.EndType = Exclusive
+		}
 	}
-
-	// end strictly before start is invalid
-	if end.before(start) {
-		return TimeRange{}, fmt.Errorf("invalid timerange %q: end is before start", s)
-	}
-
-	startType := Inclusive
-	if startBracket == '(' {
-		startType = Exclusive
-	}
-	endType := Inclusive
-	if endBracket == ')' {
-		endType = Exclusive
-	}
-
-	return TimeRange{
-		Start:     &start,
-		StartType: startType,
-		End:       &end,
-		EndType:   endType,
-	}, nil
+	return tr, nil
 }
 
-// String returns the canonical bracket-notation string for the timerange.
+// String returns the canonical string for the timerange. It is for values
+// the server derives; a value a client sent is returned as the client sent it.
+// An empty range renders as "()" and an instantaneous range as "[ts]".
 func (tr TimeRange) String() string {
-	if tr.StartType == Unbounded && tr.EndType == Unbounded {
-		return "_"
-	}
-	if tr.Start == nil && tr.End == nil {
+	if tr.IsEmpty() {
 		return "()"
 	}
-	if tr.Start == nil || tr.End == nil {
-		panic("timerange: malformed TimeRange: exactly one bound is nil")
+	if tr.IsEternity() {
+		return "_"
+	}
+	if (tr.Start == nil) != (tr.StartType == Unbounded) || (tr.End == nil) != (tr.EndType == Unbounded) {
+		panic("timerange: malformed TimeRange: a nil bound must be Unbounded")
+	}
+	if tr.Start != nil && tr.End != nil && tr.Start.equal(*tr.End) {
+		return "[" + tr.Start.String() + "]"
 	}
 
-	openBracket := "["
-	if tr.StartType == Exclusive {
-		openBracket = "("
+	var b strings.Builder
+	if tr.Start != nil {
+		if tr.StartType == Exclusive {
+			b.WriteByte('(')
+		} else {
+			b.WriteByte('[')
+		}
+		b.WriteString(tr.Start.String())
 	}
-	closeBracket := "]"
-	if tr.EndType == Exclusive {
-		closeBracket = ")"
+	b.WriteByte('_')
+	if tr.End != nil {
+		b.WriteString(tr.End.String())
+		if tr.EndType == Exclusive {
+			b.WriteByte(')')
+		} else {
+			b.WriteByte(']')
+		}
 	}
-	return openBracket + tr.Start.String() + "_" + tr.End.String() + closeBracket
+	return b.String()
 }
 
-// IsEmpty returns true if the range contains no points.
+// IsEmpty returns true if the range contains no instant. An instant is a
+// whole nanosecond, so (0:0_0:1) is empty as well as "()", an end before its
+// start, and an end equal to its start with an exclusive marker.
 func (tr TimeRange) IsEmpty() bool {
-	if tr.StartType == Unbounded || tr.EndType == Unbounded {
+	switch {
+	case tr.Start == nil && tr.End == nil:
+		return tr.StartType != Unbounded || tr.EndType != Unbounded
+	case tr.Start == nil || tr.End == nil:
 		return false
-	}
-	if tr.Start == nil && tr.End == nil {
-		// canonical never ()
+	case tr.End.before(*tr.Start):
 		return true
-	}
-	if tr.Start.equal(*tr.End) {
+	case tr.Start.equal(*tr.End):
 		return tr.StartType == Exclusive || tr.EndType == Exclusive
+	case tr.StartType == Exclusive && tr.EndType == Exclusive:
+		return tr.End.equal(tr.Start.next())
 	}
 	return false
 }
@@ -256,36 +282,9 @@ func (tr TimeRange) Contains(ts Timestamp) bool {
 	return true
 }
 
-// Overlaps returns true if the two timeranges share at least one point.
+// Overlaps returns true if the two timeranges share at least one whole nanosecond.
 func (tr TimeRange) Overlaps(other TimeRange) bool {
-	if tr.IsEmpty() || other.IsEmpty() {
-		return false
-	}
-	if tr.IsEternity() || other.IsEternity() {
-		return true
-	}
-
-	// tr starts after other ends?
-	if tr.Start != nil && other.End != nil {
-		if other.End.before(*tr.Start) {
-			return false
-		}
-		if other.End.equal(*tr.Start) && (tr.StartType == Exclusive || other.EndType == Exclusive) {
-			return false
-		}
-	}
-
-	// other starts after tr ends?
-	if other.Start != nil && tr.End != nil {
-		if tr.End.before(*other.Start) {
-			return false
-		}
-		if tr.End.equal(*other.Start) && (other.StartType == Exclusive || tr.EndType == Exclusive) {
-			return false
-		}
-	}
-
-	return true
+	return !Intersect(tr, other).IsEmpty()
 }
 
 // Intersect returns the intersection of two timeranges.

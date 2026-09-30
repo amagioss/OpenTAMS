@@ -78,6 +78,13 @@ The rules:
    specification. Example: `(10:0)` matches the `timerange.json` regex, and
    `mediatimestamp` accepts it and drops the markers. The schema description says
    "Instantaneous TimeRanges cannot use exclusive markers", so the parser rejects it.
+10. **Whole nanoseconds.** An instant is a whole nanosecond, because a TAMS timestamp
+    cannot express a smaller step. A range is empty if it contains no whole nanosecond,
+    and two ranges overlap only if they share one. As a result, `(0:0_0:1)` is empty,
+    and `_0:1)` does not overlap `(0:0_`. `mediatimestamp` treats time as continuous and
+    calls both ranges non-empty. The two models differ only for a gap of less than one
+    nanosecond, which no TAMS timestamp can address. OpenTAMS uses whole nanoseconds, so
+    that the parser, `Overlaps`, and the database comparison always give the same answer.
 
 ### Consequences
 
@@ -90,6 +97,8 @@ The rules:
   must handle them. ADR-0039 and ADR-0040 say how.
 * Bad, because two rules rest on a library, not on the specification text. If BBC
   clarifies App Note 0008 differently, a new ADR must supersede this one.
+* Bad, because rule 10 differs from `mediatimestamp` for exclusive ranges narrower than
+  two nanoseconds. A client that uses `mediatimestamp` can call such a range non-empty.
 * Bad, because rule 8 makes a future tightening of the accepted format a data migration, not a
   code change.
 

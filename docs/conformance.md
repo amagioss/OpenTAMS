@@ -217,6 +217,10 @@ OpenTAMS accepts the TAMS timestamp and time-range format from `timestamp.json`,
 - The parser accepts instantaneous ranges: `[10:0]` and `10:0`.
 - `_` is eternity. `()` is empty. A range whose end is before its start, or whose equal
   ends have an exclusive marker, is also empty.
+- An instant is a whole nanosecond. A range that contains no whole nanosecond, such as
+  `(0:0_0:1)`, is empty. The BBC `mediatimestamp` library treats time as continuous and
+  calls that range non-empty. The difference applies only to exclusive ranges narrower
+  than two nanoseconds.
 
 In a query, an empty range matches nothing: `GET` segments returns an empty list,
 `DELETE` deletes nothing, and `GET /flows?timerange=` returns only flows with no segments.
