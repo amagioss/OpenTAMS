@@ -26,6 +26,14 @@ type Segment struct {
 	KeyFrameCount   *int64
 	GetURLs         []GetURL
 
+	// The exact strings the client sent, returned byte for byte (BR-CONV-08,
+	// BR-META-10). The parsed fields above are for validation and
+	// timerange.NsBounds only. An empty string means the field was absent.
+	TimerangeRaw       string
+	TSOffsetRaw        string
+	ObjectTimerangeRaw string
+	LastDurationRaw    string
+
 	// Deprecated TAMS v8 fields — stored, returned, never interpreted.
 	SampleOffset *int64
 	SampleCount  *int64
