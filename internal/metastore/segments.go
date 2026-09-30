@@ -208,11 +208,7 @@ func (s *PostgresStore) InsertSegments(ctx context.Context, batch InsertBatch) (
 	// Step 2: against-existing overlap check.
 	for i := range batch.Segments {
 		var existingTR string
-		err := tx.QueryRow(ctx, `
-			SELECT timerange FROM segments
-			WHERE flow_id = $1
-			  AND int8range(lower_ns, upper_ns) && int8range($2::bigint, $3::bigint)
-			LIMIT 1`,
+		err := tx.QueryRow(ctx, existingOverlapSQL,
 			batch.FlowID, lowerParam(bounds[i]), upperParam(bounds[i]),
 		).Scan(&existingTR)
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -605,6 +601,18 @@ func refreshFlowTimerange(ctx context.Context, tx pgx.Tx, flowID uuid.UUID) erro
 		flowID, span)
 	return err
 }
+
+// existingOverlapSQL finds a stored segment on the flow that overlaps the
+// half-open bounds $2 and $3. The range expression repeats the one in the
+// no_segment_overlap index, COALESCE included, so that Postgres can use
+// the index for the range. upper_ns is NOT NULL, so the COALESCE has no
+// effect on the result.
+const existingOverlapSQL = `
+	SELECT timerange FROM segments
+	WHERE flow_id = $1
+	  AND int8range(lower_ns, COALESCE(upper_ns, 9223372036854775807))
+	      && int8range($2::bigint, $3::bigint)
+	LIMIT 1`
 
 type rowQuerier interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
