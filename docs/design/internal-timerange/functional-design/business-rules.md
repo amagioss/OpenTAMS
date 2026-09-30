@@ -107,9 +107,10 @@ range errors, so the error message names the real problem.
 | Unbounded end | `UpperUnbounded = true` |
 
 ```go
+// NsBounds is the half-open interval [Lower, Upper) in int64 nanoseconds.
 type NsBounds struct {
-    Lower          int64 // meaningful only when !LowerUnbounded
-    Upper          int64 // meaningful only when !UpperUnbounded
+    Lower          int64 // inclusive; meaningful only when !LowerUnbounded
+    Upper          int64 // exclusive; meaningful only when !UpperUnbounded
     LowerUnbounded bool
     UpperUnbounded bool
 }

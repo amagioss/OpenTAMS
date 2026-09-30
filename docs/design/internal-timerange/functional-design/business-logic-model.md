@@ -46,8 +46,9 @@ TimeRange {
     EndType   BoundType
 }
 
-NsBounds {                  // (pending)
-    Lower, Upper                   int64
+NsBounds {                  // (pending) half-open [Lower, Upper)
+    Lower                          int64 // inclusive
+    Upper                          int64 // exclusive
     LowerUnbounded, UpperUnbounded bool
 }
 ```
