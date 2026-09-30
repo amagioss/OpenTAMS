@@ -73,6 +73,11 @@ The rules:
 8. **The accepted format only widens.** A string that the parser accepts once must stay accepted.
    The metastore parses stored client strings again on read. As a result, a narrower
    parser breaks existing rows.
+9. **The specification text wins over the library.** `mediatimestamp` applies only where
+   the specification is silent. Where the two disagree, OpenTAMS follows the
+   specification. Example: `(10:0)` matches the `timerange.json` regex, and
+   `mediatimestamp` accepts it and drops the markers. The schema description says
+   "Instantaneous TimeRanges cannot use exclusive markers", so the parser rejects it.
 
 ### Consequences
 
@@ -98,6 +103,6 @@ The rules:
   `immutable/timestamp.py` (`from_sec_nsec`, `__init__`) and `immutable/timerange.py`
   (`from_str`).
 * Design: [`internal-timerange` business rules](../design/internal-timerange/functional-design/business-rules.md)
-  BR-TR-01 to BR-TR-06 and BR-TR-12 to BR-TR-13.
+  BR-TR-01 to BR-TR-06 and BR-TR-12 to BR-TR-14.
 * Used by: [ADR-0039](0039-timerange-stored-as-client-string-with-half-open-bounds.md),
   [ADR-0040](0040-segment-timerange-invariants.md).

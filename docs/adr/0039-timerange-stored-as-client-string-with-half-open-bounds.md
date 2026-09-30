@@ -93,6 +93,12 @@ The rules:
    | Segment registration | Overlap, which rejects the batch | "MUST NOT overlap any other Segment in the same Flow" |
    | `DELETE /flows/{flowId}/segments` | Containment | "completely covered by the given timerange" |
 
+   TAMS does not say what "a Flow overlaps" means. OpenTAMS reads it as "a segment of the
+   flow overlaps", so a query inside a gap between segments does not match the flow. This
+   follows the per-segment wording of `GET /flows/{flowId}` and
+   `GET /flows/{flowId}/segments`. `HEAD` uses the same predicate as `GET` on every
+   endpoint.
+
 8. **An empty query timerange matches as TAMS says.** This includes an end before the
    start ([ADR-0038](0038-tams-timestamp-and-timerange-format.md)). `GET` segments
    returns an empty list. `DELETE` deletes nothing. `GET /flows` returns only flows with

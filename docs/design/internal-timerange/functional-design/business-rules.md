@@ -50,6 +50,13 @@ A single timestamp is an instantaneous range, with `[]` markers or with no marke
 `[10:0]` and `10:0` both mean `[10:0_10:0]`. `(10:0)`, `(10:0]`, and `[10:0)` are parse
 errors, because the schema says "Instantaneous TimeRanges cannot use exclusive markers".
 
+The `timerange.json` regex matches `(10:0)`, so spec validation lets it through. The
+parser rejects it because of the schema description, not the regex. BR-CONV-09 turns
+that parse error into a request-level 400. BBC `mediatimestamp` accepts `(10:0)` and
+drops the markers. OpenTAMS follows the schema text here, because the library applies
+only where the specification is silent
+([ADR-0038](../../../adr/0038-tams-timestamp-and-timerange-format.md) rule 9).
+
 ## BR-TR-06: Omitted timestamps and markers (pending)
 The TimeRange format is `{start marker}{start timestamp}_{end timestamp}{end marker}`, and every
 part is optional. These rules apply:
@@ -65,8 +72,17 @@ Two ranges overlap if they share at least one instant. Overlap is symmetric. Two
 that touch at a boundary do not overlap if at least one of the touching bounds is
 exclusive. An empty range overlaps nothing, including itself.
 
-`Overlaps` must give the same answer as comparing the two `NsBounds` results as
-half-open intervals. A property test asserts this (BR-TR-10).
+`Overlaps` must give the same answer as the `NsBounds` comparison for every pair of
+ranges, with these rules:
+- If either range is empty, `NsBounds` returns `ErrEmptyRange`, and `Overlaps` must
+  return false.
+- An unbounded side counts as open. `a` and `b` overlap if (`a.LowerUnbounded` or
+  `b.UpperUnbounded` or `a.Lower < b.Upper`) and (`b.LowerUnbounded` or
+  `a.UpperUnbounded` or `b.Lower < a.Upper`).
+- If either range returns `ErrOutOfRange`, the pair is outside the property.
+
+A property test asserts this over generated ranges, including empty and one-sided ones
+(BR-TR-10).
 
 ## BR-TR-08: Nanosecond precision required
 When two timestamps have equal seconds, compare the nanoseconds. Without this, overlap and
@@ -103,18 +119,31 @@ An unbounded side is a flag, not a sentinel such as `math.MinInt64`.
 
 `NsBounds` checks each arithmetic step: `Seconds × 10⁹`, `+ Nanoseconds`, and the `+ 1`
 adjustment. A finite bound whose adjusted value does not fit in `int64` returns
-`ErrOutOfRange`. The representable span is about 1677 to 2262 on the TAI timeline. An
-empty range returns `ErrEmptyRange`.
+`ErrOutOfRange`. The representable values are `math.MinInt64` to `math.MaxInt64`
+nanoseconds, which is `-9223372036:854775808` to `9223372036:854775807` on the wire. On
+the TAI timeline, that is 1677-09-21T00:12:43.145224192 to 2262-04-11T23:47:16.854775807.
+An empty range returns `ErrEmptyRange`.
 
-No other package does nanosecond arithmetic on a timestamp. A CI check rejects the
-literal `1_000_000_000` outside this package. There is no inverse function, because no
-code renders bounds back to text ([ADR-0039](../../../adr/0039-timerange-stored-as-client-string-with-half-open-bounds.md)
+No other package does nanosecond arithmetic on a timestamp. A CI step in the lint
+workflow enforces this. The step fails if this command prints a line:
+
+```sh
+git grep -nwE '1_000_000_000|1000000000|1e9' -- 'internal/*.go' 'pkg/*.go' 'cmd/*.go' ':!*_test.go' ':!internal/timerange/'
+```
+
+The check covers the server code: non-test Go files under `internal/`, `pkg/`, and
+`cmd/`, including SQL text inside Go strings. It excludes tests and this package. It
+also excludes `tools/`, because those binaries are clients and load generators and are
+not on the storage path. The check finds a literal, not every conversion, so review is
+still necessary. Use `-w`, not `\b`: `git grep -E` does not support `\b`, and a pattern
+with `\b` matches nothing. There is no
+inverse function, because no code renders bounds back to text ([ADR-0039](../../../adr/0039-timerange-stored-as-client-string-with-half-open-bounds.md)
 rule 5).
 
 Tests: a table covers every marker combination, `[0:0]`, `10:0`, and one-sided ranges.
 It also covers negative values inside one second, both overflow edges, and the spec
 example of `[1:0_2:0)` followed by `[2:0]`. A property test compares `Overlaps` with the
-bounds comparison.
+bounds comparison, as BR-TR-07 defines it.
 
 ## BR-TR-11: Error sentinels (pending)
 The package exports `ErrOutOfRange` and `ErrEmptyRange`. Callers match them with
@@ -134,10 +163,23 @@ The canonical form follows these rules:
 - It writes `_` for eternity and `()` for an empty range.
 - It writes a marker for every present timestamp, and no marker for an absent
   timestamp: `[5:0_`, `_10:0)`.
-- It writes a timestamp as `{-}{seconds}:{nanoseconds}` of the absolute value. The value
-  −1.5 s, stored as `{-2, 500000000}`, renders as `-1:500000000`.
+- It writes a timestamp as `{seconds}:{nanoseconds}` of the absolute value, with a
+  leading `-` only if the value is less than zero. The value −1.5 s, stored as
+  `{-2, 500000000}`, renders as `-1:500000000`. The value zero renders as `0:0`, so
+  `String()` never writes `-0:0`, even for a client that sent `-0:0`.
 
 ## BR-TR-13: The accepted format only widens (pending)
 A string that the parser accepts once stays accepted. The metastore parses stored client
 strings again on read (BR-META-19). As a result, a narrower parser breaks existing rows. A change that
 narrows the accepted format needs a data migration and a new ADR.
+
+## BR-TR-14: Durations use the Timestamp type (pending)
+TAMS uses the Timestamp type for durations too: `min_object_timeout` in `service.json` is
+a `timestamp.json` value, and so are `ts_offset` and `last_duration`. The package exports
+`TimestampFromDuration(d time.Duration) Timestamp`. The result is floor-normalised like
+every other `Timestamp`, and callers render it with `Timestamp.String()`.
+
+`durationToTAI` in `internal/httpx/handlers/root.go` builds this string with its own
+arithmetic. It is removed, and `GetService` calls `TimestampFromDuration` instead. The old
+function renders a negative duration as `-1:-500000000`. The configured presign expiry is
+positive, so that defect cannot occur today.

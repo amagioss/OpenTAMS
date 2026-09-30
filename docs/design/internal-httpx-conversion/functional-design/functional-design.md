@@ -70,7 +70,9 @@ and `timerange.NsBounds`. The raw strings are the only values that get to the wi
 
 **BR-CONV-09 — A syntax error fails the request, and a semantic error fails the segment (pending).**
 A timerange or timestamp that does not parse is a request-level `schema-validation` 400,
-as today. This package does not decide whether a parsed timerange is a valid segment
+as today. Spec validation checks only the regex, so a string can pass spec validation and
+still fail to parse. For example, the regex accepts `(10:0)`, and the parser rejects it
+(BR-TR-05). That parse error is also a request-level 400. This package does not decide whether a parsed timerange is a valid segment
 timerange (empty, unbounded, exclusive start, out of range). The service reports an
 invalid segment timerange as a per-segment failure (BR-SEG-02). Query parameters follow
 the same split. A parse error is a 400 here. This package passes an empty range through

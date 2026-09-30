@@ -65,3 +65,4 @@ NsBounds {                  // (pending)
 | `TimeRange.Contains(ts)` | True if the timestamp is in the range |
 | `TimeRange.Overlaps(other)` | True if the two ranges share an instant. Agrees with the `NsBounds` comparison. |
 | `TimeRange.NsBounds()` (pending) | Half-open `int64` bounds, or `ErrOutOfRange` / `ErrEmptyRange` (BR-TR-10) |
+| `TimestampFromDuration(d)` (pending) | A `time.Duration` as a floor-normalised `Timestamp`, for duration fields such as `min_object_timeout` (BR-TR-14) |

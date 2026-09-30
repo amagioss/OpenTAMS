@@ -56,8 +56,8 @@ Last reviewed against TAMS v8.0 on 2026-06-09, against OpenTAMS HEAD `38570fc`.
 
 | Endpoint | Status | Notes |
 |---|---|---|
-| `GET /tams/v1/flows` | Implemented | Filterable by `source_id`, `timerange`, `format`, `codec`, `label`, `tag.{name}`, `tag_exists.{name}`, `frame_width`, `frame_height`. Pagination as Sources. (No `mime_type` filter — the spec uses `codec`.) |
-| `HEAD /tams/v1/flows` | Implemented | |
+| `GET /tams/v1/flows` | Implemented | Filterable by `source_id`, `timerange`, `format`, `codec`, `label`, `tag.{name}`, `tag_exists.{name}`, `frame_width`, `frame_height`. Pagination as Sources. (No `mime_type` filter — the spec uses `codec`.) **`timerange` matches a flow if one of its segments overlaps the range, so a range inside a gap between segments does not match.** TAMS does not define "Flows that overlap". An empty `timerange` returns only flows with no segments, as TAMS says for this parameter ("An empty timerange returns Flows with no content"). Today OpenTAMS ignores an empty `timerange` and returns every flow (pending, ADR-0039). |
+| `HEAD /tams/v1/flows` | Implemented | Same filters as `GET`, including the empty-`timerange` rule. The upstream text for `HEAD /flows` omits that rule. OpenTAMS applies it, because HEAD returns the headers of GET. |
 | `GET /tams/v1/flows/{flowId}` | Implemented | Supports `include_timerange` and `timerange` query params. |
 | `HEAD /tams/v1/flows/{flowId}` | Implemented | |
 | `PUT /tams/v1/flows/{flowId}` | Implemented | Create or replace. The Flow's `id` in the body must match the path. |
@@ -220,13 +220,18 @@ OpenTAMS accepts the TAMS timestamp and time-range format from `timestamp.json`,
 
 In a query, an empty range matches nothing: `GET` segments returns an empty list,
 `DELETE` deletes nothing, and `GET /flows?timerange=` returns only flows with no segments.
+The `GET /flows` rule comes from the `timerange` query parameter of that endpoint in the
+upstream `TimeAddressableMediaStore.yaml`: "An empty timerange returns Flows with no
+content".
 For a segment timerange, see the rule under [Segments](#segments).
 
 OpenTAMS returns every time string that a client sends (`timerange`, `ts_offset`,
 `object_timerange`, `last_duration`) exactly as sent. Values the server derives, such as a flow's
 `timerange` and `X-Paging-Timerange`, use a canonical form with `[ts]` for an
 instantaneous range. OpenTAMS compares timeranges at nanosecond resolution on the TAI
-timeline between about 1677 and 2262. OpenTAMS rejects a bound outside that span with
+timeline from 1677-09-21T00:12:43.145224192 to 2262-04-11T23:47:16.854775807, which is
+the `int64` nanosecond range (`-9223372036:854775808` to `9223372036:854775807`).
+OpenTAMS rejects a bound outside that span with
 `invalid-timerange`.
 
 **Current differences, which ADR-0038 and ADR-0039 fix:**
