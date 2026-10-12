@@ -167,14 +167,20 @@ func (s *PostgresStore) GetFlowForSegmentRead(ctx context.Context, flowID uuid.U
 // InsertSegments performs a batch insert with overlap detection. Whole-batch
 // reject on any overlap (BR-META-06). Atomic per INV-META-05.
 func (s *PostgresStore) InsertSegments(ctx context.Context, batch InsertBatch) (InsertResult, error) {
-	// Step 0: within-batch overlap pre-check (no DB round-trip needed).
-	for i := 0; i < len(batch.Segments); i++ {
-		for j := i + 1; j < len(batch.Segments); j++ {
-			if batch.Segments[i].Timerange.Overlaps(batch.Segments[j].Timerange) {
+	// Step 0: bounds and within-batch overlap pre-check (no DB round-trip
+	// needed). Both overlap checks compare the same half-open bounds
+	// (BR-META-05, ADR-0040 rule 5).
+	bounds, err := segmentBounds(batch.Segments)
+	if err != nil {
+		return InsertResult{}, err
+	}
+	for i := 0; i < len(bounds); i++ {
+		for j := i + 1; j < len(bounds); j++ {
+			if boundsOverlap(bounds[i], bounds[j]) {
 				return InsertResult{}, fmt.Errorf(
 					"metastore: InsertSegments: segments %d (%s) and %d (%s) overlap: %w",
-					i, batch.Segments[i].Timerange.String(),
-					j, batch.Segments[j].Timerange.String(),
+					i, batch.Segments[i].TimerangeRaw,
+					j, batch.Segments[j].TimerangeRaw,
 					ErrSegmentOverlap,
 				)
 			}
@@ -201,15 +207,9 @@ func (s *PostgresStore) InsertSegments(ctx context.Context, batch InsertBatch) (
 
 	// Step 2: against-existing overlap check.
 	for i := range batch.Segments {
-		lo, hi := nsRange(batch.Segments[i].Timerange)
 		var existingTR string
-		err := tx.QueryRow(ctx, `
-			SELECT timerange FROM segments
-			WHERE flow_id = $1
-			  AND int8range(lower_ns, COALESCE(upper_ns, 9223372036854775807))
-			      && int8range($2::bigint, COALESCE($3::bigint, 9223372036854775807))
-			LIMIT 1`,
-			batch.FlowID, lo, hi,
+		err := tx.QueryRow(ctx, existingOverlapSQL,
+			batch.FlowID, lowerParam(bounds[i]), upperParam(bounds[i]),
 		).Scan(&existingTR)
 		if errors.Is(err, pgx.ErrNoRows) {
 			continue
@@ -219,7 +219,7 @@ func (s *PostgresStore) InsertSegments(ctx context.Context, batch InsertBatch) (
 		}
 		return InsertResult{}, fmt.Errorf(
 			"metastore: InsertSegments: segment %d (%s) overlaps existing %s on flow %s: %w",
-			i, batch.Segments[i].Timerange.String(), existingTR, batch.FlowID, ErrSegmentOverlap,
+			i, batch.Segments[i].TimerangeRaw, existingTR, batch.FlowID, ErrSegmentOverlap,
 		)
 	}
 
@@ -292,7 +292,7 @@ func (s *PostgresStore) InsertSegments(ctx context.Context, batch InsertBatch) (
 		if !rangeContains(stored, *seg.ObjectTimerange) {
 			ae := apperror.New(apperror.ErrInvalidObjectTimerange, fmt.Sprintf(
 				"segment %d (%s): object_timerange %s extends beyond stored %s for object %q",
-				i, seg.Timerange.String(), seg.ObjectTimerange.String(), stored.String(), seg.ObjectID,
+				i, seg.TimerangeRaw, seg.ObjectTimerangeRaw, *storedStr, seg.ObjectID,
 			))
 			return InsertResult{}, fmt.Errorf("metastore: InsertSegments: %w", ae)
 		}
@@ -300,23 +300,11 @@ func (s *PostgresStore) InsertSegments(ctx context.Context, batch InsertBatch) (
 
 	// Step 4: bulk INSERT segments. EXCLUDE constraint catches any race that
 	// slipped past the pre-check (concurrent inserts on the same flow).
+	// The time columns hold the client strings (BR-META-10). An absent
+	// ts_offset is stored as '', so it reads back as absent, while an
+	// explicit "0:0" or "-0:0" reads back as sent.
 	for i := range batch.Segments {
 		seg := &batch.Segments[i]
-		lo, hi := nsRange(seg.Timerange)
-		tsOff := "0:0"
-		if seg.TSOffset != nil {
-			tsOff = seg.TSOffset.String()
-		}
-		var objTR *string
-		if seg.ObjectTimerange != nil {
-			s := seg.ObjectTimerange.String()
-			objTR = &s
-		}
-		var lastDur *string
-		if seg.LastDuration != nil {
-			s := seg.LastDuration.String()
-			lastDur = &s
-		}
 		getURLsJSON, err := marshalGetURLs(seg.GetURLs)
 		if err != nil {
 			return InsertResult{}, fmt.Errorf("metastore: InsertSegments: marshal get_urls (%d): %w", i, err)
@@ -327,8 +315,8 @@ func (s *PostgresStore) InsertSegments(ctx context.Context, batch InsertBatch) (
 				ts_offset, object_timerange, last_duration,
 				key_frame_count, sample_offset, sample_count, get_urls
 			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-			batch.FlowID, seg.ObjectID, seg.Timerange.String(), lo, hi,
-			tsOff, objTR, lastDur,
+			batch.FlowID, seg.ObjectID, seg.TimerangeRaw, lowerParam(bounds[i]), upperParam(bounds[i]),
+			seg.TSOffsetRaw, nullIfEmpty(seg.ObjectTimerangeRaw), nullIfEmpty(seg.LastDurationRaw),
 			seg.KeyFrameCount, seg.SampleOffset, seg.SampleCount, getURLsJSON,
 		)
 		if err != nil {
@@ -337,7 +325,7 @@ func (s *PostgresStore) InsertSegments(ctx context.Context, batch InsertBatch) (
 			if errors.As(err, &pgErr) && pgErr.Code == "23P01" {
 				return InsertResult{}, fmt.Errorf(
 					"metastore: InsertSegments: segment %d (%s) overlaps an existing row (race): %w",
-					i, seg.Timerange.String(), ErrSegmentOverlap,
+					i, seg.TimerangeRaw, ErrSegmentOverlap,
 				)
 			}
 			return InsertResult{}, fmt.Errorf("metastore: InsertSegments: insert seg %d: %w", i, err)
@@ -387,13 +375,15 @@ func (s *PostgresStore) ListSegments(ctx context.Context, q ListQuery) (domain.S
 	where := []string{"s.flow_id = $1"}
 
 	if q.Timerange != nil {
-		lo, hi := nsRange(*q.Timerange)
+		lo, hi, empty, err := queryBounds(*q.Timerange)
+		if err != nil {
+			return domain.SegmentPage{}, fmt.Errorf("metastore: ListSegments: timerange: %w", err)
+		}
+		if empty {
+			return domain.SegmentPage{EffectiveLimit: limit}, nil
+		}
 		args = append(args, lo, hi)
-		// hi may be nil (unbounded). s.lower_ns < hi unless hi is NULL; s.upper_ns > lo unless s.upper_ns NULL.
-		where = append(where, fmt.Sprintf(
-			"($%d::bigint IS NULL OR s.lower_ns < $%d) AND (s.upper_ns IS NULL OR s.upper_ns > $%d)",
-			len(args), len(args), len(args)-1,
-		))
+		where = append(where, overlapCond("s.", len(args)-1, len(args)))
 	}
 	if q.ObjectID != nil {
 		args = append(args, *q.ObjectID)
@@ -414,7 +404,7 @@ func (s *PostgresStore) ListSegments(ctx context.Context, q ListQuery) (domain.S
 	// BYOS from `len(seg.GetURLs) == 0` — no JOIN onto objects needed
 	// (BR-META-07; D-24 still governs storage_id authorship).
 	q1 := fmt.Sprintf(`
-		SELECT s.id, s.flow_id, s.object_id, s.timerange, s.lower_ns,
+		SELECT s.id, s.flow_id, s.object_id, s.timerange, s.lower_ns, s.upper_ns,
 		       s.ts_offset, s.object_timerange, s.last_duration,
 		       s.key_frame_count, s.sample_offset, s.sample_count, s.get_urls,
 		       s.created_at
@@ -431,20 +421,15 @@ func (s *PostgresStore) ListSegments(ctx context.Context, q ListQuery) (domain.S
 	}
 	defer rows.Close()
 
-	type rowItem struct {
-		seg     domain.Segment
-		lowerNs int64
-		segID   int64
-	}
-	var items []rowItem
+	var items []segmentRow
 	for rows.Next() {
-		var it rowItem
+		var it segmentRow
 		var trStr, tsOff string
 		var objTRStr, lastDurStr *string
 		var kfc *int32
 		var getURLs []byte
 		if err := rows.Scan(
-			&it.segID, &it.seg.FlowID, &it.seg.ObjectID, &trStr, &it.lowerNs,
+			&it.segID, &it.seg.FlowID, &it.seg.ObjectID, &trStr, &it.lowerNs, &it.upperNs,
 			&tsOff, &objTRStr, &lastDurStr,
 			&kfc, &it.seg.SampleOffset, &it.seg.SampleCount, &getURLs,
 			&it.seg.CreatedAt,
@@ -456,11 +441,14 @@ func (s *PostgresStore) ListSegments(ctx context.Context, q ListQuery) (domain.S
 			return domain.SegmentPage{}, fmt.Errorf("metastore: ListSegments: parse timerange %q: %w", trStr, err)
 		}
 		it.seg.Timerange = tr
+		it.seg.TimerangeRaw = trStr
 		if tsOff != "" {
 			ts, err := timerange.ParseTimestamp(tsOff)
-			if err == nil && (ts.Seconds != 0 || ts.Nanoseconds != 0) {
-				it.seg.TSOffset = &ts
+			if err != nil {
+				return domain.SegmentPage{}, fmt.Errorf("metastore: ListSegments: parse ts_offset %q: %w", tsOff, err)
 			}
+			it.seg.TSOffset = &ts
+			it.seg.TSOffsetRaw = tsOff
 		}
 		if objTRStr != nil {
 			otr, err := timerange.Parse(*objTRStr)
@@ -468,6 +456,7 @@ func (s *PostgresStore) ListSegments(ctx context.Context, q ListQuery) (domain.S
 				return domain.SegmentPage{}, fmt.Errorf("metastore: ListSegments: parse object_timerange %q: %w", *objTRStr, err)
 			}
 			it.seg.ObjectTimerange = &otr
+			it.seg.ObjectTimerangeRaw = *objTRStr
 		}
 		if lastDurStr != nil {
 			ld, err := timerange.ParseTimestamp(*lastDurStr)
@@ -475,6 +464,7 @@ func (s *PostgresStore) ListSegments(ctx context.Context, q ListQuery) (domain.S
 				return domain.SegmentPage{}, fmt.Errorf("metastore: ListSegments: parse last_duration %q: %w", *lastDurStr, err)
 			}
 			it.seg.LastDuration = &ld
+			it.seg.LastDurationRaw = *lastDurStr
 		}
 		if kfc != nil {
 			v := int64(*kfc)
@@ -504,8 +494,8 @@ func (s *PostgresStore) ListSegments(ctx context.Context, q ListQuery) (domain.S
 		page.Items[i] = items[i].seg
 	}
 	page.Count = len(page.Items)
-	if len(page.Items) > 0 {
-		page.Timerange = computePageSpan(page.Items)
+	if len(items) > 0 {
+		page.Timerange = pageSpan(items)
 	}
 	return page, nil
 }
@@ -530,7 +520,13 @@ func (s *PostgresStore) DeleteSegmentsByTimerange(ctx context.Context, q DeleteQ
 		return DeleteResult{}, fmt.Errorf("metastore: DeleteSegmentsByTimerange: flow %s: %w", q.FlowID, ErrFlowReadOnly)
 	}
 
-	lo, hi := nsRange(q.Timerange)
+	lo, hi, empty, err := queryBounds(q.Timerange)
+	if err != nil {
+		return DeleteResult{}, fmt.Errorf("metastore: DeleteSegmentsByTimerange: timerange: %w", err)
+	}
+	if empty {
+		return DeleteResult{}, nil
+	}
 
 	args := []any{q.FlowID, lo, hi}
 	objFilter := ""
@@ -543,8 +539,8 @@ func (s *PostgresStore) DeleteSegmentsByTimerange(ctx context.Context, q DeleteQ
 		WITH deleted AS (
 			DELETE FROM segments
 			WHERE flow_id = $1
-			  AND ($3::bigint IS NULL OR lower_ns < $3)
-			  AND (upper_ns IS NULL OR upper_ns > $2)%s
+			  AND ($2::bigint IS NULL OR lower_ns >= $2)
+			  AND ($3::bigint IS NULL OR upper_ns <= $3)%s
 			RETURNING object_id
 		)
 		SELECT object_id, COUNT(*) FROM deleted GROUP BY object_id`, objFilter)
@@ -592,56 +588,166 @@ func (s *PostgresStore) DeleteSegmentsByTimerange(ctx context.Context, q DeleteQ
 	return DeleteResult{DeletedCount: totalDeleted}, nil
 }
 
-// refreshFlowTimerange updates flows.segments_updated to now() and sets
-// the flow's timerange to the span across remaining segments (or NULL
-// when the flow is now empty). Single statement keeps it inside the
-// caller's tx.
+// refreshFlowTimerange sets segments_updated to now() and the flow's
+// timerange to the span of its remaining segments, or NULL when it has
+// none (BR-META-12). It runs inside the caller's tx.
 func refreshFlowTimerange(ctx context.Context, tx pgx.Tx, flowID uuid.UUID) error {
-	_, err := tx.Exec(ctx, `
-		UPDATE flows SET
-			segments_updated = now(),
-			timerange = (
-				SELECT CASE
-					WHEN COUNT(*) = 0 THEN NULL
-					ELSE
-						'[' ||
-						(SELECT (lower_ns / 1000000000)::text || ':' || (lower_ns % 1000000000)::text
-						 FROM segments WHERE flow_id = $1 ORDER BY lower_ns ASC LIMIT 1)
-						|| '_' ||
-						(SELECT CASE WHEN upper_ns IS NULL THEN ''
-						             ELSE (upper_ns / 1000000000)::text || ':' || (upper_ns % 1000000000)::text END
-						 FROM segments WHERE flow_id = $1 ORDER BY lower_ns DESC, upper_ns DESC NULLS FIRST LIMIT 1)
-						|| ')'
-				END
-				FROM segments WHERE flow_id = $1
-			)
-		WHERE id = $1`, flowID)
+	span, err := flowSpan(ctx, tx, flowID)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx,
+		`UPDATE flows SET segments_updated = now(), timerange = $2 WHERE id = $1`,
+		flowID, span)
 	return err
 }
 
-// computePageSpan returns the span across the page items as a TimeRange.
-func computePageSpan(items []domain.Segment) timerange.TimeRange {
-	if len(items) == 0 {
-		return timerange.TimeRange{}
+// existingOverlapSQL finds a stored segment on the flow that overlaps the
+// half-open bounds $2 and $3. The range expression repeats the one in the
+// no_segment_overlap index, COALESCE included, so that Postgres can use
+// the index for the range. upper_ns is NOT NULL, so the COALESCE has no
+// effect on the result.
+const existingOverlapSQL = `
+	SELECT timerange FROM segments
+	WHERE flow_id = $1
+	  AND int8range(lower_ns, COALESCE(upper_ns, 9223372036854775807))
+	      && int8range($2::bigint, $3::bigint)
+	LIMIT 1`
+
+type rowQuerier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+// flowSpan joins the start of the flow's first segment to the end of its
+// last segment, parsed from the stored client strings and rendered in
+// canonical form (BR-META-12, BR-TR-12). It returns nil for a flow with
+// no segments. Stored segments are non-empty and do not overlap, so the
+// segment with the highest lower_ns also has the highest upper_ns, and
+// the (flow_id, lower_ns) index serves both lookups.
+func flowSpan(ctx context.Context, q rowQuerier, flowID uuid.UUID) (*string, error) {
+	var firstRaw, lastRaw *string
+	if err := q.QueryRow(ctx, `
+		SELECT
+			(SELECT timerange FROM segments WHERE flow_id = $1 ORDER BY lower_ns ASC LIMIT 1),
+			(SELECT timerange FROM segments WHERE flow_id = $1 ORDER BY lower_ns DESC LIMIT 1)`,
+		flowID,
+	).Scan(&firstRaw, &lastRaw); err != nil {
+		return nil, fmt.Errorf("flow span: %w", err)
 	}
-	first := items[0].Timerange
-	last := items[len(items)-1].Timerange
-	if first.Start == nil || last.End == nil {
-		return timerange.TimeRange{}
+	if firstRaw == nil || lastRaw == nil {
+		return nil, nil //nolint:nilnil // nil means the flow has no segments
 	}
-	// Items may be sorted descending; orient the span low→high.
-	lo, hi := first, last
-	if last.Start != nil && first.Start != nil &&
-		(last.Start.Seconds < first.Start.Seconds ||
-			(last.Start.Seconds == first.Start.Seconds && last.Start.Nanoseconds < first.Start.Nanoseconds)) {
-		lo, hi = last, first
+	first, err := timerange.Parse(*firstRaw)
+	if err != nil {
+		return nil, fmt.Errorf("flow span: parse %q: %w", *firstRaw, err)
 	}
+	last, err := timerange.Parse(*lastRaw)
+	if err != nil {
+		return nil, fmt.Errorf("flow span: parse %q: %w", *lastRaw, err)
+	}
+	span := joinSpan(first, last).String()
+	return &span, nil
+}
+
+// joinSpan returns the range from the start of first to the end of last.
+func joinSpan(first, last timerange.TimeRange) timerange.TimeRange {
 	return timerange.TimeRange{
-		Start:     lo.Start,
-		StartType: lo.StartType,
-		End:       hi.End,
-		EndType:   hi.EndType,
+		Start:     first.Start,
+		StartType: first.StartType,
+		End:       last.End,
+		EndType:   last.EndType,
 	}
+}
+
+type segmentRow struct {
+	seg     domain.Segment
+	lowerNs int64
+	upperNs int64
+	segID   int64
+}
+
+// pageSpan is the X-Paging-Timerange value: from the start of the
+// earliest item to the end of the latest, for either sort order
+// (ADR-0039 rule 9).
+func pageSpan(items []segmentRow) timerange.TimeRange {
+	first, last := 0, 0
+	for i := range items {
+		if items[i].lowerNs < items[first].lowerNs {
+			first = i
+		}
+		if items[i].upperNs > items[last].upperNs {
+			last = i
+		}
+	}
+	return joinSpan(items[first].seg.Timerange, items[last].seg.Timerange)
+}
+
+// segmentBounds converts every segment timerange with timerange.NsBounds,
+// the only conversion to nanoseconds (BR-META-10). An empty or
+// out-of-range timerange fails the whole batch before anything is written.
+func segmentBounds(segs []domain.Segment) ([]timerange.NsBounds, error) {
+	out := make([]timerange.NsBounds, len(segs))
+	for i := range segs {
+		if segs[i].TimerangeRaw == "" {
+			return nil, fmt.Errorf("metastore: InsertSegments: segment %d has no client timerange string: %w", i, ErrBadInput)
+		}
+		b, err := segs[i].Timerange.NsBounds()
+		if err != nil {
+			return nil, fmt.Errorf("metastore: InsertSegments: segment %d (%s): %w", i, segs[i].TimerangeRaw, err)
+		}
+		out[i] = b
+	}
+	return out, nil
+}
+
+// boundsOverlap reports whether two half-open intervals share a
+// nanosecond. An unbounded side is open (BR-TR-07).
+func boundsOverlap(a, b timerange.NsBounds) bool {
+	return (a.LowerUnbounded || b.UpperUnbounded || a.Lower < b.Upper) &&
+		(b.LowerUnbounded || a.UpperUnbounded || b.Lower < a.Upper)
+}
+
+// queryBounds converts a query timerange into SQL parameters, nil for an
+// unbounded side. empty is true when the range matches nothing; it is
+// checked before NsBounds, so ErrEmptyRange never reaches a caller
+// (BR-META-21).
+func queryBounds(tr timerange.TimeRange) (lo, hi *int64, empty bool, err error) {
+	if tr.IsEmpty() {
+		return nil, nil, true, nil
+	}
+	b, err := tr.NsBounds()
+	if err != nil {
+		return nil, nil, false, err
+	}
+	return lowerParam(b), upperParam(b), false, nil
+}
+
+// overlapCond is the BR-META-21 overlap predicate on a segments row whose
+// columns carry prefix, against the query bounds in args loArg and hiArg.
+func overlapCond(prefix string, loArg, hiArg int) string {
+	return fmt.Sprintf("($%[3]d::bigint IS NULL OR %[1]slower_ns < $%[3]d) AND ($%[2]d::bigint IS NULL OR %[1]supper_ns > $%[2]d)",
+		prefix, loArg, hiArg)
+}
+
+func lowerParam(b timerange.NsBounds) *int64 {
+	if b.LowerUnbounded {
+		return nil
+	}
+	return &b.Lower
+}
+
+func upperParam(b timerange.NsBounds) *int64 {
+	if b.UpperUnbounded {
+		return nil
+	}
+	return &b.Upper
+}
+
+func nullIfEmpty(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 // marshalGetURLs returns the JSONB form for storage. Empty slice → NULL.
@@ -776,18 +882,4 @@ func compareTS(a, b timerange.Timestamp) int {
 		return 1
 	}
 	return 0
-}
-
-// nsRange converts a TimeRange to [lowerNs, upperNs) int64 nanosecond bounds.
-// upperNs is nil when the end is unbounded (maps to NULL in the DB).
-// Callers must use ($hi::bigint IS NULL OR lower_ns < $hi) in SQL to handle nil correctly.
-func nsRange(tr timerange.TimeRange) (lowerNs int64, upperNs *int64) {
-	if tr.Start != nil {
-		lowerNs = tr.Start.Seconds*1_000_000_000 + int64(tr.Start.Nanoseconds)
-	}
-	if tr.End != nil {
-		hi := tr.End.Seconds*1_000_000_000 + int64(tr.End.Nanoseconds)
-		upperNs = &hi
-	}
-	return lowerNs, upperNs
 }

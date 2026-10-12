@@ -30,15 +30,19 @@ CREATE INDEX IF NOT EXISTS objects_gc_claim_idx
 CREATE INDEX IF NOT EXISTS objects_gc_retry_idx
     ON objects (id) WHERE reaping = true;
 
--- R15 — schema-level positivity guard for segments.upper_ns.
+-- Segment bounds invariants (ADR-0040 rule 4).
 --
--- nsRange returns lowerNs = 0 when tr.Start is nil; valid finite ranges
--- always satisfy upper_ns > 0 because TimeRange.Overlaps + the
--- non-overlap EXCLUDE constraint reject zero-width ranges. The CHECK
--- enforces the invariant independently of application-layer validation,
--- so a corrupt direct INSERT cannot land nonsense values.
+-- lower_ns and upper_ns are the half-open [lower, upper) bounds that
+-- timerange.NsBounds derives from the segment timerange. A segment
+-- timerange is always bounded and non-empty, so upper_ns is NOT NULL and
+-- upper_ns > lower_ns. Negative bounds are valid: TAMS permits
+-- timestamps before 0:0. The service rejects invalid timeranges before
+-- the store is called; these constraints are backstops for a server
+-- defect, and they do not detect bounds that were converted wrongly.
 ALTER TABLE segments
-    DROP CONSTRAINT IF EXISTS segments_upper_ns_positive;
+    ALTER COLUMN upper_ns SET NOT NULL;
 ALTER TABLE segments
-    ADD CONSTRAINT segments_upper_ns_positive
-    CHECK (upper_ns IS NULL OR upper_ns > 0);
+    DROP CONSTRAINT IF EXISTS segments_bounds_nonempty;
+ALTER TABLE segments
+    ADD CONSTRAINT segments_bounds_nonempty
+    CHECK (upper_ns > lower_ns);

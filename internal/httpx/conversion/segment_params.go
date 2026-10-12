@@ -56,34 +56,9 @@ func registerParamsFromPostArray(in []api.FlowSegmentPost) (domain.RegisterParam
 }
 
 func postToSegment(p api.FlowSegmentPost) (domain.Segment, error) {
-	tr, err := timerange.Parse(p.Timerange)
-	if err != nil {
+	seg := domain.Segment{ObjectID: p.ObjectId}
+	if err := setTimeFields(&seg, p.Timerange, p.TsOffset, p.ObjectTimerange, p.LastDuration); err != nil {
 		return domain.Segment{}, err
-	}
-	seg := domain.Segment{
-		ObjectID:  p.ObjectId,
-		Timerange: tr,
-	}
-	if p.TsOffset != nil {
-		ts, err := timerange.ParseTimestamp(*p.TsOffset)
-		if err != nil {
-			return domain.Segment{}, err
-		}
-		seg.TSOffset = &ts
-	}
-	if p.ObjectTimerange != nil {
-		otr, err := timerange.Parse(*p.ObjectTimerange)
-		if err != nil {
-			return domain.Segment{}, err
-		}
-		seg.ObjectTimerange = &otr
-	}
-	if p.LastDuration != nil {
-		ld, err := timerange.ParseTimestamp(*p.LastDuration)
-		if err != nil {
-			return domain.Segment{}, err
-		}
-		seg.LastDuration = &ld
 	}
 	if p.KeyFrameCount != nil {
 		v := int64(*p.KeyFrameCount)

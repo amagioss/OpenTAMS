@@ -1081,15 +1081,18 @@ func Test_SCN_HTTP_33_ObjectTimerangeRoundTripAndOmitempty(t *testing.T) {
 					{
 						ObjectID:        "seg-no-otr",
 						Timerange:       mustTR(t, "[0:0_10:0)"),
+						TimerangeRaw:    "[0:0_10:0)",
 						ObjectTimerange: nil,
 						GetURLs: []domain.GetURL{
 							{URL: "https://byos.example/no-otr", Label: "primary"},
 						},
 					},
 					{
-						ObjectID:        "seg-with-otr",
-						Timerange:       mustTR(t, "[10:0_20:0)"),
-						ObjectTimerange: &otr,
+						ObjectID:           "seg-with-otr",
+						Timerange:          mustTR(t, "[10:0_20:0)"),
+						TimerangeRaw:       "[10:0_20:0)",
+						ObjectTimerange:    &otr,
+						ObjectTimerangeRaw: "[0:0_60:0)",
 						GetURLs: []domain.GetURL{
 							{URL: "https://byos.example/with-otr", Label: "primary"},
 						},
@@ -1179,9 +1182,11 @@ func Test_SCN_HTTP_34_NegativeTsOffsetRoundTrip(t *testing.T) {
 				EffectiveLimit: 100,
 				Items: []domain.Segment{
 					{
-						ObjectID:  "obj-34",
-						Timerange: mustTR(t, "[0:0_10:0)"),
-						TSOffset:  stored.TSOffset,
+						ObjectID:     "obj-34",
+						Timerange:    mustTR(t, "[0:0_10:0)"),
+						TimerangeRaw: "[0:0_10:0)",
+						TSOffset:     stored.TSOffset,
+						TSOffsetRaw:  stored.TSOffsetRaw,
 						GetURLs: []domain.GetURL{
 							{URL: "https://byos.example/obj-34", Label: "primary"},
 						},

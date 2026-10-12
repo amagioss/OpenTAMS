@@ -38,6 +38,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
+      # BR-TR-10: timerange.NsBounds is the only conversion from a timestamp
+      # to nanoseconds. Fail if server code outside internal/timerange
+      # contains a nanoseconds-per-second literal. `git grep` exits 1 when
+      # nothing matches, which is the passing case; any status above 1 is a
+      # real error.
+      - name: No nanosecond arithmetic outside internal/timerange
+        run: |
+          status=0
+          matches=$(git grep -nwE '1_000_000_000|1000000000|1e9' -- 'internal/*.go' 'pkg/*.go' 'cmd/*.go' ':!*_test.go' ':!internal/timerange/') || status=$?
+          if [ "$status" -gt 1 ]; then
+            echo "::error::git grep failed with status $status"
+            exit "$status"
+          fi
+          if [ -n "$matches" ]; then
+            printf '%s\n' "$matches"
+            echo "::error::Nanosecond arithmetic outside internal/timerange. Use timerange.NsBounds or timerange.TimestampFromDuration (BR-TR-10)."
+            exit 1
+          fi
+
       - name: Set up Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:

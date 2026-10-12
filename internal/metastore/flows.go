@@ -290,33 +290,14 @@ func (s *PostgresStore) GetFlow(ctx context.Context, id uuid.UUID) (*Flow, error
 	return fl, nil
 }
 
-// GetFlowTimerange returns the bounding timerange of all segments for a flow,
-// in TAMS bracket notation. Returns nil if the flow has no segments.
-// The result is half-open [min_lower, max_upper) using second:nanosecond format.
+// GetFlowTimerange returns the span of the flow's segments in canonical
+// form, or nil if the flow has no segments (BR-META-12).
 func (s *PostgresStore) GetFlowTimerange(ctx context.Context, id uuid.UUID) (*string, error) {
-	var minLowerNs *int64
-	var maxUpperNs *int64
-	var hasOpenEnd bool
-	err := s.db.QueryRow(ctx,
-		`SELECT MIN(lower_ns), MAX(upper_ns), COALESCE(bool_or(upper_ns IS NULL), false) FROM segments WHERE flow_id = $1`, id,
-	).Scan(&minLowerNs, &maxUpperNs, &hasOpenEnd)
+	span, err := flowSpan(ctx, s.db, id)
 	if err != nil {
 		return nil, fmt.Errorf("metastore: GetFlowTimerange: %w", err)
 	}
-	if minLowerNs == nil {
-		return nil, nil
-	}
-	lowerSec := *minLowerNs / 1_000_000_000
-	lowerNsFrac := *minLowerNs % 1_000_000_000
-	var result string
-	if hasOpenEnd || maxUpperNs == nil {
-		result = fmt.Sprintf("[%d:%d_)", lowerSec, lowerNsFrac)
-	} else {
-		upperSec := *maxUpperNs / 1_000_000_000
-		upperNsFrac := *maxUpperNs % 1_000_000_000
-		result = fmt.Sprintf("[%d:%d_%d:%d)", lowerSec, lowerNsFrac, upperSec, upperNsFrac)
-	}
-	return &result, nil
+	return span, nil
 }
 
 // ListFlows returns one page of flows matching the optional filters in
@@ -363,30 +344,19 @@ func (s *PostgresStore) ListFlows(ctx context.Context, p ListFlowsParams) (*Flow
 		args = append(args, *p.FrameHeight)
 		argN++
 	}
-	if p.Timerange != nil && !p.Timerange.IsEmpty() {
-		tr := p.Timerange
-		var segConds []string
-		if tr.StartType != timerange.Unbounded && tr.Start != nil {
-			lowerNs := tr.Start.Seconds*1_000_000_000 + int64(tr.Start.Nanoseconds)
-			segConds = append(segConds, fmt.Sprintf("(upper_ns IS NULL OR upper_ns > $%d)", argN))
-			args = append(args, lowerNs)
-			argN++
+	if p.Timerange != nil && !p.Timerange.IsEternity() {
+		lo, hi, empty, err := queryBounds(*p.Timerange)
+		if err != nil {
+			return nil, fmt.Errorf("metastore: ListFlows: timerange: %w", err)
 		}
-		if tr.EndType != timerange.Unbounded && tr.End != nil {
-			endNs := tr.End.Seconds*1_000_000_000 + int64(tr.End.Nanoseconds)
-			if tr.EndType == timerange.Inclusive {
-				segConds = append(segConds, fmt.Sprintf("lower_ns <= $%d", argN))
-			} else {
-				segConds = append(segConds, fmt.Sprintf("lower_ns < $%d", argN))
-			}
-			args = append(args, endNs)
-			argN++
+		if empty {
+			conds = append(conds, "NOT EXISTS (SELECT 1 FROM segments WHERE flow_id = f.id)")
+		} else {
+			conds = append(conds, fmt.Sprintf(
+				"EXISTS (SELECT 1 FROM segments s WHERE s.flow_id = f.id AND %s)", overlapCond("s.", argN, argN+1)))
+			args = append(args, lo, hi)
+			argN += 2
 		}
-		subWhere := "flow_id = f.id"
-		if len(segConds) > 0 {
-			subWhere += " AND " + strings.Join(segConds, " AND ")
-		}
-		conds = append(conds, fmt.Sprintf("EXISTS (SELECT 1 FROM segments WHERE %s)", subWhere))
 	}
 	for tagName := range p.TagExists {
 		conds = append(conds, fmt.Sprintf("EXISTS (SELECT 1 FROM flow_tags WHERE flow_id = f.id AND name = $%d)", argN))

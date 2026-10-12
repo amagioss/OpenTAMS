@@ -2,12 +2,11 @@ package handlers
 
 import (
 	"context"
-	"fmt"
-	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/amagioss/opentams/gen/api"
+	"github.com/amagioss/opentams/internal/timerange"
 )
 
 const (
@@ -29,7 +28,7 @@ func (h *Handler) GetService(ctx context.Context, req api.GetServiceRequestObjec
 	return api.GetService200JSONResponse(api.Service{
 		ApiVersion:       tamsAPIVersion,
 		Type:             tamsServiceType,
-		MinObjectTimeout: durationToTAI(h.cfg.ObjectStorePresignExpiry),
+		MinObjectTimeout: timerange.TimestampFromDuration(h.cfg.ObjectStorePresignExpiry).String(),
 	}), nil
 }
 
@@ -61,10 +60,4 @@ func (h *Handler) GetStorageBackends(ctx context.Context, req api.GetStorageBack
 
 func (h *Handler) HeadStorageBackends(ctx context.Context, req api.HeadStorageBackendsRequestObject) (api.HeadStorageBackendsResponseObject, error) {
 	return api.HeadStorageBackends200Response{}, nil
-}
-
-func durationToTAI(d time.Duration) string {
-	secs := int64(d) / 1_000_000_000
-	ns := int64(d) % 1_000_000_000
-	return fmt.Sprintf("%d:%d", secs, ns)
 }

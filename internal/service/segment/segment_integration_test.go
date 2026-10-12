@@ -169,8 +169,9 @@ func Test_SCN_SEG_CONC_01_ReadOnlyFlipDuringRegister(t *testing.T) {
 				FlowID: flID,
 				Segments: []domain.Segment{
 					{
-						ObjectID:  fmt.Sprintf("o-segc1-%d", idx),
-						Timerange: mustTR(t, fmt.Sprintf("[%d:0_%d:0)", lo, lo+10)),
+						ObjectID:     fmt.Sprintf("o-segc1-%d", idx),
+						Timerange:    mustTR(t, fmt.Sprintf("[%d:0_%d:0)", lo, lo+10)),
+						TimerangeRaw: fmt.Sprintf("[%d:0_%d:0)", lo, lo+10),
 					},
 				},
 			})
@@ -266,8 +267,9 @@ func Test_SCN_SEG_CONC_02_DisjointConcurrentRegister(t *testing.T) {
 			for j := 0; j < PerG; j++ {
 				lo := base + j*10
 				segs[j] = domain.Segment{
-					ObjectID:  fmt.Sprintf("o-segc2-%d-%d", idx, j),
-					Timerange: mustTR(t, fmt.Sprintf("[%d:0_%d:0)", lo, lo+10)),
+					ObjectID:     fmt.Sprintf("o-segc2-%d-%d", idx, j),
+					Timerange:    mustTR(t, fmt.Sprintf("[%d:0_%d:0)", lo, lo+10)),
+					TimerangeRaw: fmt.Sprintf("[%d:0_%d:0)", lo, lo+10),
 				}
 			}
 			res, err := svc.RegisterBatch(context.Background(), domain.RegisterParams{
@@ -336,8 +338,9 @@ func Test_SCN_SEG_CONC_03_CollidingConcurrentRegister(t *testing.T) {
 				FlowID: flID,
 				Segments: []domain.Segment{
 					{
-						ObjectID:  fmt.Sprintf("o-segc3-%d", idx),
-						Timerange: mustTR(t, "[0:0_10:0)"),
+						ObjectID:     fmt.Sprintf("o-segc3-%d", idx),
+						Timerange:    mustTR(t, "[0:0_10:0)"),
+						TimerangeRaw: "[0:0_10:0)",
 					},
 				},
 			})

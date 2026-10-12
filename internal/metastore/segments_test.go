@@ -128,8 +128,9 @@ func newStore(t *testing.T) *metastore.PostgresStore {
 func makeSegment(t *testing.T, objectID, tr string) domain.Segment {
 	t.Helper()
 	return domain.Segment{
-		ObjectID:  objectID,
-		Timerange: mustTR(t, tr),
+		ObjectID:     objectID,
+		Timerange:    mustTR(t, tr),
+		TimerangeRaw: tr,
 	}
 }
 
@@ -326,7 +327,9 @@ func Test_SCN_META_08_RoundTripAllFields(t *testing.T) {
 	in := domain.Segment{
 		ObjectID:      "o-rt",
 		Timerange:     mustTR(t, "[0:0_10:0)"),
+		TimerangeRaw:  "[0:0_10:0)",
 		TSOffset:      &tsOff,
+		TSOffsetRaw:   "-5:0",
 		KeyFrameCount: &keyFrames,
 		SampleOffset:  &sampleOff,
 		SampleCount:   &sampleCount,
@@ -807,8 +810,9 @@ func Test_SCN_META_28_BYOSStorageIDNull(t *testing.T) {
 	flID := seedFlow(t, false)
 	store := newStore(t)
 	in := domain.Segment{
-		ObjectID:  "o-byos",
-		Timerange: mustTR(t, "[0:0_10:0)"),
+		ObjectID:     "o-byos",
+		Timerange:    mustTR(t, "[0:0_10:0)"),
+		TimerangeRaw: "[0:0_10:0)",
 		GetURLs: []domain.GetURL{
 			{URL: "https://byos.example/x", Label: "primary", Controlled: false},
 		},
@@ -833,8 +837,9 @@ func Test_SCN_META_29_ControlledStorageIDSetOnce(t *testing.T) {
 	store := newStore(t)
 	const storageID = "primary"
 	in := domain.Segment{
-		ObjectID:  "o-ctrl",
-		Timerange: mustTR(t, "[0:0_10:0)"),
+		ObjectID:     "o-ctrl",
+		Timerange:    mustTR(t, "[0:0_10:0)"),
+		TimerangeRaw: "[0:0_10:0)",
 		// controlled ⇒ no GetURLs
 	}
 	if _, err := store.InsertSegments(context.Background(), metastore.InsertBatch{
@@ -850,8 +855,9 @@ func Test_SCN_META_29_ControlledStorageIDSetOnce(t *testing.T) {
 	// Cross-flow share — caller passes a DIFFERENT ControlledStorageID;
 	// stored value must NOT mutate (INV-META-14 immutability).
 	in2 := domain.Segment{
-		ObjectID:  "o-ctrl",
-		Timerange: mustTR(t, "[0:0_10:0)"),
+		ObjectID:     "o-ctrl",
+		Timerange:    mustTR(t, "[0:0_10:0)"),
+		TimerangeRaw: "[0:0_10:0)",
 	}
 	if _, err := store.InsertSegments(context.Background(), metastore.InsertBatch{
 		FlowID: flB, Segments: []domain.Segment{in2}, ControlledStorageID: "secondary",
@@ -883,12 +889,14 @@ func Test_SCN_META_30_ListPreservesGetURLsClassifier(t *testing.T) {
 	store := newStore(t)
 
 	ctrl := domain.Segment{
-		ObjectID:  "o-ctrl-30",
-		Timerange: mustTR(t, "[0:0_5:0)"),
+		ObjectID:     "o-ctrl-30",
+		Timerange:    mustTR(t, "[0:0_5:0)"),
+		TimerangeRaw: "[0:0_5:0)",
 	}
 	byos := domain.Segment{
-		ObjectID:  "o-byos-30",
-		Timerange: mustTR(t, "[5:0_10:0)"),
+		ObjectID:     "o-byos-30",
+		Timerange:    mustTR(t, "[5:0_10:0)"),
+		TimerangeRaw: "[5:0_10:0)",
 		GetURLs: []domain.GetURL{
 			{URL: "https://byos.example/x", Label: "primary", Controlled: false},
 		},
@@ -996,9 +1004,11 @@ func segWithObjTR(t *testing.T, objectID, tr, objTR string) domain.Segment {
 	t.Helper()
 	otr := mustTR(t, objTR)
 	return domain.Segment{
-		ObjectID:        objectID,
-		Timerange:       mustTR(t, tr),
-		ObjectTimerange: &otr,
+		ObjectTimerangeRaw: objTR,
+		ObjectID:           objectID,
+		Timerange:          mustTR(t, tr),
+		TimerangeRaw:       tr,
+		ObjectTimerange:    &otr,
 	}
 }
 
@@ -1109,7 +1119,7 @@ func Test_SCN_META_12_PreCancelledContext(t *testing.T) {
 // =============================================================================
 //
 // Walk a 200-segment flow with Limit=50. After page 1, delete a row in
-// the *already-visited* range [5:0_10:0) and re-insert it (gets a new
+// the *already-visited* range [0:0_10:0) and re-insert it (gets a new
 // segment id, same lower_ns). The cursor uses (lower_ns, id) tuple
 // > comparison; the re-inserted row has lower_ns BELOW the cursor's
 // lower_ns and so MUST NOT re-appear. Walk visits 200 distinct segs.
@@ -1153,13 +1163,13 @@ func Test_SCN_META_15_StablePaginationUnderWrites(t *testing.T) {
 
 	// Concurrent write: delete + re-insert a row in the already-visited range.
 	if _, err := store.DeleteSegmentsByTimerange(context.Background(), metastore.DeleteQuery{
-		FlowID: flID, Timerange: mustTR(t, "[5:0_10:0)"),
+		FlowID: flID, Timerange: mustTR(t, "[0:0_10:0)"),
 	}); err != nil {
 		t.Fatalf("delete during walk: %v", err)
 	}
 	if _, err := store.InsertSegments(context.Background(), metastore.InsertBatch{
 		FlowID:              flID,
-		Segments:            []domain.Segment{makeSegment(t, "o-15-0-replay", "[5:0_10:0)")},
+		Segments:            []domain.Segment{makeSegment(t, "o-15-0-replay", "[0:0_10:0)")},
 		ControlledStorageID: "default",
 	}); err != nil {
 		t.Fatalf("re-insert during walk: %v", err)
@@ -1180,7 +1190,7 @@ func Test_SCN_META_15_StablePaginationUnderWrites(t *testing.T) {
 		cursor = page.NextCursor
 	}
 
-	// Total visited ≥ 200 distinct. Original [5:0_10:0) was visited on
+	// Total visited ≥ 200 distinct. Original [0:0_10:0) was visited on
 	// page 1; the replayed row's timerange is identical so its presence
 	// would *not* show via timerange-uniqueness alone — guard explicitly:
 	// no timerange visited twice.
@@ -1322,9 +1332,10 @@ func Test_SCN_META_17_ObjectsRowCreatedWhenMissing(t *testing.T) {
 	// BYOS-shaped segment (carries GetURLs) so the objects row is created
 	// with storage_id NULL — no ControlledStorageID needed.
 	byos := domain.Segment{
-		ObjectID:  "o-new-17",
-		Timerange: mustTR(t, "[0:0_10:0)"),
-		GetURLs:   []domain.GetURL{{URL: "https://byos.example/x", Label: "primary", Controlled: false}},
+		ObjectID:     "o-new-17",
+		Timerange:    mustTR(t, "[0:0_10:0)"),
+		TimerangeRaw: "[0:0_10:0)",
+		GetURLs:      []domain.GetURL{{URL: "https://byos.example/x", Label: "primary", Controlled: false}},
 	}
 	if _, err := store.InsertSegments(context.Background(), metastore.InsertBatch{
 		FlowID:   flID,
@@ -1537,8 +1548,9 @@ func Test_SCN_META_29_ControlledStorageIDFromInsertBatch(t *testing.T) {
 	store := newStore(t)
 	const wantStorageID = "test-backend-xyz"
 	seg := domain.Segment{
-		ObjectID:  "o-ctrl-from-batch",
-		Timerange: mustTR(t, "[0:0_10:0)"),
+		ObjectID:     "o-ctrl-from-batch",
+		Timerange:    mustTR(t, "[0:0_10:0)"),
+		TimerangeRaw: "[0:0_10:0)",
 		// no GetURLs => controlled
 	}
 	if _, err := store.InsertSegments(context.Background(), metastore.InsertBatch{
@@ -1561,8 +1573,9 @@ func Test_SCN_META_31_ErrControlledStorageNotConfigured(t *testing.T) {
 	flID := seedFlow(t, false)
 	store := newStore(t)
 	seg := domain.Segment{
-		ObjectID:  "o-ctrl-missing-cfg",
-		Timerange: mustTR(t, "[0:0_10:0)"),
+		ObjectID:     "o-ctrl-missing-cfg",
+		Timerange:    mustTR(t, "[0:0_10:0)"),
+		TimerangeRaw: "[0:0_10:0)",
 	}
 	_, err := store.InsertSegments(context.Background(), metastore.InsertBatch{
 		FlowID:              flID,
@@ -1585,8 +1598,9 @@ func Test_SCN_META_32_BYOSOnlyAllowsEmptyControlledStorageID(t *testing.T) {
 	flID := seedFlow(t, false)
 	store := newStore(t)
 	seg := domain.Segment{
-		ObjectID:  "o-byos-no-cfg",
-		Timerange: mustTR(t, "[0:0_10:0)"),
+		ObjectID:     "o-byos-no-cfg",
+		Timerange:    mustTR(t, "[0:0_10:0)"),
+		TimerangeRaw: "[0:0_10:0)",
 		GetURLs: []domain.GetURL{
 			{URL: "https://byos.example/x", Label: "primary"},
 		},

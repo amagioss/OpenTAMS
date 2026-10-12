@@ -6,6 +6,9 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // TC-META-SCH-01: head schema (current state after TestMain migrations) →
@@ -121,3 +124,83 @@ func TestVerifySchema_NewerSchemaAccepted(t *testing.T) {
 		t.Errorf("state.Version = %d, want %d", state.Version, newer)
 	}
 }
+
+// TC-META-SCH-07: migration 000005 leaves segments with the ADR-0040
+// rule 4 invariants: upper_ns NOT NULL and segments_bounds_nonempty in
+// place of segments_upper_ns_positive.
+func TestSchema_SegmentsBoundsConstraints(t *testing.T) {
+	_, tx := withTx(t)
+	ctx := context.Background()
+
+	constraintExists := func(name string) bool {
+		var n int
+		if err := tx.QueryRow(ctx,
+			`SELECT COUNT(*) FROM pg_constraint WHERE conrelid = 'segments'::regclass AND conname = $1`, name,
+		).Scan(&n); err != nil {
+			t.Fatalf("pg_constraint %s: %v", name, err)
+		}
+		return n == 1
+	}
+	if !constraintExists("segments_bounds_nonempty") {
+		t.Error("segments_bounds_nonempty missing")
+	}
+	if constraintExists("segments_upper_ns_positive") {
+		t.Error("segments_upper_ns_positive still present")
+	}
+	var nullable string
+	if err := tx.QueryRow(ctx,
+		`SELECT is_nullable FROM information_schema.columns WHERE table_name = 'segments' AND column_name = 'upper_ns'`,
+	).Scan(&nullable); err != nil {
+		t.Fatalf("information_schema: %v", err)
+	}
+	if nullable != "NO" {
+		t.Errorf("upper_ns is_nullable = %q, want NO", nullable)
+	}
+}
+
+// TC-META-SCH-08: the backstops reject what the application must never
+// write: an empty or inverted row (23514) and an open end (23502).
+// Negative bounds are valid (TAMS permits timestamps before 0:0).
+func TestSchema_SegmentsBoundsBackstops(t *testing.T) {
+	cases := []struct {
+		name     string
+		lo       int64
+		hi       *int64
+		wantCode string
+	}{
+		{"empty", 5, ptrInt64(5), "23514"},
+		{"inverted", 5, ptrInt64(4), "23514"},
+		{"zero width at zero", 0, ptrInt64(0), "23514"},
+		{"open end", 5, nil, "23502"},
+		{"negative valid", -1500000, ptrInt64(-1000000), ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, tx := withTx(t)
+			ctx := context.Background()
+			srcID, flID := uuid.New(), uuid.New()
+			execTx(t, tx, `INSERT INTO sources (id, format) VALUES ($1, 'urn:x-nmos:format:video')`, srcID)
+			execTx(t, tx, `INSERT INTO flows (id, source_id, format) VALUES ($1, $2, 'urn:x-nmos:format:video')`, flID, srcID)
+			execTx(t, tx, `INSERT INTO objects (id, ref_count) VALUES ($1, 1)`, "obj-"+flID.String())
+
+			_, err := tx.Exec(ctx,
+				`INSERT INTO segments (flow_id, object_id, timerange, lower_ns, upper_ns) VALUES ($1, $2, 'x', $3, $4)`,
+				flID, "obj-"+flID.String(), tc.lo, tc.hi)
+			if tc.wantCode == "" {
+				if err != nil {
+					t.Fatalf("insert: %v", err)
+				}
+				return
+			}
+			var pgErr *pgconn.PgError
+			if !errors.As(err, &pgErr) || pgErr.Code != tc.wantCode {
+				t.Fatalf("err = %v, want SQLSTATE %s", err, tc.wantCode)
+			}
+			if tc.wantCode == "23514" && pgErr.ConstraintName != "segments_bounds_nonempty" {
+				t.Errorf("constraint = %q, want segments_bounds_nonempty", pgErr.ConstraintName)
+			}
+		})
+	}
+}
+
+func ptrInt64(v int64) *int64 { return &v }

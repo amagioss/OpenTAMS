@@ -1,6 +1,7 @@
 package timerange_test
 
 import (
+	"math"
 	"testing"
 
 	"github.com/amagioss/opentams/internal/timerange"
@@ -20,7 +21,18 @@ func TestParseTimestamp_Valid(t *testing.T) {
 		{"0:999999999", 0, 999999999}, // max valid nanoseconds
 		{"1000:0", 1000, 0},
 		{"-1:0", -1, 0},
-		{"-10:500000000", -10, 500000000},
+		// BR-TR-01/03: the sign applies to the whole value, stored floor-normalised.
+		{"-10:500000000", -11, 500000000},
+		{"-1:500000000", -2, 500000000},
+		{"-1:1", -2, 999999999},
+		// BR-TR-02: negative zero seconds is valid.
+		{"-0:500000000", -1, 500000000},
+		{"-0:1", -1, 999999999},
+		{"-0:0", 0, 0},
+		// Seconds limits of the Timestamp type.
+		{"9223372036854775807:999999999", math.MaxInt64, 999999999},
+		{"-9223372036854775808:0", math.MinInt64, 0},
+		{"-9223372036854775807:1", math.MinInt64, 999999999},
 	}
 	for _, tc := range cases {
 		ts, err := timerange.ParseTimestamp(tc.input)
@@ -42,12 +54,14 @@ func TestParseTimestamp_Invalid(t *testing.T) {
 		"0",
 		":0",
 		"0:",
-		"0:1000000000",          // nanoseconds >= 1e9
-		"9999999999999999999:0", // seconds overflows int64
-		"-0:0",                  // negative zero — cannot round-trip
-		"-0:500000000",          // negative zero seconds — cannot round-trip
-		"1a0:0",                 // non-digit in seconds
-		"0:1a0",                 // non-digit in nanoseconds
+		"0:1000000000",           // nanoseconds >= 1e9
+		"9999999999999999999:0",  // seconds overflows int64
+		"9223372036854775808:0",  // one past MaxInt64 seconds
+		"-9223372036854775808:1", // floor seconds below MinInt64
+		"--1:0",
+		"+1:0",
+		"1a0:0", // non-digit in seconds
+		"0:1a0", // non-digit in nanoseconds
 		"0:-1",
 		"01:0",  // leading zero on seconds
 		"0:01",  // leading zero on nanoseconds
@@ -85,18 +99,31 @@ func TestParse_Valid(t *testing.T) {
 	}{
 		{"_", "_", false, true},
 		{"()", "()", true, false},
+		// BR-TR-06: every empty form renders as ().
+		{"[]", "()", true, false},
+		{"[)", "()", true, false},
+		{"(]", "()", true, false},
+		{"[", "()", true, false},
+		{"(", "()", true, false},
+		{"]", "()", true, false},
+		{")", "()", true, false},
 		{"[0:0_10:0)", "[0:0_10:0)", false, false},
 		{"[0:0_10:0]", "[0:0_10:0]", false, false},
 		{"(0:0_10:0)", "(0:0_10:0)", false, false},
 		{"(0:0_10:0]", "(0:0_10:0]", false, false},
-		{"[1:0]", "[1:0_1:0]", false, false}, // instantaneous — canonical form expands it
+		{"[1:0]", "[1:0]", false, false},     // BR-TR-12: short form is canonical
+		{"[1:0_1:0]", "[1:0]", false, false}, // BR-TR-12: long instant renders short
 		{"[-10:0_0:0)", "[-10:0_0:0)", false, false},
 		{"[0:0_0:500000000)", "[0:0_0:500000000)", false, false},
 		{"[0:400000000_1:0)", "[0:400000000_1:0)", false, false},
-		{"[0:0_0:0)", "[0:0_0:0)", true, false}, // end==start, exclusive end → valid empty
-		{"[5:0_5:0)", "[5:0_5:0)", true, false}, // end==start, exclusive end → valid empty
-		{"(5:0_5:0)", "(5:0_5:0)", true, false}, // both exclusive, same point → valid empty
-		{"(5:0_5:0]", "(5:0_5:0]", true, false}, // exclusive start, same point → valid empty
+		// BR-TR-04: empty ranges parse, and render as ().
+		{"[0:0_0:0)", "()", true, false},
+		{"[5:0_5:0)", "()", true, false},
+		{"(5:0_5:0)", "()", true, false},
+		{"(5:0_5:0]", "()", true, false},
+		{"[10:0_5:0)", "()", true, false},
+		{"[10:0_5:0]", "()", true, false},
+		{"(0:1_0:0]", "()", true, false},
 	}
 	for _, tc := range cases {
 		tr, err := timerange.Parse(tc.input)
@@ -120,16 +147,24 @@ func TestParse_Valid(t *testing.T) {
 
 func TestParse_Invalid(t *testing.T) {
 	cases := []string{
-		"",
-		"0:0_10:0",           // missing brackets
-		"[0:0_10:0",          // missing closing bracket
-		"0:0_10:0]",          // missing opening bracket
-		"[10:0_5:0)",         // end strictly before start
+		"",                   // schema minLength 1
 		"[abc_10:0)",         // invalid timestamp
 		"[0:0_xyz]",          // invalid timestamp
 		"[0:1000000000_1:0)", // nanoseconds out of range
-		"(1:0)",              // instantaneous form requires [] brackets
-		"(1:0]",              // instantaneous form requires [] brackets
+		// BR-TR-05: an instant cannot use an exclusive marker.
+		"(1:0)",
+		"(1:0]",
+		"[1:0)",
+		"(1:0",
+		"1:0)",
+		// Not in the schema regex.
+		"[0:0__1:0)",
+		"[0:0_1:0_2:0)",
+		"[[0:0_1:0)",
+		"[0:0_1:0))",
+		" [0:0_1:0)",
+		"[0:0 _1:0)",
+		"x",
 	}
 	for _, s := range cases {
 		if _, err := timerange.Parse(s); err == nil {

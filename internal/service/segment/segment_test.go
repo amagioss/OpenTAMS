@@ -232,7 +232,7 @@ func newServiceV1(t *testing.T, ms metastore.Store) segment.Service {
 }
 
 func seg(t *testing.T, objID, tr string) domain.Segment {
-	return domain.Segment{ObjectID: objID, Timerange: mustTR(t, tr)}
+	return domain.Segment{ObjectID: objID, Timerange: mustTR(t, tr), TimerangeRaw: tr}
 }
 
 // ---------------------------------------------------------------------------

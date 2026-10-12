@@ -55,6 +55,28 @@ conversion stamps on the way in, the handler projects on the way out.
 synthesises a value. `TSOffset` round-trips verbatim including negative offsets —
 the mappers are shape-only and do not editorialise about the timeline.
 
+**BR-CONV-08 — Conversion carries client time strings and does not re-render them.**
+`SegmentFromAPI` keeps the exact wire string of `timerange`, `ts_offset`,
+`object_timerange`, and `last_duration` next to each parsed value. The fields are
+`domain.Segment.TimerangeRaw`, `TSOffsetRaw`, `ObjectTimerangeRaw`, and
+`LastDurationRaw`. `SegmentToAPI` writes the raw string, never `String()` of the parsed
+value. A client that sends `[10:0]` reads back `[10:0]`, not `[10:0_10:0]`.
+
+The parsed values stay, because the service and the metastore need them for validation
+and `timerange.NsBounds`. The raw strings are the only values that get to the wire.
+
+**BR-CONV-09 — A syntax error fails the request, and a semantic error fails the segment.**
+A timerange or timestamp that does not parse is a request-level `schema-validation` 400,
+as today. Spec validation checks only the regex, so a string can pass spec validation and
+still fail to parse. For example, the regex accepts `(10:0)`, and the parser rejects it
+(BR-TR-05). That parse error is also a request-level 400. This package does not decide whether a parsed timerange is a valid segment
+timerange (empty, unbounded, exclusive start, out of range). The service reports an
+invalid segment timerange as a per-segment failure (BR-SEG-02). Query parameters follow
+the same split. A parse error in a query parameter is a 400 `invalid-timerange`, which
+keeps the contract of SCN-HTTP-08 for every timerange query: GET, HEAD, and DELETE
+segments, GET and HEAD `/flows`, and GET `/flows/{flowId}`. This package passes an empty range through
+as a valid value (BR-META-21).
+
 **BR-CONV-05 — `limit` is normalised here, not downstream.**
 A missing `limit` becomes the server default of 100; a value above 1000 is clamped
 to 1000; a value below 1 is rejected as `schema-validation`. The wire's "absent"
@@ -76,7 +98,9 @@ letting it surface as a silently empty field.
 ## Round-trip contract
 
 `SegmentFromAPI(SegmentToAPI(s))` equals `s` except for `FlowID`, which is
-path-derived, and `GetURLs`, which the handler projects. Drift between the two
+path-derived, and `GetURLs`, which the handler projects. In the other direction, each
+time string in `SegmentToAPI(SegmentFromAPI(w))` is byte-for-byte the string in `w`
+(BR-CONV-08). Drift between the two
 directions would be silent — it shows up as ghost data, not as an error — so the
 round-trip is asserted in tests rather than left to review.
 
