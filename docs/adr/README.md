@@ -53,6 +53,7 @@ stays useful long after the feature ships.
 | [0038](0038-tams-timestamp-and-timerange-format.md) | Parse timestamps and timeranges in the TAMS format, and use the BBC reference library where App Note 0008 is silent | accepted |
 | [0039](0039-timerange-stored-as-client-string-with-half-open-bounds.md) | Store the client's timerange string, and derive half-open nanosecond bounds for comparison only | accepted |
 | [0040](0040-segment-timerange-invariants.md) | Require a bounded, non-empty, start-inclusive segment timerange, and keep the database constraints as backstops | accepted |
+| [0041](0041-track-storage-allocations-in-a-table.md) | Track storage allocations in a table | proposed |
 
 <!-- Add a row per ADR, in number order. Keep the status column in sync with the file's front matter. -->
 

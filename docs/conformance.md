@@ -61,7 +61,7 @@ Last reviewed against TAMS v8.0 on 2026-06-09, against OpenTAMS HEAD `38570fc`.
 | `GET /tams/v1/flows/{flowId}` | Implemented, with a divergence | Supports `include_timerange` and `timerange` query params. **A `timerange` that does not parse returns 400 `invalid-timerange`. The upstream spec declares no 400 for this endpoint** (BR-CONV-09). Before this change, the server ignored the parameter and returned the flow unfiltered. |
 | `HEAD /tams/v1/flows/{flowId}` | Implemented | |
 | `PUT /tams/v1/flows/{flowId}` | Implemented | Create or replace. The Flow's `id` in the body must match the path. |
-| `DELETE /tams/v1/flows/{flowId}` | Implemented | Soft-delete: creates a `flow-delete-request`. Synchronous deletion of metadata; underlying object reaping happens via M16 GC (deferred). |
+| `DELETE /tams/v1/flows/{flowId}` | Implemented | Synchronous. One transaction deletes the flow and its segments, and decreases `objects.ref_count`. The server creates no `flow-delete-request`. The media bytes stay in the bucket, because the garbage collector is not implemented ([design](design/internal-gc/README.md)). |
 | `GET /tams/v1/flows/{flowId}/tags` | Implemented | |
 | `GET /tams/v1/flows/{flowId}/tags/{name}` | Implemented | |
 | `PUT /tams/v1/flows/{flowId}/tags/{name}` | Implemented | |
@@ -91,7 +91,7 @@ Last reviewed against TAMS v8.0 on 2026-06-09, against OpenTAMS HEAD `38570fc`.
 | `GET /tams/v1/flows/{flowId}/segments` | Implemented, with a divergence | Query params: `timerange` (intersection filter), `object_id`, `reverse_order`, `verbose_storage`, `accept_get_urls`, `accept_storage_ids`, `presigned`, `include_object_timerange`, plus `page`/`limit` pagination. **On an unknown flow OpenTAMS returns 404, where the spec asks for an empty list** (REQ-BEH-16) — see below. `Accept: text/event-stream` for streamed reads is **Not implemented**. |
 | `HEAD /tams/v1/flows/{flowId}/segments` | Implemented | |
 | `POST /tams/v1/flows/{flowId}/segments` | Implemented, with a divergence | Requires `X-Idempotency-Key` (REQ-IDEM-01). Body is a single segment or a JSON array of up to 1000. Per-segment failures come back as `flow-segment-bulk-failure`. **Overlapping timeranges reject the whole batch with 422 and no `failed_segments`, rather than the spec's first-wins ordering** (REQ-BEH-15). See [Deliberate divergences on this path](#deliberate-divergences-on-this-path). **A segment timerange must be bounded, non-empty, and start-inclusive, or the segment is a per-segment `invalid-timerange` failure** (ADR-0040). See [Deliberate divergences on this path](#deliberate-divergences-on-this-path). |
-| `DELETE /tams/v1/flows/{flowId}/segments` | Implemented | Bulk delete by query params (`timerange`, `object_id`). Returns the count, and creates a `flow-delete-request` if the operation is asynchronous. Deletes only the segments that `timerange` covers completely, as the spec says. An empty `timerange` deletes nothing. |
+| `DELETE /tams/v1/flows/{flowId}/segments` | Implemented | Bulk delete by query params (`timerange`, `object_id`). Synchronous: returns 204, and creates no `flow-delete-request`. Deletes only the segments that `timerange` covers completely, as the spec says. An empty `timerange` deletes nothing. |
 
 ### Deliberate divergences on this path
 
@@ -162,7 +162,7 @@ below.
 
 | Endpoint | Status | Notes |
 |---|---|---|
-| `GET /tams/v1/flow-delete-requests` | Not implemented | Endpoint is routed and returns 200 with an empty list, but the underlying lifecycle (request → in-progress → done) is part of M16 GC, which is not yet built. Today, `DELETE /flows/{flowId}` synchronously removes metadata and the `flow-delete-request` row is bookkeeping only. |
+| `GET /tams/v1/flow-delete-requests` | Not implemented | The endpoint is routed and returns 200 with an empty list. The server creates no flow delete request, because both delete endpoints are synchronous. An asynchronous delete is later work. It is separate from the garbage collector ([design](design/internal-gc/README.md), out of scope). |
 | `HEAD /tams/v1/flow-delete-requests` | Not implemented | As above. |
 | `GET /tams/v1/flow-delete-requests/{requestId}` | Not implemented | Returns 404 because no records are ever created. The endpoint shape is correct so client code that handles 404 will work unchanged once GC lands. |
 | `HEAD /tams/v1/flow-delete-requests/{requestId}` | Not implemented | As above. |

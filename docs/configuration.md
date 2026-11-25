@@ -97,8 +97,8 @@ OpenTAMS — an ingress controller or API gateway — if you need one.
 ## Garbage collection (`internal/gc`)
 
 **The garbage collector is not implemented.** These variables are parsed and validated
-at startup and then ignored — no released build of OpenTAMS reconciles the object store
-against the database, and `opentams gc` exits with an error. They are documented here so
+at startup and then ignored — no released build of OpenTAMS deletes media bytes, and
+`opentams gc` exits with an error. They are documented here so
 an operator who sets them is not surprised when nothing happens. Until the GC worker
 lands, objects orphaned by partial failures accumulate; plan for that in your storage
 sizing, and do **not** substitute an S3 lifecycle policy (it cannot see cross-flow
@@ -106,8 +106,8 @@ references and will delete live data).
 
 | Variable | Default | Required | Description |
 |---|---|---|---|
-| `GC_POLL_INTERVAL` | `5m` | No | How often the GC loop would run S3-vs-DB reconciliation. Currently ignored. |
-| `GC_BATCH_SIZE` | `100` | No | Maximum objects considered per reconciliation pass. Currently ignored. |
+| `GC_POLL_INTERVAL` | `5m` | No | The idle time of the planned GC worker between two cycles ([design](design/internal-gc/README.md)). Currently ignored. |
+| `GC_BATCH_SIZE` | `100` | No | The maximum number of rows in one batch of the planned GC worker. Currently ignored. |
 
 ## Putting it together
 

@@ -393,12 +393,12 @@ This is the same pattern used for sources in `UpsertFlow` (BR-META-01). See BR-M
 **Known limitation**: the upsert does not populate `objects.timerange` or `objects.key_frame_count` from `Segment.ObjectTimerange` / `Segment.KeyFrameCount`. The columns exist and are intended for first-write-wins denormalisation (REQ-DATA-06). The containment rule in BR-META-19 reads the earliest prior `segments.object_timerange` instead.
 
 ### BR-META-08: DeleteSegmentsByTimerange is atomic and leaves object cleanup to the GC
-The store removes every segment whose timerange is **contained in** the query, optionally narrowed by `object_id`. It removes them in one transaction, behind the same flow-row lock as an insert (BR-META-21). TAMS says "Only delete Flow Segments that are completely covered by the given timerange". The `DELETE … RETURNING object_id` feeds a `GROUP BY`, so each object's `ref_count` is decremented once by the number of its segments that went away rather than once per row.
+The store removes every segment whose timerange is **contained in** the query, optionally narrowed by `object_id`. It removes them in one transaction, behind the same flow-row lock as an insert (BR-META-15). TAMS says "Only delete Flow Segments that are completely covered by the given timerange". The `DELETE … RETURNING object_id` feeds a `GROUP BY`, so each object's `ref_count` is decremented once by the number of its segments that went away rather than once per row.
 
 Objects that reach `ref_count = 0` are **left in place**. `DeleteResult` carries only `DeletedCount`; there is no released-object list for a caller to act on. The GC worker owns cleanup, reading `objects WHERE ref_count = 0 AND reaping = false`, deleting the bytes, and reaping the rows. The rationale for keeping the object store off this path is in BR-SEG-10.
 
-### BR-META-09: DeleteFlow cascades and returns zero-ref object IDs
-`DELETE FROM flows WHERE id=?` cascades to segments and flow_tags via FK. Before deletion, collect all `object_id` values from segments. After deletion, return those whose `ref_count` has reached zero.
+### BR-META-09: DeleteFlow cascades and returns only an error
+`DELETE FROM flows WHERE id=?` cascades to segments and flow_tags through the foreign keys. Before the delete, one statement decreases `ref_count` by 1 for each distinct `object_id` of the flow's segments (`internal/metastore/flows.go:444-450`). `DeleteFlow` returns only an error. It returns no object IDs. Known defects: an object that two segments of the flow use is decreased by 1, not 2, and the function does not take the flow-row lock of BR-META-15. The GC design corrects both ([BR-GC-20](../../internal-gc/functional-design/business-rules.md#br-gc-20-deleteflow-locks-the-flow-and-counts-each-segment)).
 
 ### BR-META-10: Stored time values and bounds
 - **Client strings.** `segments.timerange`, `ts_offset`, `object_timerange`, and `last_duration` hold exactly the string the client sent. The conversion layer puts that string in `domain.Segment.TimerangeRaw`, `TSOffsetRaw`, `ObjectTimerangeRaw`, and `LastDurationRaw` (BR-CONV-08). The service passes those fields through unchanged. `InsertSegments` writes the `*Raw` fields to the four columns, and `ListSegments` reads the columns back into the same fields. The store never writes `TimeRange.String()` for a client value. The store parses stored strings for semantic checks and never compares them as text: `10:0`, `[10:0]`, and `[10:0_10:0]` are one range.
@@ -461,7 +461,7 @@ Concrete instances:
 | Child write | Parent table | Where the parent row is created |
 |---|---|---|
 | `UpsertFlow` (new flow) | `sources` (FK `flows.source_id`) | Inside `UpsertFlow` txn (BR-META-01) |
-| `InsertSegments` (any segment) | `objects` (FK `segments.object_id`) | Inside `InsertSegments` per-segment savepoint (BR-META-07) |
+| `InsertSegments` (any segment) | `objects` (FK `segments.object_id`) | Inside the `InsertSegments` transaction, one transaction for the full batch, with no savepoint (BR-META-07) |
 
 Properties shared by all instances of the pattern:
 1. **Single transaction**: the parent insert and the child insert run in the same transaction (or savepoint). A failure in either rolls back both.

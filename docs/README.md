@@ -26,6 +26,7 @@
 |---|---|
 | [`scale-test-plan.md`](scale-test-plan.md) | Load and scale test design. |
 | [`scale-test-runbook.md`](scale-test-runbook.md) | How to run a scale test. |
+| [`runbooks/`](runbooks/) | Operator runbooks. [`runbooks/gc.md`](runbooks/gc.md) covers the garbage collector (draft; it applies after the GC release). |
 | [`deployment/`](deployment/) | Released images and deployment notes. |
 | [`development/`](development/) | Codebase tour for new contributors. |
 | [`good-first-issues.md`](good-first-issues.md) | Curated starting points for a first contribution. |
