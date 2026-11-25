@@ -21,8 +21,7 @@ This document gives the schema, the SQL, the algorithms, the package layout, and
 | `internal/metastore/gc.go` | The methods of `gc.Store` on `*PostgresStore` |
 | `internal/metastore/gc_test.go`, `allocations_test.go` | Integration tests against PostgreSQL (testcontainers) |
 | `cmd/opentams/gc.go` | The `gc` command, the admin listener, the signal handling |
-| `migrations/000006_allocations_and_deleting.{up,down}.sql` | Rename and new table |
-| `migrations/000007_segments_object_id_index.{up,down}.sql` | New index |
+| `migrations/000006_allocations_and_deleting.{up,down}.sql` | Rename, new table, and segment index |
 | `deployments/helm/opentams/templates/gc-*.yaml` | GC Deployment, Service, ServiceMonitor, NetworkPolicy |
 
 `internal/gc` must not import `internal/httpx`. It depends on `internal/metastore` types only through the interface `gc.Store`, and on `internal/objectstore` through `gc.Deleter`.
@@ -158,30 +157,23 @@ CREATE INDEX IF NOT EXISTS allocations_gc_claim_idx
 -- Sweep 2 retry phase (BR-GC-64).
 CREATE INDEX IF NOT EXISTS allocations_gc_retry_idx
     ON allocations (id) WHERE deleting = true;
+
+-- BR-GC-51. Segment count of sweep 1 and the foreign-key check of an
+-- objects delete. A plain index: it is part of this transaction.
+CREATE INDEX IF NOT EXISTS segments_object_id_idx ON segments (object_id);
 ```
+
+Do not add `BEGIN` or `COMMIT` to the file. The migration driver (`database/pgx/v5`, `cmd/opentams/migrate.go:10`) sends the file as one batch of statements. PostgreSQL operates a batch as one implicit transaction. Thus, if one statement fails, PostgreSQL rolls back all statements of the file (BR-GC-51).
 
 `000006_allocations_and_deleting.down.sql`:
 
 ```sql
+DROP INDEX IF EXISTS segments_object_id_idx;
 DROP TABLE IF EXISTS allocations;
 ALTER TABLE objects RENAME COLUMN deleting TO reaping;
 ```
 
-### 3.2 Migration 000007 (`000007_segments_object_id_index.up.sql`)
-
-The file has exactly one statement and no comment lines (BR-GC-51):
-
-```sql
-CREATE INDEX CONCURRENTLY IF NOT EXISTS segments_object_id_idx ON segments (object_id);
-```
-
-`000007_segments_object_id_index.down.sql`:
-
-```sql
-DROP INDEX CONCURRENTLY IF EXISTS segments_object_id_idx;
-```
-
-### 3.3 Schema after the change
+### 3.2 Schema after the change
 
 | Table | Columns that the GC uses |
 |---|---|
@@ -189,7 +181,7 @@ DROP INDEX CONCURRENTLY IF EXISTS segments_object_id_idx;
 | `allocations` | `id TEXT PK`, `flow_id UUID`, `storage_id TEXT`, `expires_at TIMESTAMPTZ`, `created_at TIMESTAMPTZ`, `deleting BOOLEAN` |
 | `segments` | `object_id TEXT NOT NULL REFERENCES objects(id)` (unchanged), new index `segments_object_id_idx` |
 
-`metastore.ExpectedSchemaVersion` = 7 (`internal/metastore/schema.go:23`). Change the comment "Current head is migration 000005" to name 000007.
+`metastore.ExpectedSchemaVersion` = 6 (`internal/metastore/schema.go:23`). Change the comment "Current head is migration 000005 (objects_storage_id_reaping)" to "Current head is migration 000006 (allocations_and_deleting)".
 
 ## 4. Allocation at `POST /flows/{flowId}/storage`
 
@@ -700,9 +692,9 @@ Make each change in the same pull request as the code. The column "Rule" names t
 
 | File | Line | Change | Rule |
 |---|---|---|---|
-| `migrations/000006_*`, `000007_*` | new | Section 3 | BR-GC-50, BR-GC-51 |
-| `migrations/migrations_test.go` | new tests | Tests for 000006 and 000007 (test plan). Do not change TC-MIG-05. | BR-GC-50 |
-| `internal/metastore/schema.go` | 22-23 | `ExpectedSchemaVersion = 7`, comment | BR-GC-52 |
+| `migrations/000006_*` | new | Section 3 | BR-GC-50, BR-GC-51 |
+| `migrations/migrations_test.go` | new tests | Tests for 000006 (test plan). Do not change TC-MIG-05. | BR-GC-50 |
+| `internal/metastore/schema.go` | 22-23 | `ExpectedSchemaVersion = 6`, comment | BR-GC-52 |
 | `internal/metastore/allocations.go` | new | Section 4.2 | BR-GC-01 to BR-GC-06 |
 | `internal/metastore/gc.go` | new | Sections 7 and 8 | BR-GC-30 to BR-GC-46 |
 | `internal/metastore/segments.go` | 96-124 | Remove `ErrSegmentObjectReaping`. Change comments from `reaping` to `deleting`. | BR-GC-74 |

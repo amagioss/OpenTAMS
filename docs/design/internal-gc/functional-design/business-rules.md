@@ -249,6 +249,7 @@ Migration `000006_allocations_and_deleting` does these changes in one file:
 
 - `ALTER TABLE objects RENAME COLUMN reaping TO deleting`. PostgreSQL changes the predicates of the partial indexes `objects_gc_claim_idx` and `objects_gc_retry_idx` automatically. The index names do not change.
 - Create the table `allocations` and its two partial indexes.
+- Create the index `segments_object_id_idx` (BR-GC-51).
 
 Migration 000005 does not change. It shipped in `v0.1.0-alpha.1`, and AGENTS.md does not permit a change to a released migration.
 
@@ -256,22 +257,32 @@ Known deviation from ADR-0017: a rename in one step breaks the old binary. The H
 
 1. Do the upgrade at a time with low write traffic. BR-GC-10 to BR-GC-12 also reject uploads that started before the upgrade (they have no allocation row).
 2. If no registration error is permitted, set the API replica count to 0 before the upgrade.
-3. Do `helm upgrade`.
+3. Do `helm upgrade`. The migration blocks writes to `segments` while it builds the index (BR-GC-51).
 4. Make sure that all API pods have the new version.
+5. If the migration stops with an error, use runbook R7 ([`../../../runbooks/gc.md`](../../../runbooks/gc.md)).
 
 ADR-0041 records this deviation.
 
-### BR-GC-51: Migration 000007 adds the segment index
-Migration `000007_segments_object_id_index` has one statement only:
+### BR-GC-51: Migration 000006 adds the segment index
+The last statement of migration 000006 is:
 
 ```sql
-CREATE INDEX CONCURRENTLY IF NOT EXISTS segments_object_id_idx ON segments (object_id);
+CREATE INDEX IF NOT EXISTS segments_object_id_idx ON segments (object_id);
 ```
 
-`CONCURRENTLY` does not lock writes to `segments`. It cannot operate inside a transaction block. Thus the file must contain no other statement. If the statement stops with an error, PostgreSQL keeps an index that is marked INVALID, and `IF NOT EXISTS` then does nothing. The recovery is in the runbook ([`../../../runbooks/gc.md`](../../../runbooks/gc.md), R7).
+Sweep 1 uses this index for the segment count (BR-GC-33). PostgreSQL uses it for the foreign-key check when the GC deletes an `objects` row.
 
-### BR-GC-52: The minimum schema version is 7
-`metastore.ExpectedSchemaVersion` changes from 5 to 7. A new binary does not start on a database at version 5 or 6 (`ErrSchemaTooOld`).
+The statement does not use `CONCURRENTLY`. These are the results:
+
+- The file is one transaction. If one statement fails, PostgreSQL rolls back all statements of the file. The database stays at the schema of version 5.
+- While the index builds, writes to `segments` wait (segment registration, flow delete, segment delete). Reads of `segments` continue.
+- The rename holds a lock on `objects` until the end of the transaction. API reads do not use `objects`.
+- The build time increases with the row count of `segments`.
+
+*Decision: one migration file with a plain `CREATE INDEX`. Rationale: one file, one transaction, and no index that PostgreSQL marks INVALID after a failure. On a database with 431,000 segment rows, a sorted scan of `segments.object_id` took 0.9 s. Thus the writes wait for a few seconds. Rejected: `CREATE INDEX CONCURRENTLY` in a separate migration 000007. It does not block writes, but it adds a second file and a recovery procedure for an INVALID index.*
+
+### BR-GC-52: The minimum schema version is 6
+`metastore.ExpectedSchemaVersion` changes from 5 to 6. A new binary does not start on a database at version 5 (`ErrSchemaTooOld`).
 
 ### BR-GC-53: Breaking changes for the release notes
 The release notes must list these changes:

@@ -111,23 +111,26 @@ HAVING o.ref_count <> count(s.id);
 
 **Recovery verification.** R1 shows a normal state.
 
-## R7. Migration 000007 stopped with an error
+## R7. Migration 000006 stopped with an error
 
-**Symptoms.** The migration job stops with an error at version 7. `schema_migrations` shows `version = 7` and `dirty = true`.
+**Symptoms.** The migration job stops with an error at version 6. `schema_migrations` shows `version = 6` and `dirty = true`. The new pods do not start (`ErrSchemaTooOld`, or a dirty schema).
 
 **Dashboard view.** Not applicable.
 
 **Investigation steps (procedure).**
-1. Find an index that PostgreSQL marked as not valid:
+1. Read the log of the migration job. Find the statement that failed and the cause.
+2. Make sure that PostgreSQL rolled back the migration. The file is one transaction (BR-GC-51). This query must return `reaping` and no other row:
 
    ```sql
-   SELECT c.relname, i.indisvalid FROM pg_index i
-   JOIN pg_class c ON c.oid = i.indexrelid
-   WHERE c.relname = 'segments_object_id_idx';
+   SELECT column_name FROM information_schema.columns
+   WHERE table_name = 'objects' AND column_name IN ('reaping', 'deleting')
+   UNION ALL
+   SELECT 'allocations' FROM information_schema.tables WHERE table_name = 'allocations';
    ```
 
-2. If the row shows `indisvalid = false`, delete the index: `DROP INDEX CONCURRENTLY IF EXISTS segments_object_id_idx;`.
-3. Set the version back: `opentams migrate force 6`.
-4. Apply the migration again: `opentams migrate up`.
+3. If the query returns a different result, stop. Do not use `migrate force`. Make a report of the result to the maintainers.
+4. Correct the cause of step 1. An example is a statement timeout that is shorter than the index build.
+5. Set the version back: `opentams migrate force 5`.
+6. Apply the migration again: `opentams migrate up`.
 
-**Recovery verification.** The query of step 1 returns `indisvalid = true`. `schema_migrations` shows `version = 7` and `dirty = false`.
+**Recovery verification.** `schema_migrations` shows `version = 6` and `dirty = false`. The query of step 2 returns `deleting` and `allocations`.

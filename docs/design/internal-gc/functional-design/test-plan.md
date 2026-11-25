@@ -640,24 +640,23 @@ Use the HTTP handlers through the router with authentication in development mode
 
 ## 11. Migration tests (`migrations`)
 
-**TC-GC-170: Schema after migration 7.** Integration. After `dbtest.Setup`:
+**TC-GC-170: Schema after migration 6.** Integration. After `dbtest.Setup`:
 - `information_schema.columns` has `objects.deleting` and has no `objects.reaping`.
 - `pg_indexes.indexdef` of `objects_gc_claim_idx` contains `deleting = false`, and of `objects_gc_retry_idx` contains `deleting = true`.
 - The table `allocations` has the columns of section 3.1 of the logic model.
 - `allocations_gc_claim_idx`, `allocations_gc_retry_idx`, and `segments_object_id_idx` exist.
-- `segments_object_id_idx` has `pg_index.indisvalid = true`.
 
 Rules: AC-GC-17.
 
-**TC-GC-171: Down to version 5.** Integration. After `migrate down 2`: no table `allocations`, column `objects.reaping` exists, no index `segments_object_id_idx`.
+**TC-GC-171: Down to version 5.** Integration. After `migrate down 1`: no table `allocations`, column `objects.reaping` exists, no index `segments_object_id_idx`.
 
-**TC-GC-172: Migration 000007 has one statement.** Unit. The up file contains `CREATE INDEX CONCURRENTLY IF NOT EXISTS segments_object_id_idx ON segments (object_id);`. After the removal of whitespace, the file contains exactly one `;`, and it contains no other SQL keyword at the start of a line.
+**TC-GC-172: Migration 000006 is one transaction.** Unit. The up file contains `CREATE INDEX IF NOT EXISTS segments_object_id_idx ON segments (object_id);`. The up file and the down file do not contain `CONCURRENTLY`, `BEGIN`, or `COMMIT` (match without case). The down file contains `DROP INDEX IF EXISTS segments_object_id_idx`.
 
 **TC-GC-173: Migration 000006 contents.** Unit, the same style as TC-MIG-05. The up file contains `ALTER TABLE objects RENAME COLUMN reaping TO deleting`, `CREATE TABLE IF NOT EXISTS allocations`, `allocations_gc_claim_idx`, and `allocations_gc_retry_idx`. The down file contains `DROP TABLE IF EXISTS allocations` and `RENAME COLUMN deleting TO reaping`. TC-MIG-05 does not change.
 
-**TC-GC-174: The rename keeps the values.** Integration. Migrate to 5. Write an object row with `reaping = true`. Migrate to 7. The row has `deleting = true`.
+**TC-GC-174: The rename keeps the values.** Integration. Migrate to 5. Write an object row with `reaping = true`. Migrate to 6. The row has `deleting = true`.
 
-**TC-GC-175: The minimum schema version.** Integration. Migrate to 6. `VerifySchema` returns `ErrSchemaTooOld`. `ExpectedSchemaVersion = 7`.
+**TC-GC-175: The minimum schema version.** Integration. Migrate to 5. `VerifySchema` returns `ErrSchemaTooOld`. `ExpectedSchemaVersion = 6`.
 
 ## 12. Helm tests (`helm template` with assertions in a Go test or a shell test in CI)
 
