@@ -53,7 +53,8 @@ Errors:
 | 400 | `object-exists` | An `object_ids` entry is registered | Use a different ID |
 | 400 | `object-wrong-flow` | An `object_ids` entry is allocated to a different flow | Use a different ID, or use the flow that requested it |
 | 400 | `object-deleting` | The GC is about to delete this ID | Use a different ID |
-| 400 | `schema-validation` | `limit` below 1, more than 100 IDs, or both or neither mode (no change) | Correct the request |
+| 400 | `schema-validation` | `limit` below 1, or more than 100 IDs (no change) | Correct the request |
+| 400 | (empty body) | Both `limit` and `object_ids`, or neither (no change, `internal/httpx/handlers/storage.go:31-33`) | Correct the request |
 | 403 | `read-only` | The flow is read-only (no change) | — |
 | 404 | `not-found` | The flow does not exist (no change) | — |
 
@@ -93,7 +94,6 @@ Content-Type: application/json
    "timerange": "[10:0_12:0)",
    "error": {"type": "https://github.com/amagioss/opentams/problems/object-not-allocated",
              "title": "Object Not Allocated",
-             "status": 400,
              "detail": "object_id \"obj-9\" was not allocated by POST /flows/{flowId}/storage, or its allocation expired and was deleted"}}
 ]}
 ```
@@ -104,7 +104,9 @@ Content-Type: application/json
 | `object-wrong-flow` | The allocation belongs to a different flow | Register on the correct flow, or allocate again |
 | `object-deleting` | The GC claimed the ID | Allocate a new ID and upload again |
 
-If all segments of the request are rejected, the response is also 200 with `failed_segments` (no change in this rule).
+An entry of `failed_segments` has no `status` field. The status of the response is 200.
+
+If all segments of the request are rejected, the response is also 200 with `failed_segments` (no change in this rule). Then the server changes nothing, also not `segments_updated` of the flow.
 
 Removed: the response 409 with type `object-reaping`. The 409 response stays only for an idempotency conflict.
 
@@ -123,7 +125,9 @@ New field `min_presigned_url_timeout`. It has the same value as `min_object_time
 
 ### 1.4 `DELETE /tams/v1/flows/{flowId}` and `DELETE /tams/v1/flows/{flowId}/segments`
 
-No change in the request, the response, or the status codes. Both stay synchronous. The effect on `ref_count` becomes correct (BR-GC-20, BR-GC-21). The media bytes are deleted later by the GC, not by the request.
+No change in the request or the response. Both stay synchronous. The effect on `ref_count` becomes correct (BR-GC-20, BR-GC-21). The media bytes are deleted later by the GC, not by the request.
+
+Change: `DELETE /tams/v1/flows/{flowId}` on a read-only flow returns 403 `read-only` and deletes nothing (BR-GC-20, error B9). Before this change, it deleted the flow. The contract already defines this 403 response.
 
 ## 2. CLI `opentams gc`
 
@@ -140,7 +144,7 @@ The command reads only environment variables (section 6). It has no other flags.
 
 ## 3. Admin HTTP endpoints of the GC process
 
-The GC process listens on `SERVER_PORT` (default 8080). It serves only these three paths. It does not serve the TAMS API. The paths have no authentication, as on the API server.
+The GC process listens on `SERVER_PORT` (default 8080). It serves only these three paths. It does not serve the TAMS API. The paths have no authentication, as on the API server. The listener always uses plain HTTP. The GC ignores `SERVER_TLS_CERT_FILE` and `SERVER_TLS_KEY_FILE`.
 
 | Path | 200 when | Non-200 |
 |---|---|---|
@@ -156,7 +160,7 @@ All names start with `opentams_gc_`. The label `sweep` has the values `released`
 |---|---|---|---|
 | `opentams_gc_items_total` | counter | `sweep`, `outcome` | Rows that the GC removed. `outcome` is `deleted` (bytes and row), `byos_row_only` (sweep 1, row only), or `registered_leftover` (sweep 2, row only). |
 | `opentams_gc_refcount_drift_total` | counter | — | Sweep 1 found segments for an object at `ref_count = 0` and corrected the count (BR-GC-33). |
-| `opentams_gc_errors_total` | counter | `sweep`, `stage` | Errors. `stage` is `retry_select`, `claim`, `s3_delete`, `row_delete`, or `gauge`. |
+| `opentams_gc_errors_total` | counter | `sweep`, `stage` | Errors. `stage` is `reclaim`, `claim`, `s3_delete`, `row_delete`, or `gauge`. |
 | `opentams_gc_backlog` | gauge | `sweep`, `state` | Rows that wait. `state` is `pending` (candidates), `retrying` (`deleting = true`), or `unknown_storage` (BR-GC-37, BR-GC-45). Updated at the end of each cycle. |
 | `opentams_gc_oldest_overdue_allocation_seconds` | gauge | — | Time since the oldest candidate of sweep 2 passed `expires_at + GC_ALLOCATION_GRACE`. 0 if there is no candidate. |
 | `opentams_gc_allocations_rows` | gauge | — | All rows of the `allocations` table. |
@@ -171,12 +175,14 @@ With two or more replicas, each replica exports the gauges with the same value. 
 
 | Alert | Expression | Runbook |
 |---|---|---|
-| GCDown | `time() - max by (sweep) (opentams_gc_last_success_timestamp_seconds) > 2 * <GC_POLL_INTERVAL in seconds> + 600` | R1 |
+| GCDown | `(time() - max by (sweep) (opentams_gc_last_success_timestamp_seconds) > 2 * <GC_POLL_INTERVAL in seconds> + 600) or absent(opentams_gc_last_success_timestamp_seconds)` | R1 |
 | GCRetryStuck | `max by (sweep) (opentams_gc_backlog{state="retrying"}) > 0` for 2 h | R2 |
 | GCRefcountDrift | `increase(opentams_gc_refcount_drift_total[1h]) > 0` | R3 |
 | GCBacklogGrowing | `deriv(max by (sweep) (opentams_gc_backlog{state="pending"})[2h:]) > 0` for 6 h | R4 |
 | GCAllocationLag | `max(opentams_gc_oldest_overdue_allocation_seconds) > 3600` | R4 |
 | GCUnknownStorage | `max by (sweep) (opentams_gc_backlog{state="unknown_storage"}) > 0` | R5 |
+
+The `absent()` part of GCDown also fires when no GC pod operates, and before the first successful batch. Add GCDown only where `gc.enabled` is true.
 
 The runbooks are in [`../../../runbooks/gc.md`](../../../runbooks/gc.md).
 
@@ -192,7 +198,8 @@ The GC uses the JSON logger of the project (`pkg/logger`). Each line has the sta
 | WARN | `gc refcount drift` | `object_id`, `stored_ref_count`, `actual_ref_count` | BR-GC-33 |
 | WARN | `gc object delete failed` | `sweep`, `object_id`, `error` | BR-GC-63 |
 | WARN | `gc gauge update failed` | `sweep`, `error` | Backlog query error |
-| ERROR | `gc batch error` | `sweep`, `stage`, `error` | BR-GC-62 |
+| WARN | `gc batch skipped` | `sweep`, `ids`, `age_ms` | The claim is older than half the claim lease (BR-GC-65) |
+| ERROR | `gc batch error` | `sweep`, `stage`, `error` | Each batch-level error (BR-GC-62) |
 | DEBUG | `gc batch claimed` | `sweep`, `selected`, `claimed`, `row_only` | Each claim |
 
 The `storage_id` field is empty for a BYOS row.
@@ -222,7 +229,7 @@ The database and object-store settings are the same as for `serve` (`docs/config
 | `gc.allocationGrace` | `5m` | `GC_ALLOCATION_GRACE` |
 | `gc.resources` | `{}` | Container resources of the GC pods |
 
-The GC pods use the labels `app.kubernetes.io/name: <name>-gc` and `app.kubernetes.io/instance: <release>`.
+The GC pods use the labels `app.kubernetes.io/name: <name>-gc` and `app.kubernetes.io/instance: <release>`. The metadata of each GC object uses `opentams.gcLabels` (logic model section 12.2). The GC Service has the `prometheus.io/*` scrape annotations when `serviceMonitor.enabled` is false, as the API Service has.
 
 - `<name>` is the output of the chart helper `opentams.name`. It is `nameOverride` if that value is set. If not, it is the chart name `opentams`. Thus the default label is `app.kubernetes.io/name: opentams-gc`.
 - `<release>` is the Helm release name.

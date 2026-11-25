@@ -75,18 +75,18 @@ The functional rules are in [`../functional-design/business-rules.md`](../functi
   - The claim flag `deleting` (BR-GC-31, BR-GC-12).
   - A segment-count check before each sweep 1 claim (BR-GC-33).
   - An object-row check before each sweep 2 claim (BR-GC-42).
-- **NFR-GC-R2**: If the process stops at any point of a batch, no data is lost. The rows stay `deleting = true`, and the next cycle completes the delete (BR-GC-66).
+- **NFR-GC-R2**: If the process stops at any point of a batch, no data is lost. The rows stay `deleting = true`, and a later cycle completes the delete after the claim lease (BR-GC-66).
 - **NFR-GC-R3**: An object-store delete for a key that does not exist is a success. Thus each delete can be done again.
 - **NFR-GC-R4**: A batch-level error stops the current cycle. The sweep starts again after `GC_POLL_INTERVAL` (BR-GC-62).
 - **NFR-GC-R5**: Each database statement of the GC has a timeout of 30 s. Each object-store call has a timeout of 60 s. These values are code constants.
 - **NFR-GC-R6**: `/healthz` returns 200 while the process operates. It does not examine the database or the object store. `/readyz` returns 200 only if the database and the object store are available, and the process did not receive SIGTERM.
 - **NFR-GC-R7**: On SIGTERM, the GC claims no new batch. It lets the current batch complete for a maximum of `SERVER_GRACEFUL_SHUTDOWN_PERIOD`, and then it cancels the batch.
-- **NFR-GC-R8**: Two or more GC replicas can operate at the same time. `FOR UPDATE SKIP LOCKED` divides the work. A duplicate delete of the same row is harmless (BR-GC-65).
-- **NFR-GC-R9**: All transactions that change object rows lock them in ascending `object_id` sequence. This prevents deadlocks (SQLSTATE `40P01`) between requests that share objects (BR-GC-23).
+- **NFR-GC-R8**: Two or more GC processes can operate at the same time. `FOR UPDATE SKIP LOCKED` divides the work. A claim lease of 5 minutes (`claimed_at`) keeps each claimed row with one process. No process deletes the bytes of a row that a different process holds (BR-GC-65).
+- **NFR-GC-R9**: All transactions that change two or more object rows or allocation rows lock them in ascending byte order of the ID (`COLLATE "C"` in SQL, `slices.Sort` in Go). This prevents deadlocks (SQLSTATE `40P01`) between transactions that share rows (BR-GC-23).
 
 *Decision: retry a failed object one time in each cycle, with no attempt limit. Rationale: a permanent error must stay visible, and a metric with an alert shows it. A hot loop must not occur. Rejected: an attempt counter (one more column, and the row still needs a person to act).*
 
-*Decision: no lease column for retry rows. Rationale: when two replicas retry the same row, the second object-store delete is a success, and the second row delete changes 0 rows. Rejected: a `deleting_since` column (one more column and one more setting, for a harmless duplicate).*
+*Decision: a claim lease with the column `claimed_at` and the constant `claimLease` (5 minutes). The retry phase takes back only rows whose lease ended. Rationale: without a lease, a second GC process can delete a row that a first process holds. If a client then allocates the same ID again and uploads, the delayed delete of the first process removes the new bytes (BR-GC-65). This occurs also with one replica, during a rolling update. Rejected: no lease (the duplicate delete is not harmless when an ID is used again). Rejected: one GC process only (a rolling update still runs two pods). Rejected: row locks held during the object-store call (a registration of that ID waits for up to 60 s).*
 
 ## 6. Performance
 
@@ -129,13 +129,15 @@ Each criterion is concrete and has one or more tests in the test plan.
 | AC-GC-08 | A flow delete and a timerange delete on the same flow at the same time give a correct `ref_count`. | TC-GC-041, TC-GC-042 |
 | AC-GC-09 | After a cycle, a released controlled object has no row and no bucket key. One INFO log line records it. | TC-GC-060, TC-GC-140 |
 | AC-GC-10 | Sweep 1 does not delete an object whose `ref_count` is 0 while a segment refers to it. It sets `ref_count` to the real count and increments `opentams_gc_refcount_drift_total`. | TC-GC-063 |
-| AC-GC-11 | Sweep 2 deletes the bucket key of an allocation after `expires_at + GC_ALLOCATION_GRACE`, and not before. | TC-GC-080, TC-GC-081 |
+| AC-GC-11 | Sweep 2 deletes the bucket key of an allocation after `expires_at + GC_ALLOCATION_GRACE`, and not before. | TC-GC-080, TC-GC-081, TC-GC-141 |
 | AC-GC-12 | Sweep 2 never deletes bytes for an ID that has an object row. It deletes only the allocation row. | TC-GC-083 |
-| AC-GC-13 | An object-store error for each key of a batch stops the cycle, and the rows stay `deleting = true`. The next cycle deletes them. | TC-GC-100, TC-GC-101 |
+| AC-GC-13 | An object-store error for each key of a batch stops the cycle, and the rows stay `deleting = true`. A later cycle deletes them after the claim lease. | TC-GC-100, TC-GC-101 |
 | AC-GC-14 | `opentams gc --once` returns exit code 0 after a cycle with no batch-level error, and exit code 1 after a cycle with a batch-level error. | TC-GC-120, TC-GC-121 |
 | AC-GC-15 | `GET /service` returns `min_presigned_url_timeout` with the same value as `min_object_timeout`. | TC-GC-012 |
 | AC-GC-16 | The process does not start if `OBJECT_STORE_PRESIGN_EXPIRY` is less than 300 s, if `GC_BATCH_SIZE` is outside 1 to 1000, if `GC_POLL_INTERVAL` is 0 or less, or if `GC_ALLOCATION_GRACE` is less than 0. | TC-GC-150 to TC-GC-154 |
 | AC-GC-17 | After migration 000006, the column `objects.deleting` exists, `objects.reaping` does not exist, and the partial indexes use `deleting`. | TC-GC-170 |
+| AC-GC-18 | A row that a GC process claimed less than 5 minutes ago is not taken by a different process. A process does not call the object store for a claim older than half the lease. | TC-GC-065, TC-GC-096 |
+| AC-GC-19 | `DELETE /flows/{flowId}` on a read-only flow returns 403 `read-only` and changes nothing. | TC-GC-047, TC-GC-048 |
 
 ## 9. Deferred items and open questions
 

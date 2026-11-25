@@ -55,7 +55,8 @@ These terms have one meaning in all documents of this folder.
 | Controlled object | An object row with `storage_id` NOT NULL. OpenTAMS owns the bytes in its bucket. |
 | BYOS object | An object row with `storage_id` NULL ("bring your own storage"). The client owns the media. OpenTAMS has only URLs. |
 | Released object | An object row with `ref_count = 0`. No segment refers to it. |
-| Claim | The GC sets `deleting = true` on a row and commits. After the claim, no client request can use that ID again. |
+| Claim | The GC sets `deleting = true` and `claimed_at = now()` on a row and commits. While the row exists, no client request can use that ID. After the GC deletes the row, a client can allocate the ID again. |
+| Claim lease | The time (5 minutes) after `claimed_at` during which no other GC process takes a claimed row (BR-GC-65). |
 | Sweep 1 | The GC process that deletes released objects. Metric label `sweep="released"`. |
 | Sweep 2 | The GC process that deletes expired allocations. Metric label `sweep="allocation"`. |
 | Batch | One set of up to `GC_BATCH_SIZE` rows that the GC claims and deletes together. |

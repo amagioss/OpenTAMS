@@ -11,7 +11,12 @@ status: Draft (not implemented)
 - Write each test before its code. The test must first give an error for the correct reason (AGENTS.md, CONTRIBUTING.md). For a bug correction (TC-GC-040 to TC-GC-043), first run the test against the current code and record that it shows the bug.
 - Put the label of the test in a comment above the test function, for example `// TC-GC-041: DeleteFlow and a timerange delete at the same time`. The labels are local to this design (docs/README.md, "Identifier conventions").
 - Level "unit" uses no infrastructure. Use hand-made fakes with function fields, as the existing tests do (NFR-SVC-STG-M2).
-- Level "integration" uses the build tag `integration`, PostgreSQL from `internal/dbtest.Setup`, and (where the test names MinIO) a MinIO container. Move `setupMinIO` from `internal/objectstore/objectstore_perf_test.go` to a shared helper `internal/objtest` with the build tags `integration || perf`. Do not copy it.
+- Level "integration" uses the build tag `integration` and (where the test names MinIO) a MinIO container. Move `setupMinIO` from `internal/objectstore/objectstore_perf_test.go` to a shared helper `internal/objtest` with the build tags `integration || perf`. Do not copy it.
+- PostgreSQL for integration tests:
+  - In `internal/metastore`, use the shared `testPool` of `store_test.go` (one container for the package). Each test of sections 4 and 5 calls `resetGCTables(t)` first. Reason: the sweep methods read the full table, and other tests of the package leave committed rows (for example `segments_test.go:415` leaves `oB` and `oC` at `ref_count = 0`). The tests of the package do not use `t.Parallel`.
+  - In other packages, use `internal/dbtest.Setup`.
+  - Before each `InsertSegments` call with a controlled segment that a test does not name as "no allocation", call `seedAllocation` (logic model section 13).
+- Collation database: TC-GC-036, TC-GC-043, and TC-GC-071 operate on a second database in the same container. Make it with `CREATE DATABASE gc_icu TEMPLATE template0 LOCALE_PROVIDER icu ICU_LOCALE 'en-US'`, and apply the migrations. The test first makes sure that `SELECT 'a1' < 'B1'` returns true in that database. If it returns false, the test fails, because it cannot show the error. Reason: `postgres:16-alpine` sorts the default collation in byte order, and a production database (for example `en_US.UTF-8`) does not.
 - The database fixtures use plain SQL `INSERT` statements. Unless a test gives other values, use:
 
 | Fixture | Value |
@@ -19,12 +24,16 @@ status: Draft (not implemented)
 | Flow F | `11111111-1111-1111-1111-111111111111`, codec `video/h264`, not read-only |
 | Flow G | `22222222-2222-2222-2222-222222222222` |
 | Configured storage ID | `default` |
+| `objects.storage_id` | `'default'` (controlled). A test that needs a BYOS object gives `storage_id NULL`. |
+| `objects.claimed_at` | `now()` if the test gives `deleting = true`. Else NULL. |
+| Allocation row | `storage_id 'default'`, `expires_at = now() + interval '1 hour'`, `deleting = false`, `claimed_at` NULL |
 | `OBJECT_STORE_PRESIGN_EXPIRY` | `1h` |
 | `GC_ALLOCATION_GRACE` | `5m` |
 | `GC_BATCH_SIZE` | `1000` |
 | Timestamp tolerance | 5 s |
 
-- For the worker unit tests, `internal/gc` has the unexported fields `dbTimeout` and `s3Timeout` on `Worker`. `New` sets them from the constants. A test in the same package can set them to 50 ms.
+- For the worker unit tests, `internal/gc` has the unexported fields `dbTimeout`, `s3Timeout`, `claimLease`, and `now` on `Worker`. `New` sets them from the constants and `time.Now`. A test in the same package can set the timeouts to 50 ms and `now` to a fake clock.
+- The tests of sections 7 and 8 call `runGC` (logic model section 10) with the environment of that section and a `zaptest/observer` logger. They examine the log lines through the observer.
 - The minimum completeness rule: each acceptance criterion `AC-GC-*` has one or more tests, each error type has a test, and each reliability rule has a test.
 
 ## 1. API and service tests: allocation (`POST /flows/{flowId}/storage`)
@@ -128,11 +137,16 @@ In these tests, a "controlled segment" has no `get_urls`, and a "BYOS segment" h
 - Given: allocation `a1` for flow F. No row for `zz`.
 - When: `InsertSegments` for flow F with segment s1 (`a1`, `[0:0_2:0)`) and segment s2 (`zz`, `[2:0_4:0)`).
 - Then:
-  - `AcceptedIndices = [0]`. `RejectedIndices = [1]`. `RejectReasons[0].Type` = `https://github.com/amagioss/opentams/problems/object-not-allocated`.
+  - `AcceptedIndices = [0]`. `RejectedIndices = [1]`. `RejectReasons[0].Code = apperror.ErrObjectNotAllocated`. The detail contains `zz`.
   - The database has segment s1 and no segment s2.
   - There is no object row `zz`.
-  - The service gives `OutcomePartial`, and the handler gives 200 with one `failed_segments` entry.
 - Rules: BR-GC-12 row 6, BR-GC-15, BR-GC-71.
+
+**TC-GC-016: The service maps a store rejection.** Unit, `internal/service/segment`.
+- Given: a fake store that returns `InsertResult{AcceptedIndices: [0], RejectedIndices: [1], RejectReasons: [{Code: apperror.ErrObjectNotAllocated, Detail: "d"}]}` for a batch of two segments.
+- When: `RegisterBatch`.
+- Then: `OutcomePartial`. `Failed[0].Type` = `https://github.com/amagioss/opentams/problems/object-not-allocated`, `Failed[0].Title` = `Object Not Allocated`, `Failed[0].Reason` = `d`.
+- Rules: BR-GC-15, BR-GC-71.
 
 **TC-GC-021: Registration uses the allocation.** Integration, `internal/metastore`.
 - Given: allocation `a1`, flow F, `storage_id 'default'`.
@@ -173,7 +187,7 @@ In these tests, a "controlled segment" has no `get_urls`, and a "BYOS segment" h
 **TC-GC-027: No response has status 409 for an object.** Unit, `internal/httpx/handlers`.
 - Given: a fake segment service that returns `RegisterResult{Outcome: OutcomeAllRejected, Failed: [one entry with Type ".../object-deleting", Status 400]}`.
 - When: `POST /tams/v1/flows/<F>/segments` with a valid idempotency key.
-- Then: status 200, body `failed_segments[0].error.type` ends with `object-deleting`. A search of the package for `object-reaping` finds nothing.
+- Then: status 200, body `failed_segments[0].error.type` ends with `object-deleting`. The entry has no `status` field. A search of the package for `object-reaping` finds nothing. Also, `cachedPostResponse` with a cached 409 and an empty body gives type `…/object-deleting` and status 409.
 - Rules: BR-GC-16, BR-GC-74.
 
 **TC-GC-028: A claimed allocation gives `object-deleting`.** Integration, `internal/metastore`.
@@ -227,9 +241,9 @@ In these tests, a "controlled segment" has no `get_urls`, and a "BYOS segment" h
 - Case B: a raw transaction locks the row with `SELECT … FOR UPDATE` and holds it. `ClaimExpiredAllocations` returns `Selected = 0`. Then the raw transaction commits with no change, `InsertSegments` on `a1` is accepted, and a second `ClaimExpiredAllocations` returns nothing for `a1` (no allocation row).
 - Rules: BR-GC-46.
 
-**TC-GC-036: Sorted locks prevent deadlocks in registration.** Integration, `internal/metastore`.
-- Given: object rows `a1` and `b1` with `ref_count = 1`. Flows F and G.
-- When: 200 repetitions. In each, at a barrier, goroutine 1 registers on flow F two segments on `b1`, `a1` (in this sequence), and goroutine 2 registers on flow G two segments on `a1`, `b1`.
+**TC-GC-036: Sorted locks prevent deadlocks in registration.** Integration, `internal/metastore`, collation database.
+- Given: object rows `B1` and `a1` with `ref_count = 0`, `deleting = false`, and no segments. Flows F and G.
+- When: 200 repetitions. In each, two goroutines start at a barrier. Goroutine 1 registers on flow F two segments, on `a1` and then on `B1`. Goroutine 2 registers on flow G two segments, on `B1` and then on `a1`. Each repetition uses new timeranges.
 - Then: no error with SQLSTATE `40P01`. After all repetitions, `ref_count` of each object equals its segment count.
 - Rules: BR-GC-11, BR-GC-23.
 
@@ -243,12 +257,12 @@ In these tests, a "controlled segment" has no `get_urls`, and a "BYOS segment" h
 - Given: no row for `m1`.
 - When: `InsertSegments` with one controlled segment and one BYOS segment, both on `m1`.
 - Then: both rejected with `object-not-allocated`.
-- Rules: BR-GC-12 (section 5.1 of the logic model).
+- Rules: BR-GC-11, BR-GC-12.
 
-**TC-GC-039: The object timerange check applies only to accepted segments.** Integration, `internal/metastore`.
-- Given: no row for `zz`. Object `a1` with a segment that has `object_timerange [0:0_10:0)`.
-- When: `InsertSegments` with segment s1 on `zz` and `object_timerange [0:0_99:0)` (no allocation), and segment s2 on `a1` with `object_timerange [0:0_5:0)`.
-- Then: s1 rejected with `object-not-allocated`, not with `invalid-object-timerange`. s2 accepted.
+**TC-GC-039: A request with no accepted segment changes nothing.** Integration, `internal/metastore`.
+- Given: flow F with `segments_updated = '2020-01-01T00:00:00Z'` (set with SQL). No row for `zz`.
+- When: `InsertSegments` for flow F with one controlled segment on `zz`.
+- Then: nil error. `RejectedIndices = [0]`, `AcceptedIndices = []`. `segments_updated` of F is `2020-01-01T00:00:00Z`. No object row `zz`. No segment row.
 - Rules: BR-GC-15.
 
 ## 3. Behaviour tests: deletes
@@ -282,8 +296,8 @@ In these tests, a "controlled segment" has no `get_urls`, and a "BYOS segment" h
 - Then: `ref_count` of `b1` equals the number of segment rows on `b1`. With the correction, goroutine 2 waits for the flow lock and then gets "flow not found", and `ref_count(b1) = 1`. Against the current code, `ref_count(b1) = 2` with 1 segment row.
 - Rules: BR-GC-20.
 
-**TC-GC-043: Sorted locks prevent deadlocks in deletes.** Integration, `internal/metastore`.
-- Given: in each repetition, new flows F and G, each with segments on new objects `a` and `b` (F: `b` then `a`, G: `a` then `b`).
+**TC-GC-043: Sorted locks prevent deadlocks in deletes.** Integration, `internal/metastore`, collation database.
+- Given: in each repetition i, new flows F and G, each with segments on new objects `B<i>` and `a<i>` (F: `a<i>` then `B<i>`, G: `B<i>` then `a<i>`).
 - When: 100 repetitions of `DeleteFlow(F)` and `DeleteFlow(G)` at a barrier.
 - Then: no error with SQLSTATE `40P01`. Each object has `ref_count = 0`.
 - Rules: BR-GC-23.
@@ -305,13 +319,25 @@ In these tests, a "controlled segment" has no `get_urls`, and a "BYOS segment" h
 - Then: nil. Flow F does not exist.
 - Rules: BR-GC-20.
 
+**TC-GC-047: `DeleteFlow` of a read-only flow (B9).** Integration, `internal/metastore`.
+- Given: flow F with `read_only = true` and one segment on `a1`. Object `a1` with `ref_count = 1`.
+- When: `DeleteFlow(F)`.
+- Then: `*apperror.AppError` with code `read-only`. Flow F, its segment, and `ref_count = 1` do not change. Against the current code, the flow is deleted. Record this before the correction.
+- Rules: BR-GC-20, AC-GC-19.
+
+**TC-GC-048: `DELETE /flows/{flowId}` of a read-only flow gives 403.** Unit, `internal/httpx` (router with the error middleware, fake flow service).
+- Given: the fake `DeleteFlow` returns `apperror.New(apperror.ErrReadOnly, "flow is read-only")`.
+- When: `DELETE /tams/v1/flows/<F>`.
+- Then: status 403. The body `type` ends with `read-only`.
+- Rules: BR-GC-20, AC-GC-19.
+
 ## 4. Behaviour tests: sweep 1 store methods
 
 **TC-GC-060: A released controlled object is claimed and deleted.** Integration, `internal/metastore`, with MinIO for the e2e part in TC-GC-140.
 - Given: object `r1` with `ref_count = 0`, `storage_id 'default'`, `deleting = false`.
 - When: `ClaimReleasedObjects(ctx, "default", 1000)`, then `DeleteClaimedObjects(ctx, ["r1"])`.
-- Then: the claim returns `Selected = 1`, `Claimed = ["r1"]`. After the claim, `deleting = true`. The delete returns `["r1"]`, and there is no object row `r1`.
-- Rules: BR-GC-30, BR-GC-32, BR-GC-36.
+- Then: the claim returns `Selected = 1`, `Claimed = ["r1"]`. After the claim, `deleting = true`, and `claimed_at` is within 5 s of the database `now()`. The delete returns `["r1"]`, and there is no object row `r1`.
+- Rules: BR-GC-30, BR-GC-31, BR-GC-32, BR-GC-36.
 
 **TC-GC-061: A released BYOS object is a row-only delete.** Integration, `internal/metastore`.
 - Given: object `y1` with `ref_count = 0`, `storage_id NULL`.
@@ -337,11 +363,14 @@ In these tests, a "controlled segment" has no `get_urls`, and a "BYOS segment" h
 - Then: `Selected = 0`. `UnknownStorage = 1`. The row does not change.
 - Rules: BR-GC-37.
 
-**TC-GC-065: A claimed row is not a candidate again.** Integration, `internal/metastore`.
-- Given: object `r1` with `ref_count = 0`, `deleting = true`.
-- When: `ClaimReleasedObjects`, then `ListRetryObjects(ctx, "default", "", 1000)`.
-- Then: the claim gives `Selected = 0`. The retry list gives `["r1"]`.
-- Rules: BR-GC-30, BR-GC-64.
+**TC-GC-065: A claimed row is not a candidate again, and the lease protects it.** Integration, `internal/metastore`.
+- Given: object `r1` with `ref_count = 0`, `deleting = true`, `claimed_at = now()`.
+- When:
+  1. `ClaimReleasedObjects(ctx, "default", 1000)`.
+  2. `ReclaimRetryObjects(ctx, "default", 5*time.Minute, time.Now().Add(time.Minute), 1000)`.
+  3. With SQL, set `claimed_at = now() - interval '10 minutes'`. Then step 2 again.
+- Then: step 1 gives `Selected = 0`. Step 2 gives `[]` (a different process holds the lease). Step 3 gives `["r1"]`, and `claimed_at` of `r1` is within 5 s of the database `now()`.
+- Rules: BR-GC-30, BR-GC-64, BR-GC-65, AC-GC-18.
 
 **TC-GC-066: Two claims at the same time get different rows.** Integration, `internal/metastore`.
 - Given: objects `r1` and `r2` with `ref_count = 0`.
@@ -349,10 +378,10 @@ In these tests, a "controlled segment" has no `get_urls`, and a "BYOS segment" h
 - Then: the two `Claimed` lists are `["r1"]` and `["r2"]` in some sequence.
 - Rules: NFR-GC-R8.
 
-**TC-GC-067: The retry list uses a keyset.** Integration, `internal/metastore`.
-- Given: objects `k1`, `k2`, `k3` with `deleting = true`, `storage_id 'default'`.
-- When: `ListRetryObjects(ctx, "default", "", 2)`, then `ListRetryObjects(ctx, "default", "k2", 2)`.
-- Then: `["k1", "k2"]`, then `["k3"]`.
+**TC-GC-067: The reclaim gives one attempt in each cycle.** Integration, `internal/metastore`.
+- Given: objects `k1`, `k2`, `k3` with `deleting = true`, `claimed_at = now() - interval '10 minutes'`. T is `time.Now()` at the start of the test.
+- When: `ReclaimRetryObjects(ctx, "default", 5*time.Minute, T, 2)` three times.
+- Then: `["k1", "k2"]`, then `["k3"]`, then `[]`. After the third call, each row has a `claimed_at` later than T.
 - Rules: BR-GC-64.
 
 **TC-GC-068: The row delete removes only claimed rows.** Integration, `internal/metastore`.
@@ -367,12 +396,18 @@ In these tests, a "controlled segment" has no `get_urls`, and a "BYOS segment" h
 - Then: an error with SQLSTATE `23503`. The row still exists.
 - Rules: BR-GC-36.
 
+**TC-GC-071: The row delete and a registration do not deadlock.** Integration, `internal/metastore`, collation database.
+- Given: in each repetition i, objects `B<i>` and `a<i>` with `ref_count = 0`, `deleting = true`.
+- When: 100 repetitions. In each, two goroutines start at a barrier. Goroutine 1 calls `InsertSegments` on flow F with one controlled segment on each of the two IDs. Goroutine 2 calls `DeleteClaimedObjects(ctx, ["a<i>", "B<i>"])`.
+- Then: no error with SQLSTATE `40P01`. Goroutine 1 gets `object-deleting` for each segment, or (if the delete committed first) `object-not-allocated`.
+- Rules: BR-GC-23, BR-GC-36.
+
 ## 5. Behaviour tests: sweep 2 store methods
 
 **TC-GC-080: An allocation after `expires_at + grace` is claimed.** Integration, `internal/metastore`.
 - Given: allocation `e1` with `expires_at = now() - interval '5 minutes' - interval '1 second'`.
 - When: `ClaimExpiredAllocations(ctx, "default", 5*time.Minute, 1000)`, then `DeleteClaimedAllocations(ctx, ["e1"])`.
-- Then: `Claimed = ["e1"]`. The delete returns `["e1"]`, and no allocation row `e1` exists.
+- Then: `Claimed = ["e1"]`. After the claim, `claimed_at` of `e1` is within 5 s of the database `now()`. The delete returns `["e1"]`, and no allocation row `e1` exists.
 - Rules: BR-GC-40, BR-GC-41, BR-GC-44, AC-GC-11.
 
 **TC-GC-081: An allocation before `expires_at + grace` is not claimed.** Integration, `internal/metastore`.
@@ -405,11 +440,11 @@ In these tests, a "controlled segment" has no `get_urls`, and a "BYOS segment" h
 - Then: `RowOnly = ["l3"]`, `Claimed = []`.
 - Rules: BR-GC-42.
 
-**TC-GC-086: A claimed allocation is not a candidate again.** Integration, `internal/metastore`.
-- Given: allocation `e4`, expired, `deleting = true`.
-- When: `ClaimExpiredAllocations`, then `ListRetryAllocations(ctx, "default", "", 1000)`.
-- Then: `Selected = 0`. The retry list gives `["e4"]`.
-- Rules: BR-GC-40, BR-GC-64.
+**TC-GC-086: A claimed allocation is not a candidate again, and the lease protects it.** Integration, `internal/metastore`.
+- Given: allocation `e4`, expired, `deleting = true`, `claimed_at = now()`.
+- When: `ClaimExpiredAllocations`. Then `ReclaimRetryAllocations(ctx, "default", 5*time.Minute, time.Now().Add(time.Minute), 1000)`. Then set `claimed_at = now() - interval '10 minutes'` with SQL, and do the reclaim again.
+- Then: `Selected = 0`. The first reclaim gives `[]`. The second reclaim gives `["e4"]`.
+- Rules: BR-GC-40, BR-GC-64, BR-GC-65.
 
 **TC-GC-087: An allocation with an unknown storage ID.** Integration, `internal/metastore`.
 - Given: allocation `e5`, expired, `storage_id 'other'`.
@@ -430,13 +465,13 @@ The fake `Store` records each call. The fake `Deleter` returns results from a sc
 **TC-GC-100: An error for each ID stops the cycle.** Unit.
 - Given: claim returns `Selected 2, Claimed ["a", "b"]`. The deleter returns `ErrTransient` for `a` and `b`.
 - When: one cycle of sweep 1.
-- Then: `CycleResult{Failed: 2, BatchError: true}`. `DeleteClaimedObjects` is not called. The claim is called one time only. `opentams_gc_errors_total{sweep="released",stage="s3_delete"}` = 2.
+- Then: `CycleResult{Failed: 2, BatchError: true}`. `DeleteClaimedObjects` is not called. The claim is called one time only. `opentams_gc_errors_total{sweep="released",stage="s3_delete"}` = 2 (one for each ID, no more). One ERROR line `gc batch error` with `stage = s3_delete`.
 - Rules: BR-GC-62, AC-GC-13.
 
 **TC-GC-101: The next cycle completes the delete.** Unit.
-- Given: the state after TC-GC-100. `ListRetryObjects` returns `["a", "b"]`, then `[]`. The deleter returns success.
+- Given: the state after TC-GC-100. `ReclaimRetryObjects` returns `["a", "b"]`. The deleter returns success.
 - When: the next cycle.
-- Then: `ListRetryObjects` is called before `ClaimReleasedObjects`. `DeleteClaimedObjects(["a", "b"])` is called. `Deleted = 2`.
+- Then: `ReclaimRetryObjects` is called before `ClaimReleasedObjects`. `DeleteClaimedObjects(["a", "b"])` is called. `Deleted = 2`.
 - Rules: BR-GC-64, AC-GC-13.
 
 **TC-GC-102: An error for one ID does not stop the cycle.** Unit.
@@ -448,13 +483,13 @@ The fake `Store` records each call. The fake `Deleter` returns results from a sc
 **TC-GC-103: `ErrAuth` for the call stops the cycle.** Unit.
 - Given: the deleter returns `(nil, ErrAuth)`.
 - When: one cycle.
-- Then: `BatchError = true`. `DeleteClaimedObjects` is not called. One ERROR line with `stage = s3_delete`.
+- Then: `BatchError = true`. `DeleteClaimedObjects` is not called. One ERROR line with `stage = s3_delete`. `errors_total{stage="s3_delete"} = 1`.
 - Rules: BR-GC-62.
 
 **TC-GC-104: `ErrAuth` for one key deletes the others first.** Unit.
 - Given: claim `["a", "b"]`. The deleter returns success for `a` and `ErrAuth` for `b`.
 - When: one cycle.
-- Then: `DeleteClaimedObjects(["a"])` is called. Then `BatchError = true`.
+- Then: `DeleteClaimedObjects(["a"])` is called. Then `BatchError = true`. `errors_total{stage="s3_delete"} = 1` (for `b` only). One ERROR line `gc batch error`.
 - Rules: BR-GC-62, logic model 9.2.
 
 **TC-GC-105: A database error in the claim.** Unit.
@@ -475,14 +510,14 @@ The fake `Store` records each call. The fake `Deleter` returns results from a sc
 - Then: the claim is called 3 times. Second case: `Selected` 3, then 0. The claim is called 2 times.
 - Rules: BR-GC-61.
 
-**TC-GC-108: The retry phase pages with a keyset.** Unit.
-- Given: `BatchSize = 2`. `ListRetryObjects` returns `["a", "b"]` for `after = ""` and `["c"]` for `after = "b"`.
+**TC-GC-108: The retry phase repeats the reclaim with one cycle start.** Unit.
+- Given: `BatchSize = 2`. The fake clock gives T at the start of the cycle. `ReclaimRetryObjects` returns `["a", "b"]`, then `["c"]`.
 - When: one cycle.
-- Then: `ListRetryObjects` is called with `after = ""`, then `after = "b"`. Each ID goes to the deleter one time.
+- Then: `ReclaimRetryObjects` is called two times, each time with `cycleStart = T` and `lease = claimLease`. Each ID goes to the deleter one time.
 - Rules: BR-GC-64.
 
 **TC-GC-109: A batch error in the retry phase skips the claim phase.** Unit.
-- Given: `ListRetryObjects` returns `["a"]`. The deleter returns `ErrAuth`.
+- Given: `ReclaimRetryObjects` returns `["a"]`. The deleter returns `(nil, ErrAuth)`.
 - When: one cycle.
 - Then: `ClaimReleasedObjects` is not called.
 - Rules: BR-GC-64.
@@ -495,7 +530,7 @@ The fake `Store` records each call. The fake `Deleter` returns results from a sc
 
 **TC-GC-111: An empty batch is a success.** Unit.
 - Given: the claim returns `Selected 0`.
-- When: one cycle at the fake time T.
+- When: one cycle. The fake clock gives T.
 - Then: `opentams_gc_last_success_timestamp_seconds{sweep="released"}` = T.
 - Rules: BR-GC-61.
 
@@ -529,6 +564,12 @@ The fake `Store` records each call. The fake `Deleter` returns results from a sc
 - Then: the cycle returns within 1 s with `BatchError = true`.
 - Rules: BR-GC-68.
 
+**TC-GC-119: The object-store timeout.** Unit.
+- Given: `s3Timeout = 50 ms`. The claim returns `Claimed ["a"]`. The deleter blocks until its context is done, and then returns `ErrTransient` for `a`.
+- When: one cycle.
+- Then: the cycle returns within 1 s. The context that the deleter got had a deadline. `Failed = 1`, `BatchError = true`.
+- Rules: BR-GC-68, NFR-GC-R5.
+
 **TC-GC-117: Sweep 2 leftovers and its outcome.** Unit.
 - Given: `ClaimExpiredAllocations` returns `RowOnly ["l1"]`, `Claimed []`.
 - When: one cycle of sweep 2.
@@ -540,6 +581,12 @@ The fake `Store` records each call. The fake `Deleter` returns results from a sc
 - When: one cycle.
 - Then: `opentams_gc_refcount_drift_total = 1`. One WARN `gc refcount drift` line with `object_id d1`, `stored_ref_count 0`, `actual_ref_count 2`.
 - Rules: BR-GC-33.
+
+**TC-GC-096: A batch older than half the lease is not sent.** Unit.
+- Given: the claim returns `Claimed ["a"]`. The fake clock gives T after the claim, and `T + claimLease/2 + 1s` at the lease check.
+- When: one cycle.
+- Then: the deleter is not called. `DeleteClaimedObjects` is not called. One WARN line `gc batch skipped`. `BatchError = false`, `Failed = 0`.
+- Rules: BR-GC-65, AC-GC-18.
 
 ## 7. CLI and process tests (`cmd/opentams`)
 
@@ -578,6 +625,18 @@ The fake `Store` records each call. The fake `Deleter` returns results from a sc
 - Then: 200, 200, and a body that contains `opentams_gc_last_success_timestamp_seconds`. After the signal, `GET /readyz` returns 503 until the listener stops. The command returns exit code 0.
 - Rules: BR-GC-67, NFR-GC-R6, NFR-GC-S1.
 
+**TC-GC-126: `/readyz` with the database down.** Integration, PostgreSQL and MinIO.
+- Given: `gc` (no `--once`) on a free port P, started with a database that operates.
+- When: the test stops the PostgreSQL container. Then it calls `GET /readyz` and `GET /healthz`.
+- Then: `/readyz` returns 503 within 10 s. `/healthz` returns 200.
+- Rules: NFR-GC-R6.
+
+**TC-GC-127: The admin listener ignores the TLS settings.** Integration, PostgreSQL and MinIO.
+- Given: `SERVER_TLS_CERT_FILE=/nonexistent/cert.pem` and `SERVER_TLS_KEY_FILE=/nonexistent/key.pem`.
+- When: `gc` (no `--once`) on a free port P. The test calls `GET http://127.0.0.1:P/healthz`.
+- Then: 200 over plain HTTP.
+- Rules: logic model section 10.
+
 ## 8. End-to-end tests (integration, PostgreSQL and MinIO, real handlers)
 
 Use the HTTP handlers through the router with authentication in development mode, the real metastore, and the real object store against MinIO. Upload the bytes with an HTTP `PUT` to the returned URL.
@@ -597,10 +656,10 @@ Use the HTTP handlers through the router with authentication in development mode
 - Then: no allocation row. No key.
 - Rules: BR-GC-40 to BR-GC-44.
 
-**TC-GC-142: A rolling-upgrade leftover keeps the bytes.**
-- Steps: `POST …/storage {"limit": 1}`, `PUT` bytes. Then with SQL, write the object row (`ref_count = 1`) and the segment, and keep the allocation row (old-pod behaviour). Set `expires_at` in the past. `gc --once`.
-- Then: no allocation row. The key still exists. The object row does not change.
-- Rules: BR-GC-42.
+**TC-GC-142: A BYOS registration of an allocated ID keeps the bytes.**
+- Steps: `POST …/storage {"limit": 1}`, record the ID `o`, `PUT` bytes. `POST …/segments [{"object_id": o, "timerange": "[0:0_2:0)", "get_urls": [{"url": "https://cdn.example/x", "label": "cdn"}]}]`. With SQL, set `expires_at` of the allocation in the past. `gc --once`.
+- Then: the registration is 201. The object row `o` has `storage_id NULL`. After `gc --once`: no allocation row, the key still exists, and the object row does not change.
+- Rules: BR-GC-14, BR-GC-42.
 
 **TC-GC-143: A shared object stays until its last reference goes.**
 - Steps: register object `o` on flow F, then on flow G (reuse). `DELETE /flows/F`, `gc --once`. Then `DELETE /flows/G`, `gc --once`.
@@ -634,7 +693,7 @@ Use the HTTP handlers through the router with authentication in development mode
 
 **TC-GC-162: The audit line.** For each outcome (`deleted`, `byos_row_only`, `registered_leftover`), one cycle with one ID gives one INFO line `gc object removed` with the fields `object_id`, `storage_id`, `sweep`, `outcome` (use `zaptest/observer`).
 
-**TC-GC-163: The cycle summary.** After one cycle that stops with a batch error, the INFO line `gc cycle completed` has `ended_by = batch_error`. After a normal cycle, `ended_by = empty`. After a shutdown, `ended_by = shutdown`.
+**TC-GC-163: The cycle summary.** After one cycle that stops with a batch error, the INFO line `gc cycle completed` has `ended_by = batch_error`, and the gauges are updated. After a normal cycle, `ended_by = empty`. After a shutdown, `ended_by = shutdown`. If `ctx` is cancelled during a batch and the batch returns an error, `ended_by = shutdown`, `BatchError = false`, and `ReleasedBacklog` is not called. If `stop` closes between two reclaims of the retry phase, the second reclaim does not occur.
 
 **TC-GC-164: A gauge error does not stop the loop.** Given `ReleasedBacklog` returns an error. Then `errors_total{stage="gauge"} = 1`, one WARN line, and `BatchError = false`.
 
@@ -660,13 +719,21 @@ Rules: AC-GC-17.
 
 ## 12. Helm tests (`helm template` with assertions in a Go test or a shell test in CI)
 
-**TC-GC-180: Default render.** `helm template` with default values gives a Deployment `<fullname>-gc` with `args: ["gc"]`, the labels of `opentams.gcSelectorLabels`, the probes `/healthz` and `/readyz`, and env `GC_POLL_INTERVAL=15m`, `GC_BATCH_SIZE=1000`, `GC_ALLOCATION_GRACE=5m`. The selector of the API Service does not match the GC pod labels.
+Each render and each lint uses `--values ci/default-values.yaml`. A bare `helm lint` fails the schema of the chart by design (`.github/workflows/contract.yml:13-16`).
+
+**TC-GC-180: Default render.** The render gives a Deployment `<fullname>-gc` with `args: ["gc"]`, the probes `/healthz` and `/readyz`, and env `GC_POLL_INTERVAL=15m`, `GC_BATCH_SIZE=1000`, `GC_ALLOCATION_GRACE=5m`. Its metadata labels come from `opentams.gcLabels`, and its pod labels from `opentams.gcSelectorLabels`. No GC object has the label `app.kubernetes.io/name: <name>`. The selector of the API Service does not match the GC pod labels.
 
 **TC-GC-181: Disabled.** `--set gc.enabled=false` gives no resource with the name suffix `-gc`.
 
 **TC-GC-182: ServiceMonitor.** `--set serviceMonitor.enabled=true` gives a ServiceMonitor `<fullname>-gc` that selects the GC Service.
 
-**TC-GC-183: Schema.** `helm lint --set gc.batchSize=1001` gives an error. `gc.batchSize=1000` gives no error.
+**TC-GC-183: Schema.** `helm lint --values ci/default-values.yaml --set gc.batchSize=1001` gives an error. `gc.batchSize=1000` gives no error.
+
+**TC-GC-184: The API ServiceMonitor does not select GC objects.** `--set serviceMonitor.enabled=true`. The selector of the ServiceMonitor `<fullname>` does not match the labels of the Service `<fullname>-gc`. The selector of the ServiceMonitor `<fullname>-gc` matches the Service `<fullname>-gc` and does not match the Service `<fullname>`.
+
+**TC-GC-185: Scrape annotations by default.** The default render gives the Service `<fullname>-gc` the annotations `prometheus.io/scrape: "true"`, `prometheus.io/port` equal to `server.port`, and `prometheus.io/path: /metrics`. With `--set serviceMonitor.enabled=true`, it has no `prometheus.io/*` annotation.
+
+**TC-GC-186: TLS does not reach the GC pod.** `--set server.tls.enabled=true,server.tls.existingSecret=tls`. The Deployment `<fullname>-gc` has no TLS volume and no TLS volume mount. Its probes have no `scheme: HTTPS`.
 
 ## 13. Performance tests (`docs/scale-test-plan.md`)
 
@@ -691,10 +758,12 @@ Rules: AC-GC-17.
 | AC-GC-08 | TC-GC-041, TC-GC-042 |
 | AC-GC-09 | TC-GC-060, TC-GC-140 |
 | AC-GC-10 | TC-GC-063 |
-| AC-GC-11 | TC-GC-080, TC-GC-081 |
+| AC-GC-11 | TC-GC-080, TC-GC-081, TC-GC-141 |
 | AC-GC-12 | TC-GC-083 |
 | AC-GC-13 | TC-GC-100, TC-GC-101 |
 | AC-GC-14 | TC-GC-120, TC-GC-121 |
 | AC-GC-15 | TC-GC-012 |
 | AC-GC-16 | TC-GC-150 to TC-GC-154 |
 | AC-GC-17 | TC-GC-170 |
+| AC-GC-18 | TC-GC-065, TC-GC-096 |
+| AC-GC-19 | TC-GC-047, TC-GC-048 |

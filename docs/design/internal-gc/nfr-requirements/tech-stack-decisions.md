@@ -25,7 +25,7 @@ The GC change adds no new module dependency. Each item uses a library that the r
 
 ## Decision: no leader election
 
-*Decision: all replicas do the same work. `SKIP LOCKED` divides the claims. Rationale: a duplicate retry is harmless (BR-GC-65). A leader adds a lease, a failover time, and more tests. Rejected: a Kubernetes lease for one active replica.*
+*Decision: all replicas do the same work. `SKIP LOCKED` divides the claims, and the claim lease on each row (`claimed_at`, BR-GC-65) keeps a claimed row with one process. Rationale: a row lease needs one column and no extra component. A leader adds a Kubernetes lease, a failover time, and more tests, and a rolling update still runs two pods for a short time. Rejected: a Kubernetes lease for one active replica.*
 
 ## Decision: the GC uses the S3 multi-object delete
 

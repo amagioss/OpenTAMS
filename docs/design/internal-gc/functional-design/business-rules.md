@@ -23,6 +23,7 @@ When the server returns an upload URL for an object ID, it also writes one row i
 | `expires_at` | Database time `now()` plus `OBJECT_STORE_PRESIGN_EXPIRY` |
 | `created_at` | Database time `now()` |
 | `deleting` | `false` |
+| `claimed_at` | NULL |
 
 Use the database clock for `expires_at`. The sweep compares `expires_at` with the database clock. Thus a clock difference between the application and the database has no effect.
 
@@ -49,8 +50,8 @@ The server writes all allocation rows of one request in one transaction. If one 
 ### BR-GC-05: Generate the URLs before the transaction
 The server generates all upload URLs before it starts the transaction. If a URL generation gives an error, the server does not start the transaction and returns the error. URL generation is a local signature. It makes no network call.
 
-### BR-GC-06: Lock the IDs in ascending sequence
-Inside the transaction, the server processes the IDs in ascending string sequence. The response lists the objects in the sequence of the request. This obeys BR-GC-23.
+### BR-GC-06: Lock the IDs in ascending byte order
+Inside the transaction, the server processes the IDs in ascending byte order (BR-GC-23). The response lists the objects in the sequence of the request.
 
 ### BR-GC-07: Flow checks do not change
 A missing flow gives 404 and a read-only flow gives 403, as today. The flow check does not lock the flow row. If a flow delete occurs at the same time, an allocation row for the deleted flow can stay. Sweep 2 deletes it after it expires.
@@ -67,11 +68,11 @@ A flow delete does not delete allocation rows. Rationale: with `ON DELETE CASCAD
 ### BR-GC-10: The shape rule classifies each segment
 The classification does not change (ADR-0026, BR-META-07). A segment with no `get_urls` is controlled. A segment with one or more `get_urls` is BYOS.
 
-### BR-GC-11: Group the controlled segments by object ID
-In `InsertSegments`, after the overlap checks (steps 1 and 2 of today), group the controlled segments of the request by `object_id`. For each group, n is the number of segments in the group. Process the groups in ascending `object_id` sequence.
+### BR-GC-11: Group the segments by object ID
+In `InsertSegments`, after the overlap checks (steps 1 and 2 of today), group all segments of the request by `object_id`. For each group, n is the number of segments in the group. A group is controlled if one or more of its segments is controlled. Else the group is BYOS. Process the groups in ascending byte order of `object_id` (BR-GC-23). A controlled group uses BR-GC-12 and BR-GC-13. A BYOS group uses BR-GC-14. The result of a group applies to each segment of the group.
 
-### BR-GC-12: Decision table for each controlled object ID
-For each controlled object ID X with count n, use this table. The first row that matches gives the result.
+### BR-GC-12: Decision table for each controlled group
+For each controlled group with object ID X and count n, use this table. The first row that matches gives the result.
 
 | # | Condition | Result |
 |---|---|---|
@@ -91,14 +92,17 @@ Row 3 also applies after `expires_at`, while `deleting = false`. Thus a late reg
 - Write the new object row of row 3 with `INSERT … ON CONFLICT (id) DO NOTHING`. If the insert writes no row, use rows 1 and 2 one more time.
 
 ### BR-GC-14: BYOS segments
-- A BYOS segment has no allocation check (ADR-0041).
-- Before the object upsert, if an allocation row for the ID exists, lock it with `SELECT … FOR SHARE`. If it has `deleting = true`, reject the segment with `object-deleting`. Rationale: sweep 2 is about to delete the bucket key of that ID.
-- The upsert keeps its form and its predicate `WHERE objects.deleting = false`. If the upsert returns no row, reject the segment with `object-deleting`.
+- A BYOS group has no allocation check (ADR-0041).
+- Before the object upsert, if an allocation row for the ID exists, lock it with `SELECT … FOR SHARE`. If it has `deleting = true`, reject each segment of the group with `object-deleting`. Rationale: sweep 2 is about to delete the bucket key of that ID.
+- The upsert adds n to `ref_count`. It keeps its predicate `WHERE objects.deleting = false`. If the upsert returns no row, reject each segment of the group with `object-deleting`.
 - The BYOS path never deletes an allocation row. Sweep 2 deletes it later as a leftover allocation (BR-GC-42).
-- Group the BYOS segments by object ID and add n, as in BR-GC-11.
 
 ### BR-GC-15: A rejection applies to one segment, not to the request
-A segment with a rejection from BR-GC-12 or BR-GC-14 is not written. The other segments of the request continue. The response is 200 with `failed_segments`, as for other per-segment errors today (`internal/httpx/handlers/segments.go:316-345`). Each entry has the problem type, the title, status 400, and a detail text (BR-GC-70 to BR-GC-74). The store returns the rejections in `InsertResult.RejectedIndices` and `InsertResult.RejectReasons` (`internal/metastore/segments.go:57-69`).
+A segment with a rejection from BR-GC-12 or BR-GC-14 is not written. The other segments of the request continue. The response is 200 with `failed_segments`, as for other per-segment errors today (`internal/httpx/handlers/segments.go:316-345`). Each entry has the problem type, the title, and a detail text (BR-GC-70 to BR-GC-74). An entry has no `status` field (`gen/api/opentams.gen.go:1266`). The store returns the rejections in `InsertResult.RejectedIndices` and `InsertResult.RejectReasons` (`internal/metastore/segments.go:57-69`).
+
+If the store accepts no segment of the request, it rolls back the transaction and returns the rejections. Then the flow row does not change, and `segments_updated` keeps its value. Rationale: a rejected group writes no row. A commit changes only `segments_updated`, and the retention rules use that value (REQ-RET-02).
+
+The object timerange check (step 3.5 of `InsertSegments`) examines only the accepted segments. A rejected ID has no stored segment, so the check of a rejected segment finds nothing.
 
 ### BR-GC-16: Errors for the full request do not change
 These errors still stop the full request before BR-GC-12, with no change to the database:
@@ -119,35 +123,39 @@ A new controlled object row gets `storage_id` from its allocation row. It does n
 ### BR-GC-20: `DeleteFlow` locks the flow and counts each segment
 `DeleteFlow` does these steps in one transaction:
 
-1. Lock the flow row with `SELECT 1 FROM flows WHERE id = $1 FOR UPDATE`. If there is no row, return "flow not found".
+1. Lock the flow row with `SELECT read_only FROM flows WHERE id = $1 FOR UPDATE`. If there is no row, return "flow not found". If `read_only` is true, return `apperror.ErrReadOnly` with the detail "flow is read-only", and change nothing. The handler gives 403 `read-only`.
 2. Delete all segments of the flow with `DELETE … RETURNING object_id`. Count the rows for each `object_id`.
-3. Lock the affected object rows in ascending `id` sequence. Decrease each `ref_count` by its count.
+3. Lock the affected object rows in ascending byte order (BR-GC-23). Decrease each `ref_count` by its count.
 4. Delete the flow row.
 
-This corrects three errors of the current code (`internal/metastore/flows.go:433-468`):
+This corrects four errors of the current code (`internal/metastore/flows.go:433-468`):
 
 | Error | Cause | Effect |
 |---|---|---|
 | B1 | The decrease is 1 for each distinct object, but each segment added 1 | `ref_count` stays too high. The bytes never get deleted. |
 | B2 | No flow lock. A timerange delete at the same time can delete a segment that `DeleteFlow` also counts. | `ref_count` becomes too low. Sweep 1 can delete bytes that a different flow uses. |
 | B8 | No flow lock. A segment insert after the first read is deleted by the cascade with no decrease. | `ref_count` stays too high. |
+| B9 | No read-only check | The delete removes a read-only flow. REQ-BEH-11 and BR-META-15 require 403. |
 
 Insert and timerange delete already lock the flow row (`internal/metastore/segments.go:134-148`, BR-META-15). `DeleteFlow` now uses the same lock.
 
 ### BR-GC-21: The timerange delete uses the sorted lock sequence
-`DeleteSegmentsByTimerange` keeps its behaviour. Step 3 (the decrease) changes. Lock the object rows in ascending `id` sequence. Then decrease each `ref_count` with one statement.
+`DeleteSegmentsByTimerange` keeps its behaviour. Step 3 (the decrease) changes. Lock the object rows in ascending byte order (BR-GC-23). Then decrease each `ref_count` with one statement.
 
 ### BR-GC-22: No request path deletes bytes
 No API request calls the object store to delete bytes (ADR-0020). A row at `ref_count = 0` stays for sweep 1.
 
-### BR-GC-23: Lock rows in ascending ID sequence
-Each transaction that changes two or more rows of `objects` or two or more rows of `allocations` locks them in ascending `id` sequence before it changes them. This prevents deadlocks between two requests that share objects. This rule applies to:
+### BR-GC-23: Lock rows in ascending byte order of the ID
+Each transaction that changes two or more rows of `objects` or of `allocations` locks them in ascending byte order of `id` before it changes them. This prevents deadlocks between two transactions that share rows. This rule applies to:
 
 - `POST /flows/{flowId}/storage` (allocation rows).
 - Segment registration (object rows and allocation rows).
 - `DeleteFlow` and `DeleteSegmentsByTimerange` (object rows).
+- The row delete of each sweep (BR-GC-36, BR-GC-44).
 
-The sweep claims are exempt. Their select uses `FOR UPDATE SKIP LOCKED`, which never waits for a lock. Thus a sweep claim cannot be part of a deadlock, and its row sequence is free.
+Byte order is the only permitted order. In Go, sort with `slices.Sort`. In SQL, use `ORDER BY id COLLATE "C"`. Do not lock with `ORDER BY id` alone. The default collation of a database can be different from byte order (for example `en_US.UTF-8` sorts `a1` before `B1`, and byte order sorts `B1` before `a1`). Two different orders give a deadlock (SQLSTATE `40P01`).
+
+The sweep claims and the retry reclaims are exempt. They use `FOR UPDATE SKIP LOCKED`, which never waits for a lock. Thus they cannot be part of a deadlock. They keep `ORDER BY id`, so that PostgreSQL can use the partial indexes.
 
 ## Sweep 1: released objects
 
@@ -158,10 +166,10 @@ A candidate is an object row with all these conditions:
 - `deleting = false`
 - `storage_id IS NULL`, or `storage_id` equal to the configured storage ID
 
-Sweep 1 selects up to `GC_BATCH_SIZE` candidates in ascending `id` sequence with `FOR UPDATE SKIP LOCKED`.
+Sweep 1 selects up to `GC_BATCH_SIZE` candidates with `ORDER BY id` and `FOR UPDATE SKIP LOCKED` (exempt from the byte-order rule, BR-GC-23).
 
 ### BR-GC-31: The claim flag
-`objects.deleting = true` means "the GC deletes this object now". Segment registration does not use such a row (BR-GC-12 row 2, BR-GC-14). Only the GC sets the flag. Only the GC deletes a row that has the flag.
+`objects.deleting = true` means "the GC deletes this object now". Segment registration does not use such a row (BR-GC-12 row 2, BR-GC-14). Only the GC sets the flag. Only the GC deletes a row that has the flag. The claim also sets `claimed_at` to the database time `now()` (BR-GC-65). A row with `deleting = true` always has a `claimed_at` value.
 
 ### BR-GC-32: The claim transaction
 In one transaction, sweep 1 does these steps:
@@ -169,7 +177,7 @@ In one transaction, sweep 1 does these steps:
 1. Select the candidates (BR-GC-30).
 2. Do the segment-count check (BR-GC-33).
 3. Delete the BYOS candidates (BR-GC-34).
-4. Set `deleting = true` on the controlled candidates that passed the check.
+4. Set `deleting = true` and `claimed_at = now()` on the controlled candidates that passed the check.
 5. Commit.
 
 ### BR-GC-33: Segment-count check before the claim
@@ -192,7 +200,7 @@ After the commit, sweep 1 calls `DeleteObjects` once for the claimed IDs, with t
 - An error leaves the row with `deleting = true` (BR-GC-63).
 
 ### BR-GC-36: Delete the rows of the deleted objects
-Sweep 1 deletes the object rows of the successful IDs with `DELETE FROM objects WHERE id = ANY($1) AND deleting = true`. The foreign key from `segments.object_id` gives an error if a segment still refers to a row. Such an error is a batch-level error (BR-GC-62). Outcome: `deleted`.
+In one transaction, sweep 1 locks the object rows of the successful IDs in ascending byte order (BR-GC-23), and then deletes them with `DELETE FROM objects WHERE id = ANY($1) AND deleting = true`. The foreign key from `segments.object_id` gives an error if a segment still refers to a row. Such an error is a batch-level error (BR-GC-62). Outcome: `deleted`.
 
 ### BR-GC-37: A row with an unknown storage ID stays
 An object row with a `storage_id` that is not NULL and not the configured storage ID is not a candidate. The GC does not delete its bytes, because it has no client for that storage. The gauge `opentams_gc_backlog{sweep="released",state="unknown_storage"}` shows the count of such rows at `ref_count = 0`.
@@ -213,7 +221,7 @@ In one transaction, sweep 2 does these steps:
 
 1. Select the candidates (BR-GC-40).
 2. Do the object-row check (BR-GC-42).
-3. Set `deleting = true` on the candidates that passed the check.
+3. Set `deleting = true` and `claimed_at = now()` on the candidates that passed the check.
 4. Commit.
 
 ### BR-GC-42: Object-row check before the claim
@@ -228,13 +236,13 @@ Rationale:
 - With `ref_count = 0`, the bytes belong to sweep 1 and its claim flag.
 - A BYOS object row for an allocated ID is the "mixed object" case. Upstream says that `get_urls` adds uncontrolled URLs. Thus the bucket bytes are the controlled copy, and they must stay.
 
-This check also prevents data loss in a rolling upgrade: a new pod writes the allocation, and an old pod registers the segment and does not delete the allocation row.
+A leftover allocation occurs when a client registers an allocated ID with `get_urls`. The BYOS path does not delete the allocation row (BR-GC-14).
 
 ### BR-GC-43: Delete the bytes of the claimed allocations
 After the commit, sweep 2 calls `DeleteObjects` once for the claimed IDs. The results go to BR-GC-44 and BR-GC-63, as in sweep 1.
 
 ### BR-GC-44: Delete the rows of the deleted allocations
-Sweep 2 deletes the allocation rows of the successful IDs with `DELETE FROM allocations WHERE id = ANY($1) AND deleting = true`. Outcome: `deleted`.
+In one transaction, sweep 2 locks the allocation rows of the successful IDs in ascending byte order (BR-GC-23), and then deletes them with `DELETE FROM allocations WHERE id = ANY($1) AND deleting = true`. Outcome: `deleted`.
 
 ### BR-GC-45: A row with an unknown storage ID stays
 An allocation row with a different `storage_id` is not a candidate. The gauge `opentams_gc_backlog{sweep="allocation",state="unknown_storage"}` shows the count of such expired rows.
@@ -248,6 +256,7 @@ Segment registration locks the allocation row (BR-GC-13, BR-GC-14). If the claim
 Migration `000006_allocations_and_deleting` does these changes in one file:
 
 - `ALTER TABLE objects RENAME COLUMN reaping TO deleting`. PostgreSQL changes the predicates of the partial indexes `objects_gc_claim_idx` and `objects_gc_retry_idx` automatically. The index names do not change.
+- Add the column `claimed_at TIMESTAMPTZ` to `objects`. Set it to `now()` on each row with `deleting = true` (BR-GC-31).
 - Create the table `allocations` and its two partial indexes.
 - Create the index `segments_object_id_idx` (BR-GC-51).
 
@@ -279,7 +288,7 @@ The statement does not use `CONCURRENTLY`. These are the results:
 - The rename holds a lock on `objects` until the end of the transaction. API reads do not use `objects`.
 - The build time increases with the row count of `segments`.
 
-*Decision: one migration file with a plain `CREATE INDEX`. Rationale: one file, one transaction, and no index that PostgreSQL marks INVALID after a failure. On a database with 431,000 segment rows, a sorted scan of `segments.object_id` took 0.9 s. Thus the writes wait for a few seconds. Rejected: `CREATE INDEX CONCURRENTLY` in a separate migration 000007. It does not block writes, but it adds a second file and a recovery procedure for an INVALID index.*
+*Decision: one migration file with a plain `CREATE INDEX`. Rationale: one file, one transaction, and no index that PostgreSQL marks INVALID after a failure. Rejected: `CREATE INDEX CONCURRENTLY` in a separate migration 000007. It does not block writes, but it adds a second file and a recovery procedure for an INVALID index.*
 
 ### BR-GC-52: The minimum schema version is 6
 `metastore.ExpectedSchemaVersion` changes from 5 to 6. A new binary does not start on a database at version 5 (`ErrSchemaTooOld`).
@@ -293,6 +302,9 @@ The release notes must list these changes:
 4. `OBJECT_STORE_PRESIGN_EXPIRY` less than 300 s stops the process at start.
 5. The column `objects.reaping` is now `objects.deleting`. The upgrade procedure in BR-GC-50 applies.
 6. The GC deletes media bytes. Before this change, no bytes were deleted.
+7. `DELETE /flows/{flowId}` on a read-only flow returns 403 `read-only`. Before this change, it deleted the flow.
+
+Before the upgrade, an old pod can cache a 409 `object-reaping` response. During the idempotency TTL, a retry of that request gets the same cached response again. This is correct idempotency behaviour (the same key gives the same response).
 
 ## Worker cycle, failures, and shutdown
 
@@ -302,7 +314,14 @@ The release notes must list these changes:
 1. The retry phase (BR-GC-64).
 2. The claim phase (BR-GC-61).
 3. Update the gauges of the sweep.
-4. Stay idle for `GC_POLL_INTERVAL`, or stop on shutdown.
+4. Write the INFO line `gc cycle completed`.
+5. Stay idle for `GC_POLL_INTERVAL`, or stop on shutdown.
+
+The cycle has one exit point. Steps 3 and 4 occur also after a batch-level error and after a stop. Exception: if `ctx` is done, the cycle does not update the gauges, because each query fails. The field `ended_by` of the summary line is:
+
+- `shutdown` if `stop` is closed or `ctx` is done.
+- `batch_error` after a batch-level error, in the other cases.
+- `empty` in all other cases.
 
 ### BR-GC-61: The claim phase is a drain loop
 The claim phase does batches one after the other. It stops when the select of a batch returns fewer rows than `GC_BATCH_SIZE`, or when a batch-level error occurs. Each successful batch, also an empty one, sets `opentams_gc_last_success_timestamp_seconds{sweep}` to the current time.
@@ -316,8 +335,8 @@ These errors are batch-level errors:
 
 On a batch-level error, the sweep:
 
-- Writes an ERROR log line.
-- Increments `opentams_gc_errors_total{sweep,stage}`.
+- Writes one ERROR log line `gc batch error` with `sweep`, `stage`, and `error`.
+- Increments `opentams_gc_errors_total{sweep,stage}` by 1. Exception: if the error comes from the per-ID results of a call (the second case for one key, and the third case), BR-GC-63 already counted each ID with `stage="s3_delete"`. Then the sweep does not increment the counter again.
 - Stops the current cycle.
 - Stays idle for `GC_POLL_INTERVAL`.
 
@@ -329,27 +348,46 @@ If the object-store result for one ID is an error, and the call is not a batch-l
 - The row keeps `deleting = true`.
 - The sweep increments `opentams_gc_errors_total{sweep,stage="s3_delete"}`.
 - The sweep writes a WARN log line with `object_id` and the error.
-- The retry phase tries the ID again in the next cycle.
+- The retry phase of a later cycle tries the ID again, after the claim lease (BR-GC-64, BR-GC-65).
 
 There is no attempt limit. The gauge `opentams_gc_backlog{sweep,state="retrying"}` shows the rows that wait.
 
 ### BR-GC-64: The retry phase
-At the start of each cycle, before the claim phase, the sweep reads all rows with `deleting = true` and a known storage ID. It reads them in ascending `id` sequence, in pages of `GC_BATCH_SIZE`, with a keyset (`id > last_id`). It does not lock them. For each page, it does BR-GC-35 and BR-GC-36 (sweep 1) or BR-GC-43 and BR-GC-44 (sweep 2). Each retry row gets one attempt in each cycle. A batch-level error in the retry phase stops the cycle (BR-GC-62). Then the claim phase does not start.
+At the start of each cycle, before the claim phase, the sweep takes back the rows that an earlier claim left with `deleting = true`. A row is taken back only if it has all these conditions:
 
-### BR-GC-65: Two or more replicas
-Two or more GC replicas can operate at the same time. `FOR UPDATE SKIP LOCKED` gives each claim different rows. The retry phase of two replicas can read the same retry row. This is harmless:
+- `deleting = true`, and `storage_id` equal to the configured storage ID.
+- `claimed_at` is older than `claimLease` (BR-GC-65), by the database clock.
+- `claimed_at` is earlier than the start of the current cycle.
 
-- The second object-store delete is a success.
-- The second row delete changes 0 rows.
-- The metrics count only the rows that a delete actually removed.
+The sweep selects up to `GC_BATCH_SIZE` such rows with `FOR UPDATE SKIP LOCKED`, sets `claimed_at = now()` on them, and commits. This is a new claim of the rows (a reclaim). Then the sweep does BR-GC-35 and BR-GC-36 (sweep 1) or BR-GC-43 and BR-GC-44 (sweep 2) for them. It repeats until a reclaim returns fewer rows than `GC_BATCH_SIZE`, or until `stop` is closed.
+
+The third condition gives each row a maximum of one attempt in each cycle: a reclaimed row has a `claimed_at` later than the start of the cycle. The start of the cycle comes from the clock of the worker. A clock difference to the database has no unsafe effect, because the second condition uses only the database clock.
+
+A batch-level error in the retry phase stops the cycle (BR-GC-62). Then the claim phase does not start.
+
+### BR-GC-65: The claim lease
+Two or more GC processes can operate at the same time. `FOR UPDATE SKIP LOCKED` gives each claim different rows. Each claim and each reclaim sets `claimed_at = now()`. A claim is valid for `claimLease` (5 minutes, a Go constant in `internal/gc`). While the claim is valid, no other GC process takes the row (BR-GC-64).
+
+Rationale: without a lease, two GC processes can act on one claimed row. This occurs with two or more replicas, during a rolling update of one replica, and with `gc --once` beside the Deployment. Then this sequence deletes new bytes:
+
+1. Process A claims X and calls `DeleteObjects`. The call is slow.
+2. Process B deletes the key X and the row X.
+3. A client allocates X again, uploads new bytes, and registers X.
+4. The delayed delete of process A removes the new bytes. A segment refers to a missing key.
+
+The lease prevents step 2.
+
+Process A must not call the object store after its lease can have ended. Before each `DeleteObjects` call, the sweep measures the time since the claim (or reclaim) committed. If this time is more than `claimLease / 2`, the sweep does not call the object store for that batch. It writes the WARN line `gc batch skipped` and leaves the rows. A later cycle takes them back after the lease. `claimLease / 2` plus `s3Timeout` is less than `claimLease`. Thus each call of process A ends before a different process can take the rows.
+
+The row delete (BR-GC-36, BR-GC-44) has the condition `deleting = true`. If a different process removed a row first, the delete changes 0 rows for that row. The metrics count only the rows that a delete removed.
 
 ### BR-GC-66: An interruption at any point loses no data
 
 | Point of the interruption | Effect | Recovery |
 |---|---|---|
 | In the claim transaction | Rollback. No change. | The next cycle selects the rows again. |
-| After the claim, before or during the object-store call | Rows have `deleting = true`. Some keys can be deleted. | The retry phase deletes the keys and the rows. |
-| After the object-store call, before the row delete commits | Rows have `deleting = true`. The keys are deleted. | The retry phase deletes the keys again (success) and deletes the rows. |
+| After the claim, before or during the object-store call | Rows have `deleting = true`. Some keys can be deleted. | After the claim lease, the retry phase deletes the keys and the rows. |
+| After the object-store call, before the row delete commits | Rows have `deleting = true`. The keys are deleted. | After the claim lease, the retry phase deletes the keys again (success) and deletes the rows. |
 | In the row-delete transaction | Rollback. Same as the row above. | Same as the row above. |
 
 ### BR-GC-67: Shutdown
@@ -363,7 +401,7 @@ On SIGTERM or SIGINT, the process does these steps:
 6. The process stops with exit code 0.
 
 ### BR-GC-68: Timeouts
-Each database statement of the GC has a context timeout of 30 s. Each `DeleteObjects` call has a context timeout of 60 s. These values are Go constants in `internal/gc`. They are not settings. A timeout is a batch-level error if it occurs in a database statement. It is a per-ID error (`ErrTransient`) if it occurs in the object-store call (`internal/objectstore/objectstore.go:306-327`).
+Each database statement of the GC has a context timeout of 30 s. Each `DeleteObjects` call has a context timeout of 60 s. The claim lease is 5 minutes (BR-GC-65). These values are Go constants in `internal/gc`. They are not settings. A timeout is a batch-level error if it occurs in a database statement. It is a per-ID error (`ErrTransient`) if it occurs in the object-store call (`internal/objectstore/objectstore.go:306-327`).
 
 ### BR-GC-69: Mode `--once`
 `opentams gc --once` does one cycle of each sweep, at the same time, and then stops. It opens no admin listener. It returns exit code 0 if neither cycle stopped because of a batch-level error. It returns exit code 1 in the other case. A configuration error also gives exit code 1.
@@ -386,3 +424,5 @@ Title "Object Being Deleted". An ID that the GC claimed (BR-GC-03 rows 1 and 3, 
 
 ### BR-GC-74: Removed error identifiers
 These identifiers are removed: `apperror.ErrObjectReaping`, `apperror.ErrObjectIDExists`, `metastore.ErrSegmentObjectReaping`, the problem types `object-reaping` and `object-id-exists`, and the function path in `internal/httpx/handlers/segments.go:302-305` that returns 409 for them. The 409 response of `POST /flows/{flowId}/segments` stays for the idempotency conflict only.
+
+The function `cachedPostResponse` (`internal/httpx/handlers/segments.go:609-614`) keeps its 409 case. A cached 409 body replays as stored (BR-GC-53). If the cached body is empty or not valid, the fallback uses the type `object-deleting` with status 409, not `object-reaping`. Only an old pod cached such a 409.

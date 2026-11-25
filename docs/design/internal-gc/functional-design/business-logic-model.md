@@ -41,8 +41,9 @@ type Config struct {
 }
 
 const (
-	dbTimeout = 30 * time.Second // BR-GC-68
-	s3Timeout = 60 * time.Second // BR-GC-68
+	dbTimeout  = 30 * time.Second // BR-GC-68
+	s3Timeout  = 60 * time.Second // BR-GC-68
+	claimLease = 5 * time.Minute  // BR-GC-65
 )
 
 // Sweep names. They are also the values of the metric label "sweep".
@@ -63,12 +64,12 @@ const (
 // implements it.
 type Store interface {
 	ClaimReleasedObjects(ctx context.Context, storageID string, limit int) (ClaimResult, error)
-	ListRetryObjects(ctx context.Context, storageID, afterID string, limit int) ([]string, error)
+	ReclaimRetryObjects(ctx context.Context, storageID string, lease time.Duration, cycleStart time.Time, limit int) ([]string, error)
 	DeleteClaimedObjects(ctx context.Context, ids []string) ([]string, error)
 	ReleasedBacklog(ctx context.Context, storageID string) (Backlog, error)
 
 	ClaimExpiredAllocations(ctx context.Context, storageID string, grace time.Duration, limit int) (ClaimResult, error)
-	ListRetryAllocations(ctx context.Context, storageID, afterID string, limit int) ([]string, error)
+	ReclaimRetryAllocations(ctx context.Context, storageID string, lease time.Duration, cycleStart time.Time, limit int) ([]string, error)
 	DeleteClaimedAllocations(ctx context.Context, ids []string) ([]string, error)
 	AllocationBacklog(ctx context.Context, storageID string, grace time.Duration) (Backlog, error)
 }
@@ -76,7 +77,7 @@ type Store interface {
 // ClaimResult is the result of one claim transaction.
 type ClaimResult struct {
 	Selected  int           // rows that the SELECT returned; drives the drain rule
-	Claimed   []string      // IDs set to deleting = true, in ascending order
+	Claimed   []string      // IDs set to deleting = true, in ascending byte order
 	RowOnly   []string      // sweep 1: BYOS rows deleted; sweep 2: leftover allocation rows deleted
 	Drift     []DriftRecord // sweep 1 only
 }
@@ -116,6 +117,10 @@ type CycleResult struct {
 
 func New(store Store, del Deleter, cfg Config, m *Metrics, log *zap.Logger) (*Worker, error)
 
+// NewMetrics registers the metrics of interface spec section 4 on reg.
+// cmd/opentams passes Registry.NamespacedRegisterer() (section 9.5).
+func NewMetrics(reg prometheus.Registerer) (*Metrics, error)
+
 // Run starts the two loops and blocks. When stop is closed, the loops
 // claim no new batch and return after the current batch. ctx is the hard
 // limit: cmd/opentams cancels it SERVER_GRACEFUL_SHUTDOWN_PERIOD after stop.
@@ -128,7 +133,7 @@ func (w *Worker) RunOnce(ctx context.Context) (Report, error)
 
 `New` returns an error if `BatchSize` is outside 1 to 1000, if `PollInterval` is 0 or less, if `AllocationGrace` is less than 0, or if `StorageID` is empty.
 
-`Worker` has the unexported fields `dbTimeout` and `s3Timeout`. `New` sets them from `dbTimeout` and `s3Timeout` (the constants). Only tests in package `gc` change them.
+`Worker` has the unexported fields `dbTimeout`, `s3Timeout`, `claimLease`, and `now func() time.Time`. `New` sets them from the constants and from `time.Now`. Only tests in package `gc` change them. All times of the worker come from `w.now()`: the cycle start, the claim time, the lease check, `last_success_timestamp_seconds`, and the batch duration.
 
 ## 3. Schema
 
@@ -139,6 +144,10 @@ func (w *Worker) RunOnce(ctx context.Context) (Report, error)
 -- of objects_gc_claim_idx and objects_gc_retry_idx automatically.
 ALTER TABLE objects RENAME COLUMN reaping TO deleting;
 
+-- BR-GC-65. Time of the claim. NULL while deleting = false.
+ALTER TABLE objects ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMPTZ;
+UPDATE objects SET claimed_at = now() WHERE deleting = true;
+
 -- BR-GC-01. One row for each object ID with an issued upload URL that no
 -- segment has registered. No foreign key to flows (BR-GC-08).
 CREATE TABLE IF NOT EXISTS allocations (
@@ -147,14 +156,15 @@ CREATE TABLE IF NOT EXISTS allocations (
     storage_id  TEXT        NOT NULL,
     expires_at  TIMESTAMPTZ NOT NULL,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    deleting    BOOLEAN     NOT NULL DEFAULT false
+    deleting    BOOLEAN     NOT NULL DEFAULT false,
+    claimed_at  TIMESTAMPTZ
 );
 
 -- Sweep 2 claim (BR-GC-40).
 CREATE INDEX IF NOT EXISTS allocations_gc_claim_idx
     ON allocations (expires_at, id) WHERE deleting = false;
 
--- Sweep 2 retry phase (BR-GC-64).
+-- Sweep 2 retry reclaim (BR-GC-64).
 CREATE INDEX IF NOT EXISTS allocations_gc_retry_idx
     ON allocations (id) WHERE deleting = true;
 
@@ -170,6 +180,7 @@ Do not add `BEGIN` or `COMMIT` to the file. The migration driver (`database/pgx/
 ```sql
 DROP INDEX IF EXISTS segments_object_id_idx;
 DROP TABLE IF EXISTS allocations;
+ALTER TABLE objects DROP COLUMN IF EXISTS claimed_at;
 ALTER TABLE objects RENAME COLUMN deleting TO reaping;
 ```
 
@@ -177,8 +188,10 @@ ALTER TABLE objects RENAME COLUMN deleting TO reaping;
 
 | Table | Columns that the GC uses |
 |---|---|
-| `objects` | `id TEXT PK`, `ref_count INT`, `storage_id TEXT NULL`, `deleting BOOLEAN` |
-| `allocations` | `id TEXT PK`, `flow_id UUID`, `storage_id TEXT`, `expires_at TIMESTAMPTZ`, `created_at TIMESTAMPTZ`, `deleting BOOLEAN` |
+| `objects` | `id TEXT PK`, `ref_count INT`, `storage_id TEXT NULL`, `deleting BOOLEAN`, `claimed_at TIMESTAMPTZ NULL` |
+| `allocations` | `id TEXT PK`, `flow_id UUID`, `storage_id TEXT`, `expires_at TIMESTAMPTZ`, `created_at TIMESTAMPTZ`, `deleting BOOLEAN`, `claimed_at TIMESTAMPTZ NULL` |
+
+Invariant of both tables: `deleting = true` if and only if `claimed_at IS NOT NULL`. Only the GC sets the two values, and it sets them in the same statement.
 | `segments` | `object_id TEXT NOT NULL REFERENCES objects(id)` (unchanged), new index `segments_object_id_idx` |
 
 `metastore.ExpectedSchemaVersion` = 6 (`internal/metastore/schema.go:23`). Change the comment "Current head is migration 000005 (objects_storage_id_reaping)" to "Current head is migration 000006 (allocations_and_deleting)".
@@ -191,12 +204,12 @@ ALTER TABLE objects RENAME COLUMN deleting TO reaping;
 2. `validateAllocateSize`. (No change.)
 3. Make the ID list: mode `limit` generates N UUIDv4 values. Mode `object_ids` uses the supplied list.
 4. For each ID, in request sequence, call `GenerateUploadURL`. On an error, return it (BR-GC-05).
-5. Call `store.AllocateObjects(ctx, metastore.AllocateParams{FlowID, StorageID, TTL: cfg.ObjectStorePresignExpiry, IDs, Requested: mode == object_ids})`.
+5. Call `store.AllocateObjects(ctx, metastore.AllocateParams{FlowID, StorageID: s.storageID, TTL: s.allocTTL, IDs, Requested: mode == object_ids})`.
 6. Map the store errors (table in 4.3). Return the objects in request sequence.
 
 The interface `storage.FlowReader` changes: remove `IsObjectRegistered`, add `AllocateObjects`. Remove `metastore.IsObjectRegistered` if no other code calls it.
 
-The storage service needs the configured storage ID. Add a constructor parameter `storageID string`, and pass the same value that `serve.go` gives to the segment service (`controlledStorageID`, `cmd/opentams/serve.go:163-176`).
+The storage service needs the configured storage ID and the presign time. The constructor (`internal/service/storage/storage.go:81`) becomes `New(store FlowReader, obj ObjectStore, m *service.AppServiceMetrics, storageID string, allocTTL time.Duration) StorageService`. `serve.go` (`cmd/opentams/serve.go:178`) passes `cfg.ObjectStoreID` (section 11) and `cfg.ObjectStorePresignExpiry`.
 
 ### 4.2 Store method (`internal/metastore/allocations.go`)
 
@@ -215,14 +228,23 @@ var (
 	ErrObjectWrongFlow = errors.New("metastore: object is allocated to a different flow")
 )
 
+// ObjectError carries the object ID of an allocation error.
+type ObjectError struct {
+	ID  string
+	Err error // one of the three sentinels
+}
+
+func (e *ObjectError) Error() string { return fmt.Sprintf("metastore: object %q: %v", e.ID, e.Err) }
+func (e *ObjectError) Unwrap() error { return e.Err }
+
 func (s *PostgresStore) AllocateObjects(ctx context.Context, p AllocateParams) error
 ```
 
-Each returned error wraps a sentinel and names the ID: `fmt.Errorf("metastore: AllocateObjects: object %q: %w", id, ErrObjectExists)`.
+Each allocation error is `&ObjectError{ID: id, Err: <sentinel>}`. `errors.Is(err, ErrObjectExists)` works through `Unwrap`.
 
 Algorithm, in one transaction:
 
-1. Sort a copy of `p.IDs` in ascending sequence (BR-GC-06).
+1. Sort a copy of `p.IDs` in ascending byte order with `slices.Sort` (BR-GC-06).
 2. If `p.Requested` is false, write all rows with one statement:
 
    ```sql
@@ -270,20 +292,26 @@ Algorithm, in one transaction:
 | `metastore.ErrObjectWrongFlow` | `ErrObjectWrongFlow` (`object-wrong-flow`) | 400 |
 | other | unchanged (500) | 500 |
 
+The service gets the ID with `errors.As(err, &oe)` (`oe *metastore.ObjectError`). It makes the detail text of BR-GC-70 to BR-GC-73 with `oe.ID`.
+
 The handler (`internal/httpx/handlers/storage.go:40-46`) returns the `*apperror.AppError` as the error value. The error middleware renders it with its catalogued status (`internal/httpx/middleware/middleware.go:59-72`). Change the log level of this path from ERROR to WARN for an `*apperror.AppError` with status 400.
 
 ## 5. Segment registration (`InsertSegments`)
 
-Steps 1 (flow lock), 2 (overlap checks), 3.5 (object timerange), 4 (segment insert), and 5 (flow refresh) of `internal/metastore/segments.go:190-330` do not change, with one exception: step 4 inserts only the accepted segments. Step 3 changes as follows.
+The steps of `InsertSegments` are in `internal/metastore/segments.go`: step 1 (flow lock), step 2 (overlap checks), step 3 (object upsert, `:226-262`), step 3.5 (object timerange, `:264-299`), step 4 (segment insert, `:301-333`), and step 5 (flow refresh, `:335-338`). Steps 1 and 2 do not change. Step 3 changes as in 5.1 to 5.3. These changes apply to the other steps:
+
+- If no segment is accepted after step 3, roll back the transaction. Return `InsertResult{RejectedIndices, RejectReasons}` with a nil error. Do not do steps 3.5, 4, and 5 (BR-GC-15).
+- Step 3.5 examines only the accepted segments (BR-GC-15).
+- Step 4 inserts only the accepted segments.
 
 ### 5.1 Groups
 
-1. Make groups of the segments by `object_id`. A group is controlled if one or more of its segments has no `get_urls`. Else it is BYOS. n is the number of segments in the group.
-2. Sort the groups by `object_id` in ascending sequence.
+1. Make groups of the segments by `object_id`. A group is controlled if one or more of its segments has no `get_urls`. Else it is BYOS. n is the number of segments in the group (BR-GC-11).
+2. Sort the groups by `object_id` in ascending byte order with `slices.Sort` (BR-GC-23).
 3. Process each group with 5.2 (controlled) or 5.3 (BYOS).
-4. If a group gets a rejection, add each segment index of the group to `InsertResult.RejectedIndices`, with a `RejectReason{Type: <problem type URI>, Detail: <text>}` at the same position. Do not write the segments of a rejected group. Add the other indices to `AcceptedIndices` after step 4.
+4. If a group gets a rejection, add each segment index of the group to `InsertResult.RejectedIndices`, with a `RejectReason{Code: <apperror code>, Detail: <text>}` at the same position. Do not write the segments of a rejected group. Add the other indices to `AcceptedIndices` after step 4.
 
-`Type` is the full URI, for example `https://github.com/amagioss/opentams/problems/object-not-allocated`. The service copies it to `FailedSegment.Type` (`internal/service/segment/segment.go:215-240`). Set the title from the `apperror` catalogue and the status to 400.
+Add the field `Code apperror.ErrorCode` to `RejectReason` (`internal/metastore/segments.go:66-69`). The metastore already imports `internal/apperror`. The store sets `Code` (`apperror.ErrObjectNotAllocated`, `ErrObjectWrongFlow`, or `ErrObjectDeleting`) and `Detail`. It leaves `Type` empty. In the service (`internal/service/segment/segment.go:212-240`), if `Code` is set, take `Type` and `Title` from `apperror.New(Code, Detail).ToProblemDetails("", "")`. Else keep the current behaviour. `FailedSegment.Status` stays 400. The response does not show it (BR-GC-15).
 
 ### 5.2 Controlled group X with count n (BR-GC-12, BR-GC-13)
 
@@ -329,7 +357,7 @@ SELECT deleting FROM objects WHERE id = $1 FOR UPDATE;
 SELECT deleting FROM allocations WHERE id = $1 FOR SHARE;
 ```
 
-A row with `deleting = true`: reject, `object-deleting`. Else:
+A row with `deleting = true`: reject, `object-deleting`. Else (`$2` is n):
 
 ```sql
 INSERT INTO objects (id, ref_count, storage_id, deleting)
@@ -352,17 +380,18 @@ Remove the per-segment upsert loop and the `ErrSegmentObjectReaping` path (`inte
 
 ```sql
 -- (1)
-SELECT 1 FROM flows WHERE id = $1 FOR UPDATE;
--- no row: return apperror ErrNotFound "flow not found" (no change to the error)
+SELECT read_only FROM flows WHERE id = $1 FOR UPDATE;
+-- no row: return apperror.New(apperror.ErrNotFound, "flow not found") (no change)
+-- read_only = true: return apperror.New(apperror.ErrReadOnly, "flow is read-only")
 
 -- (2)
 WITH deleted AS (
     DELETE FROM segments WHERE flow_id = $1 RETURNING object_id
 )
-SELECT object_id, count(*) FROM deleted GROUP BY object_id ORDER BY object_id;
+SELECT object_id, count(*) FROM deleted GROUP BY object_id ORDER BY object_id COLLATE "C";
 
--- (3) lock in ascending sequence, then decrease (BR-GC-23)
-SELECT id FROM objects WHERE id = ANY($1::text[]) ORDER BY id FOR UPDATE;
+-- (3) lock in ascending byte order, then decrease (BR-GC-23)
+SELECT id FROM objects WHERE id = ANY($1::text[]) ORDER BY id COLLATE "C" FOR UPDATE;
 UPDATE objects AS o
    SET ref_count = o.ref_count - d.n
   FROM unnest($1::text[], $2::int[]) AS d(id, n)
@@ -372,7 +401,9 @@ UPDATE objects AS o
 DELETE FROM flows WHERE id = $1;
 ```
 
-Do steps (3) only if step (2) returned one or more rows. `$1` and `$2` of step (3) are parallel arrays in ascending ID sequence. The cascade of step (4) deletes `flow_tags` and other child rows as today. It finds no segment rows.
+Do steps (3) only if step (2) returned one or more rows. `$1` and `$2` of step (3) are parallel arrays in ascending byte order. The cascade of step (4) deletes `flow_tags` and other child rows as today. It finds no segment rows.
+
+The handler (`internal/httpx/handlers/flows.go:400-415`) does not change. It returns the `*apperror.AppError` of `ErrReadOnly` as the error value, and the error middleware renders 403 `read-only`, as for `PutFlowTag`.
 
 ### 6.2 `DeleteSegmentsByTimerange` (`internal/metastore/segments.go:505-591`, BR-GC-21)
 
@@ -405,28 +436,42 @@ UPDATE objects AS o SET ref_count = d.n
 DELETE FROM objects WHERE id = ANY($1::text[]);
 
 -- (4) claim, BR-GC-32 ($1 = controlled candidates without drift)
-UPDATE objects SET deleting = true WHERE id = ANY($1::text[]);
+UPDATE objects SET deleting = true, claimed_at = now() WHERE id = ANY($1::text[]);
 ```
 
-Return `ClaimResult{Selected: rows of (1), Claimed: IDs of (4), RowOnly: IDs of (3), Drift: rows of (2)}`. Skip a statement if its ID list is empty.
+Return `ClaimResult{Selected: rows of (1), Claimed: IDs of (4), RowOnly: IDs of (3), Drift: rows of (2)}`. Sort `Claimed` and `RowOnly` with `slices.Sort`. Skip a statement if its ID list is empty.
 
-### 7.2 `ListRetryObjects(ctx, storageID, afterID, limit)`
+### 7.2 `ReclaimRetryObjects(ctx, storageID, lease, cycleStart, limit)`, one statement (BR-GC-64)
 
 ```sql
-SELECT id FROM objects
-WHERE deleting = true AND storage_id = $1 AND id > $2
-ORDER BY id
-LIMIT $3;
+UPDATE objects SET claimed_at = now()
+WHERE id IN (
+    SELECT id FROM objects
+    WHERE deleting = true
+      AND storage_id = $1
+      AND claimed_at < now() - make_interval(secs => $2)
+      AND claimed_at < $3
+    ORDER BY id
+    LIMIT $4
+    FOR UPDATE SKIP LOCKED)
+RETURNING id;
 ```
 
-### 7.3 `DeleteClaimedObjects(ctx, ids)`
+`$2` is `lease.Seconds()`. `$3` is `cycleStart`. Sort the returned IDs with `slices.Sort`.
+
+### 7.3 `DeleteClaimedObjects(ctx, ids)`, one transaction
 
 ```sql
+-- (1) lock in ascending byte order (BR-GC-23)
+SELECT id FROM objects WHERE id = ANY($1::text[]) AND deleting = true
+ORDER BY id COLLATE "C" FOR UPDATE;
+
+-- (2)
 DELETE FROM objects WHERE id = ANY($1::text[]) AND deleting = true
 RETURNING id;
 ```
 
-Return the IDs of the deleted rows.
+Return the IDs of the deleted rows, sorted with `slices.Sort`.
 
 ### 7.4 `ReleasedBacklog(ctx, storageID)`
 
@@ -460,28 +505,18 @@ SELECT id FROM objects WHERE id = ANY($1::text[]);
 DELETE FROM allocations WHERE id = ANY($1::text[]);
 
 -- (4) claim ($1 = the other candidates)
-UPDATE allocations SET deleting = true WHERE id = ANY($1::text[]);
+UPDATE allocations SET deleting = true, claimed_at = now() WHERE id = ANY($1::text[]);
 ```
 
-Return `ClaimResult{Selected, Claimed: IDs of (4), RowOnly: IDs of (3)}`.
+Return `ClaimResult{Selected, Claimed: IDs of (4), RowOnly: IDs of (3)}`. Sort `Claimed` and `RowOnly` with `slices.Sort`.
 
-### 8.2 `ListRetryAllocations(ctx, storageID, afterID, limit)`
+### 8.2 `ReclaimRetryAllocations(ctx, storageID, lease, cycleStart, limit)`, one statement (BR-GC-64)
 
-```sql
-SELECT id FROM allocations
-WHERE deleting = true AND storage_id = $1 AND id > $2
-ORDER BY id
-LIMIT $3;
-```
+The statement of 7.2, with the table `allocations` in place of `objects`.
 
-### 8.3 `DeleteClaimedAllocations(ctx, ids)`
+### 8.3 `DeleteClaimedAllocations(ctx, ids)`, one transaction
 
-```sql
-DELETE FROM allocations WHERE id = ANY($1::text[]) AND deleting = true
-RETURNING id;
-```
-
-Return the IDs of the deleted rows.
+The two statements of 7.3, with the table `allocations` in place of `objects`.
 
 ### 8.4 `AllocationBacklog(ctx, storageID, grace)`
 
@@ -505,71 +540,86 @@ SELECT
 ```text
 cycle(sweep):
     result := CycleResult{}
+    cycleStart := w.now()
+    ended := "empty"
 
     # Retry phase, BR-GC-64
-    after := ""
     loop:
-        ids, err := List<Retry>(ctx_db, StorageID, after, BatchSize)
-        if err: batchError(sweep, "retry_select", err); result.BatchError = true; return result
-        if len(ids) == 0: break
-        if deleteAndRemove(sweep, ids, &result) is a batch-level error: result.BatchError = true; return result
-        after = last(ids)
+        if stop is closed or ctx is done: ended = "shutdown"; go to finish
+        ids, err := Reclaim<Retry>(ctx_db, StorageID, claimLease, cycleStart, BatchSize)
+        claimedAt := w.now()
+        if err: batchError(sweep, "reclaim", err, count=true); ended = "batch_error"; go to finish
+        if len(ids) > 0:
+            if deleteAndRemove(sweep, ids, claimedAt, &result) is a batch-level error:
+                ended = "batch_error"; go to finish
         if len(ids) < BatchSize: break
 
     # Claim phase, BR-GC-61
     loop:
-        if stop is closed: return result
-        start := now
+        if stop is closed or ctx is done: ended = "shutdown"; go to finish
+        start := w.now()
         claim, err := Claim<Sweep>(ctx_db, ...)
-        if err: batchError(sweep, "claim", err); result.BatchError = true; return result
+        claimedAt := w.now()
+        if err: batchError(sweep, "claim", err, count=true); ended = "batch_error"; go to finish
         record claim.RowOnly    (INFO log line and items_total for each ID)
         record claim.Drift      (WARN log line and refcount_drift_total for each record; sweep 1 only)
         if len(claim.Claimed) > 0:
-            if deleteAndRemove(sweep, claim.Claimed, &result) is a batch-level error:
-                result.BatchError = true; return result
-        set last_success_timestamp_seconds{sweep} = now
-        observe batch_duration_seconds{sweep} = now - start
+            if deleteAndRemove(sweep, claim.Claimed, claimedAt, &result) is a batch-level error:
+                ended = "batch_error"; go to finish
+        set last_success_timestamp_seconds{sweep} = w.now()
+        observe batch_duration_seconds{sweep} = w.now() - start
         if claim.Selected < BatchSize: break
 
-    update the gauges from <Sweep>Backlog (an error here: errors_total{stage="gauge"}, WARN, no stop)
-    write the INFO cycle summary
+finish:                                                     # the only exit point, BR-GC-60
+    if stop is closed or ctx is done: ended = "shutdown"
+    result.BatchError = (ended == "batch_error")
+    if ctx is not done:
+        update the gauges from <Sweep>Backlog (an error here: errors_total{stage="gauge"}, WARN, no stop)
+    write the INFO line "gc cycle completed" with ended_by = ended and the counts of result
     return result
 ```
 
-### 9.2 `deleteAndRemove(sweep, ids)`
+`ctx_db` has `dbTimeout`. Each loop examines `stop` before each reclaim and before each claim. A batch that started completes, or `ctx` cancels it (BR-GC-67).
+
+### 9.2 `deleteAndRemove(sweep, ids, claimedAt, &result)`
 
 ```text
-results, err := Deleter.DeleteObjects(ctx_s3, ids)        # ctx_s3 has s3Timeout
+if w.now() - claimedAt > claimLease / 2:                  # BR-GC-65
+    WARN "gc batch skipped" (sweep, ids = len(ids), age_ms)
+    return no error                                       # the rows stay; a later cycle reclaims them
+
+results, err := Deleter.DeleteObjects(ctx_s3, ids)       # ctx_s3 has s3Timeout
 if err != nil:                                            # ErrAuth for the call, or a cancellation
-    batchError(sweep, "s3_delete", err); return batch-level error
+    batchError(sweep, "s3_delete", err, count=true); return batch-level error
 
 ok, failed := split results by Error == nil
 for each failed result:
     errors_total{sweep, stage="s3_delete"}++
-    WARN log line (sweep, object_id, error)
+    WARN "gc object delete failed" (sweep, object_id, error)
     result.Failed++
 
 if len(ok) > 0:
     removed, err := DeleteClaimed<Rows>(ctx_db, ok)
-    if err != nil: batchError(sweep, "row_delete", err); return batch-level error
+    if err != nil: batchError(sweep, "row_delete", err, count=true); return batch-level error
     for each ID in removed:
-        INFO log line (object_id, storage_id, sweep, outcome="deleted")
+        INFO "gc object removed" (object_id, storage_id, sweep, outcome="deleted")
         items_total{sweep, outcome="deleted"}++
         result.Deleted++
 
-if one failed result wraps objectstore.ErrAuth: return batch-level error        # BR-GC-62, second case
+if one failed result wraps objectstore.ErrAuth:                                 # BR-GC-62, second case
+    batchError(sweep, "s3_delete", that error, count=false); return batch-level error
 if len(ok) == 0:                                                               # BR-GC-62, third case
-    return batch-level error
+    batchError(sweep, "s3_delete", the first error, count=false); return batch-level error
 return no error
 ```
 
-The row delete for the successful IDs occurs before the method returns a batch-level error. Thus the IDs that the object store deleted do not wait for the next cycle.
+The row delete for the successful IDs occurs before the method returns a batch-level error. Thus the IDs that the object store deleted do not wait for a later cycle.
 
-The INFO line and the `deleted` counter apply only to the IDs that the row delete returned (`removed`). A different replica can remove a row first (BR-GC-65). Then that ID is not in `removed`, and this replica does not count it.
+The INFO line and the `deleted` counter apply only to the IDs that the row delete returned (`removed`). A different process can remove a row first (BR-GC-65). Then that ID is not in `removed`, and this process does not count it.
 
-### 9.3 `batchError(sweep, stage, err)`
+### 9.3 `batchError(sweep, stage, err, count)`
 
-Increment `opentams_gc_errors_total{sweep, stage}`. Write an ERROR log line with `sweep`, `stage`, and `error`.
+Write one ERROR line `gc batch error` with `sweep`, `stage`, and `error`. If `count` is true, increment `opentams_gc_errors_total{sweep, stage}` by 1. `count` is false only when BR-GC-63 already counted each failed ID (BR-GC-62).
 
 ### 9.4 Loops
 
@@ -594,7 +644,7 @@ The first cycle starts immediately when the process starts.
 
 ### 9.5 Metrics (`internal/gc/metrics.go`)
 
-Register the metrics on `Registry.NamespacedRegisterer()` (`pkg/metrics/metrics.go:94`) with `Subsystem: "gc"`. The namespace `opentams` comes from the registry. The full names are in the interface specification, section 4.
+`NewMetrics(reg prometheus.Registerer) (*Metrics, error)` registers the metrics on `reg` with `Subsystem: "gc"`, in the style of `NewAppServiceMetrics` (`internal/service/metrics.go:37`). `cmd/opentams` passes `Registry.NamespacedRegisterer()` (`pkg/metrics/metrics.go:94`). The namespace `opentams` comes from the registry. The full names are in the interface specification, section 4.
 
 ## 10. The `gc` command (`cmd/opentams/gc.go`)
 
@@ -602,8 +652,26 @@ Register the metrics on `Registry.NamespacedRegisterer()` (`pkg/metrics/metrics.
 opentams gc [--once]
 ```
 
-1. Load and validate the configuration (`config.Load`). An error: exit code 1.
-2. Make the logger, the metrics registry, the database pool, and the object store as `serve.go` does (`cmd/opentams/serve.go:99-138`). Move the shared code to a function that both commands call. Do not copy it.
+Put the body of the command in this function, so that tests can call it:
+
+```go
+// runGC returns the exit code. stop closes on SIGTERM or SIGINT.
+func runGC(ctx context.Context, cfg *config.Config, log *zap.Logger, once bool, stop <-chan struct{}) int
+```
+
+The cobra `RunE` does these steps:
+
+- Load the configuration. An error gives exit code 1.
+- Make the logger as `serve.go` does (`cmd/opentams/serve.go:71`).
+- Connect the signals to `stop` and to the cancel of `ctx` (step 6.5).
+- Call `runGC`.
+
+Tests call `runGC` with a `zaptest/observer` logger and their own `stop` channel.
+
+The steps of `runGC`:
+
+1. (In `RunE`.) Load and validate the configuration (`config.Load`). An error: exit code 1.
+2. Make the metrics registry, the database pool, and the object store as `serve.go` does (`cmd/opentams/serve.go:99-138`). Move the shared code to a function that both commands call. Do not copy it.
 3. Call `metastore.VerifySchema`. An error: exit code 1.
 4. Make the `gc.Worker` with `gc.Config` from the configuration, `metastore.New(pool)` as `Store`, and the `*objectstore.S3Store` as `Deleter`.
 5. With `--once`: call `RunOnce`. Write the report as one INFO line. Exit code 1 if `Released.BatchError` or `Allocation.BatchError` is true. Else exit code 0. Open no listener.
@@ -613,7 +681,7 @@ opentams gc [--once]
       - `GET /healthz`: `health.HealthzHandler()`.
       - `GET /readyz`: 503 after the shutdown signal, else `health.ReadyzHandler(checker)`.
       - `GET /metrics`: `gin.WrapH(metricsep.Handler(reg.Gatherer()))` (as `internal/server/server.go:152`).
-   3. Listen on `SERVER_PORT` with `ReadHeaderTimeout` 10 s.
+   3. Listen on `SERVER_PORT` with `ReadHeaderTimeout` 10 s. The listener always uses plain HTTP. `gc` ignores `SERVER_TLS_CERT_FILE` and `SERVER_TLS_KEY_FILE`. Rationale: the three endpoints carry no client data, and the GC pod has no certificate volume (section 12).
    4. Start `Worker.Run(ctx, stop)`.
    5. On SIGTERM or SIGINT: close `stop`, set the shutdown flag, and start a timer of `SERVER_GRACEFUL_SHUTDOWN_PERIOD` that cancels `ctx`.
    6. When `Run` returns, shut down the listener and stop with exit code 0.
@@ -626,6 +694,8 @@ The `Long` help text of the command must state:
 - The settings `GC_POLL_INTERVAL`, `GC_BATCH_SIZE`, `GC_ALLOCATION_GRACE`, `OPENTAMS_OBJECT_STORE_ID`, and the database and object-store settings.
 
 Remove the old text about flow delete requests, CronJob, and sidecar. Remove `errGCNotImplemented`.
+
+The tests of the command set these variables, with values from the test containers: `APP_ENV=development`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_SSLMODE=disable`, `OBJECT_STORE_BUCKET`, `OBJECT_STORE_REGION`, `OBJECT_STORE_ENDPOINT`, `OBJECT_STORE_ACCESS_KEY_ID`, `OBJECT_STORE_SECRET_ACCESS_KEY`, and `STORAGE_BACKEND_PROVIDER`. With `APP_ENV=development`, `config.Load` does not require `AUTH_EXTERNAL_ISSUER_URL` and `AUTH_EXTERNAL_AUDIENCE` (`internal/config/config.go:172-180`).
 
 ## 11. Configuration (`internal/config/config.go`)
 
@@ -664,14 +734,25 @@ Add the same keys to `values.schema.json`, with these rules:
 
 ### 12.2 Labels
 
-GC pods must not match the selector of the API Service. Add a helper:
+GC objects must not match the selector of the API Service (`templates/service.yaml`) or of the API ServiceMonitor (`templates/servicemonitor.yaml:12-14`). Both select `opentams.selectorLabels`. Add two helpers:
 
 ```yaml
 {{- define "opentams.gcSelectorLabels" -}}
 app.kubernetes.io/name: {{ include "opentams.name" . }}-gc
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
+
+{{- define "opentams.gcLabels" -}}
+helm.sh/chart: {{ include "opentams.chart" . }}
+{{ include "opentams.gcSelectorLabels" . }}
+{{- if .Chart.AppVersion }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+{{- end }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end }}
 ```
+
+Each GC object uses `opentams.gcLabels` for its metadata labels. No GC object uses `opentams.labels` or `opentams.selectorLabels`.
 
 Do not change `opentams.selectorLabels`. A change to the selector of an existing Deployment is not permitted by Kubernetes.
 
@@ -679,10 +760,10 @@ Do not change `opentams.selectorLabels`. A change to the selector of an existing
 
 | File | Content |
 |---|---|
-| `gc-deployment.yaml` | Deployment `<fullname>-gc` with these settings: `replicas: .Values.gc.replicaCount`, the same image, service account, security contexts, env (`opentams.env`), and `/tmp` volume as `deployment.yaml`, and `args: ["gc"]`. Add the env values `GC_POLL_INTERVAL`, `GC_BATCH_SIZE`, and `GC_ALLOCATION_GRACE` from `.Values.gc`. Add port `http` (`.Values.server.port`), the liveness probe `/healthz`, the readiness probe `/readyz` (values from `.Values.probes`), and `resources: .Values.gc.resources`. No startup probe. No ingress. |
-| `gc-service.yaml` | Service `<fullname>-gc`, type ClusterIP, port `http`, selector `opentams.gcSelectorLabels`. |
-| `gc-servicemonitor.yaml` | Only if `.Values.serviceMonitor.enabled`. ServiceMonitor `<fullname>-gc`, selector `opentams.gcSelectorLabels`, endpoint `port: http`, `path: /metrics`, interval and timeout from `.Values.serviceMonitor`. |
-| `gc-networkpolicy.yaml` | Only if `.Values.networkPolicy.enabled`. Ingress only from `.Values.networkPolicy.monitoringNamespaceSelector` on port `.Values.server.port`. |
+| `gc-deployment.yaml` | Deployment `<fullname>-gc`. Metadata labels `opentams.gcLabels`. `replicas: .Values.gc.replicaCount`. Selector `opentams.gcSelectorLabels`. Pod labels `opentams.gcSelectorLabels` plus `.Values.podLabels`. Pod annotations `.Values.podAnnotations`. Copy these fields from `deployment.yaml` with the same values: `imagePullSecrets`, `serviceAccountName`, `automountServiceAccountToken`, `securityContext` (pod), `priorityClassName`, `nodeSelector`, `affinity`, `tolerations`, `topologySpreadConstraints`, `image`, `imagePullPolicy`, `securityContext` (container), `env` (`opentams.env`), the `/tmp` volume, `extraVolumes`, and `extraVolumeMounts`. Add `args: ["gc"]` and the env values `GC_POLL_INTERVAL`, `GC_BATCH_SIZE`, and `GC_ALLOCATION_GRACE` from `.Values.gc`. Add port `http` (`.Values.server.port`), the liveness probe path `/healthz` and the readiness probe path `/readyz` (the timing values from `.Values.probes.liveness` and `.Values.probes.readiness`), and `resources: .Values.gc.resources`. Do not add the TLS volume, a startup probe, an autoscaler, or a PodDisruptionBudget. The default update strategy (RollingUpdate) is correct, because the claim lease makes two pods at the same time safe (BR-GC-65). |
+| `gc-service.yaml` | Service `<fullname>-gc`. Metadata labels `opentams.gcLabels`. Annotations with the same rule as `service.yaml:7-17`: `.Values.service.annotations`, and the three `prometheus.io/*` annotations if `.Values.serviceMonitor.enabled` is false. Type ClusterIP. Port `http`: `port` and `targetPort` are `.Values.server.port`. Selector `opentams.gcSelectorLabels`. |
+| `gc-servicemonitor.yaml` | Only if `.Values.serviceMonitor.enabled`. ServiceMonitor `<fullname>-gc`. Metadata labels `opentams.gcLabels` plus `.Values.serviceMonitor.labels`. Selector `matchLabels: opentams.gcSelectorLabels`. Endpoint `port: http`, `path: /metrics`, interval and timeout from `.Values.serviceMonitor`. |
+| `gc-networkpolicy.yaml` | Only if `.Values.networkPolicy.enabled`. Metadata labels `opentams.gcLabels`. Pod selector `opentams.gcSelectorLabels`. Ingress only from `.Values.networkPolicy.monitoringNamespaceSelector` on port `.Values.server.port`. |
 
 Update `NOTES.txt:47`: the GC worker is deployed when `gc.enabled` is true.
 
@@ -698,22 +779,30 @@ Make each change in the same pull request as the code. The column "Rule" names t
 | `internal/metastore/allocations.go` | new | Section 4.2 | BR-GC-01 to BR-GC-06 |
 | `internal/metastore/gc.go` | new | Sections 7 and 8 | BR-GC-30 to BR-GC-46 |
 | `internal/metastore/segments.go` | 96-124 | Remove `ErrSegmentObjectReaping`. Change comments from `reaping` to `deleting`. | BR-GC-74 |
-| `internal/metastore/segments.go` | 224-264 | Section 5 | BR-GC-10 to BR-GC-17 |
-| `internal/metastore/segments.go` | 284-311 | Insert only the accepted segments | BR-GC-15 |
+| `internal/metastore/segments.go` | 57-69 | Add `Code apperror.ErrorCode` to `RejectReason` | BR-GC-15 |
+| `internal/metastore/segments.go` | 226-262 | Section 5 (step 3) | BR-GC-10 to BR-GC-17 |
+| `internal/metastore/segments.go` | 264-338 | Roll back if no segment is accepted. Steps 3.5 and 4 use only the accepted segments. | BR-GC-15 |
 | `internal/metastore/segments.go` | 572-580 | Section 6.2 | BR-GC-21 |
 | `internal/metastore/segments.go` | 791-800 | Remove `IsObjectRegistered` if it has no other caller | BR-GC-03 |
 | `internal/metastore/flows.go` | 425-468 | Section 6.1, and the comment | BR-GC-20 |
 | `internal/apperror/apperror.go` | 27, 34, 59, 66 | Remove `ErrObjectIDExists` and `ErrObjectReaping`. Add `ErrObjectExists`, `ErrObjectNotAllocated`, `ErrObjectWrongFlow`, `ErrObjectDeleting`, each 400, with the titles of BR-GC-70 to BR-GC-73. | BR-GC-70 to BR-GC-74 |
-| `internal/apperror/apperror_test.go` | 26, 109 | Update the tables | BR-GC-70 |
-| `internal/service/storage/storage.go` | 18-24, 79-81, 135-160 | Section 4.1 | BR-GC-01 to BR-GC-08 |
+| `internal/apperror/apperror_test.go` | 26, 109, 159-166 | Update the tables. TC-ERR-09 tests `ErrObjectReaping` (409): remove that case. | BR-GC-70, BR-GC-74 |
+| `internal/service/storage/storage.go` | 18-24, 79-81, 135-160 | Section 4.1 (constructor with `storageID` and `allocTTL`, `ObjectError` mapping) | BR-GC-01 to BR-GC-08 |
 | `internal/service/segment/segment.go` | 111-112, 200 | Remove the `ErrSegmentObjectReaping` cases | BR-GC-74 |
+| `internal/service/segment/segment.go` | 212-240 | Take `Type` and `Title` from `RejectReason.Code` (section 5.1) | BR-GC-15 |
 | `internal/httpx/handlers/segments.go` | 302-305 | Remove the 409 `object-reaping` case | BR-GC-16 |
+| `internal/httpx/handlers/segments.go` | 609-614 | The fallback of the 409 case uses `object-deleting` | BR-GC-74 |
 | `internal/httpx/handlers/storage.go` | 40-46 | WARN, not ERROR, for a 400 `AppError` | BR-GC-70 |
 | `internal/httpx/handlers/root.go` | 28-32 | Set `MinPresignedUrlTimeout` | BR-GC-09 |
 | `internal/config/config.go` | 107, 144-147, validation | Section 11 | BR-GC-09, NFR-GC-P2, P3 |
-| `cmd/opentams/serve.go` | 99-138, 163-176 | Move the shared setup to a function. Read the storage ID from the configuration. Pass it to the storage service. | Section 10 |
+| `cmd/opentams/serve.go` | 99-138, 163-178 | Move the shared setup to a function. Read the storage ID from the configuration. Pass it and the presign time to `storage.New`. | Section 10, 4.1 |
 | `cmd/opentams/gc.go` | all | Section 10 | BR-GC-60 to BR-GC-69 |
-| `tools/scaletest/loader/dbload.go` | 314, 531 | Column `reaping` → `deleting` | BR-GC-50 |
+| `internal/metastore/store_test.go` | new helpers | `resetGCTables(t)`: `TRUNCATE objects, allocations, segments, flows CASCADE` on `testPool`. `seedAllocation(t, flowID, ids...)`: one allocation row for each ID, `storage_id 'default'`, `expires_at = now() + interval '1 hour'`. | Test plan section 0 |
+| `internal/metastore/segments_test.go`, `segments_timerange_test.go`, `flows_test.go`, `internal/service/segment/segment_integration_test.go` | each controlled registration | Call `seedAllocation` before each `InsertSegments` call with a controlled segment. Else the call gets `object-not-allocated`. | BR-GC-12 |
+| `internal/metastore/segments_test.go`, `flows_test.go`, `segments_perf_test.go`, `internal/httpx/handlers/segments_perf_test.go`, `internal/service/segment/segment_perf_test.go`, `tools/scaletest/dbstats/capture_integration_test.go`, `tools/scaletest/bench/buckets_integration_test.go` | each SQL with `reaping` | Column `reaping` → `deleting` (for example `segments_test.go:421,781`, `flows_test.go:211`, `segments_perf_test.go:73`) | BR-GC-50 |
+| `tools/scaletest/loader/dbload.go` | 314, 531 | Column `reaping` → `deleting`. Write `storage_id = 'default'` on each object row, so that sweep 1 deletes controlled objects in scale case S3. | BR-GC-50, BR-GC-30 |
+| `tools/scaletest/loadgen/executor.go` | 178-235 | Before each registration, call `POST …/storage` with `object_ids` for the IDs of that registration (`client.go:140`, add the `object_ids` mode). Record the allocation in its own bucket. Count a 200 response with `failed_segments` as an error. | BR-GC-12, scale case S1 |
+| `docs/requirements.md` | REQ-BEH-17 (247) | The server still does not validate the content of media objects. A controlled segment must use an allocated object ID (REQ-GC-10). | BR-GC-12 |
 | `deployments/helm/opentams/*` | — | Section 12 | NFR-GC-S4 |
 | `docs/requirements.md` | §6.3.1 (436-460) | Add `object-exists`, `object-not-allocated`, `object-wrong-flow`, `object-deleting`. Remove `object-id-exists`. | BR-GC-70 to BR-GC-74 |
 | `docs/requirements.md` | §4.11 status note | Remove "not implemented" | — |

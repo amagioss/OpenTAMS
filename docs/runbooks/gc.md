@@ -17,7 +17,7 @@ In the commands, `<ns>` is the namespace, `<release>` is the Helm release name, 
 2. If no pod operates, examine `gc.enabled` and `gc.replicaCount` in the Helm values.
 3. If a pod restarts, read its logs: `kubectl -n <ns> logs deploy/<fullname>-gc --previous`. A configuration error names the variable.
 4. Read the current logs. Find lines with the message `gc batch error`. The field `stage` tells where the error occurs.
-5. For `stage = claim`, `retry_select`, or `row_delete`, examine the database connection. Follow the REQ-OBS-08 runbook "Metadata store unreachable".
+5. For `stage = claim`, `reclaim`, or `row_delete`, examine the database connection. Follow the REQ-OBS-08 runbook "Metadata store unreachable".
 6. For `stage = s3_delete`, go to R2.
 
 **Recovery verification.** The last-success time increases again for both sweeps. The log has `gc cycle completed` lines with `ended_by = empty`.
@@ -96,18 +96,17 @@ HAVING o.ref_count <> count(s.id);
 
 **Recovery verification.** The gauge is 0 after the next cycle.
 
-## R6. Stop the GC, or restore the database
+## R6. Stop the GC
 
-**Symptoms.** Planned maintenance, or a database restore from a backup (REQ-REL-13).
+**Symptoms.** Planned maintenance.
 
 **Dashboard view.** Not applicable.
 
 **Investigation steps (procedure).**
 1. Stop the GC: `helm upgrade <release> … --set gc.replicaCount=0`, or `kubectl -n <ns> scale deploy/<fullname>-gc --replicas=0`.
 2. Make sure that no GC pod operates.
-3. Do the maintenance, or restore the database.
-4. After a restore, do the reconciliation of REQ-REL-13 before you start the GC again. A restored database can refer to bytes that the GC deleted after the time of the backup. The GC must not operate on the restored state before this reconciliation.
-5. Start the GC again with the previous replica count.
+3. Do the maintenance.
+4. Start the GC again with the previous replica count.
 
 **Recovery verification.** R1 shows a normal state.
 
@@ -119,7 +118,7 @@ HAVING o.ref_count <> count(s.id);
 
 **Investigation steps (procedure).**
 1. Read the log of the migration job. Find the statement that failed and the cause.
-2. Make sure that PostgreSQL rolled back the migration. The file is one transaction (BR-GC-51). This query must return `reaping` and no other row:
+2. Find the state of the schema with this query:
 
    ```sql
    SELECT column_name FROM information_schema.columns
@@ -128,9 +127,11 @@ HAVING o.ref_count <> count(s.id);
    SELECT 'allocations' FROM information_schema.tables WHERE table_name = 'allocations';
    ```
 
-3. If the query returns a different result, stop. Do not use `migrate force`. Make a report of the result to the maintainers.
-4. Correct the cause of step 1. An example is a statement timeout that is shorter than the index build.
-5. Set the version back: `opentams migrate force 5`.
-6. Apply the migration again: `opentams migrate up`.
+3. If the query returns only `reaping`, PostgreSQL rolled back the migration. The file is one transaction (BR-GC-51). Go to step 6.
+4. If the query returns `deleting` and `allocations`, the migration committed, and only the dirty flag stays (for example, the job stopped after the commit). Set the version: `opentams migrate force 6`. Then go to the recovery verification.
+5. If the query returns a different result, stop. Do not use `migrate force`. Make a report of the result to the maintainers.
+6. Correct the cause of step 1. An example is a statement timeout that is shorter than the index build.
+7. Set the version back: `opentams migrate force 5`.
+8. Apply the migration again: `opentams migrate up`.
 
 **Recovery verification.** `schema_migrations` shows `version = 6` and `dirty = false`. The query of step 2 returns `deleting` and `allocations`.
