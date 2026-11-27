@@ -10,10 +10,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 
 	"github.com/amagioss/opentams/internal/auth"
 	"github.com/amagioss/opentams/internal/config"
@@ -21,7 +19,6 @@ import (
 	"github.com/amagioss/opentams/internal/httpx/health"
 	"github.com/amagioss/opentams/internal/idempotency"
 	"github.com/amagioss/opentams/internal/metastore"
-	"github.com/amagioss/opentams/internal/objectstore"
 	"github.com/amagioss/opentams/internal/server"
 	"github.com/amagioss/opentams/internal/service"
 	"github.com/amagioss/opentams/internal/service/flow"
@@ -29,7 +26,6 @@ import (
 	"github.com/amagioss/opentams/internal/service/storage"
 	"github.com/amagioss/opentams/pkg/jwtauth"
 	"github.com/amagioss/opentams/pkg/logger"
-	"github.com/amagioss/opentams/pkg/metrics"
 )
 
 func newServeCmd() *cobra.Command {
@@ -55,20 +51,12 @@ Run 'opentams migrate' before the first start to apply the database schema.`,
 }
 
 func serve(ctx context.Context) error {
-	cfg, err := config.Load()
+	cfg, err := loadConfig()
 	if err != nil {
-		// No application logger yet; use a temporary production logger for REQ-USE-05.
-		tmpLog := zap.Must(zap.NewProduction())
-		defer tmpLog.Sync() //nolint:errcheck // process is exiting; an unflushed final-log error is not actionable.
-		tmpLog.Error("configuration invalid",
-			zap.Error(err),
-			zap.Bool("retry_safe", false),
-			zap.String("check", "environment variables listed in the error"))
 		return err
 	}
 
-	level, _ := logger.ParseLevel(cfg.LogLevel) // validated by config.Load
-	log, atom := logger.New(os.Stdout, level, logger.WithStacktrace(zapcore.ErrorLevel))
+	log, atom := newProcessLogger(cfg)
 	defer log.Sync() //nolint:errcheck // process is exiting; an unflushed final-log error is not actionable.
 
 	log.Info("opentams starting", zap.Any("config", cfg.Redacted()))
@@ -96,44 +84,20 @@ func serve(ctx context.Context) error {
 		}
 	}()
 
-	reg, err := metrics.New(metrics.WithNamespace("opentams"))
+	reg, err := newMetricsRegistry(log)
 	if err != nil {
-		log.Error("failed to initialize metrics registry", zap.Error(err),
-			zap.Bool("retry_safe", false),
-			zap.String("check", "duplicate metric registration"))
-		return fmt.Errorf("metrics: %w", err)
+		return err
 	}
 
-	dsn := fmt.Sprintf("host=%s port=%d dbname=%s user=%s password=%s sslmode=%s",
-		cfg.DBHost, cfg.DBPort, cfg.DBName, cfg.DBUser, cfg.DBPassword, cfg.DBSSLMode)
-	poolCfg, err := pgxpool.ParseConfig(dsn)
+	pool, err := openDB(ctx, cfg, log)
 	if err != nil {
-		log.Error("failed to parse database DSN", zap.Error(err),
-			zap.Bool("retry_safe", false),
-			zap.String("check", "DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, DB_SSLMODE"))
-		return fmt.Errorf("db: parse config: %w", err)
-	}
-	// DBPoolMin/Max are validated in config.Validate to be in the
-	// range [1, 100_000], far below MaxInt32 — the int32 cast cannot
-	// overflow in practice. G115 suppressed with this rationale.
-	poolCfg.MinConns = int32(cfg.DBPoolMin) //nolint:gosec // bounded above by config.Validate
-	poolCfg.MaxConns = int32(cfg.DBPoolMax) //nolint:gosec // bounded above by config.Validate
-
-	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
-	if err != nil {
-		log.Error("failed to connect to database", zap.Error(err),
-			zap.Bool("retry_safe", true),
-			zap.String("check", "DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD and network"))
-		return fmt.Errorf("db: connect: %w", err)
+		return err
 	}
 	defer pool.Close()
 
-	obj, err := objectstore.NewS3Store(cfg)
+	obj, err := openObjectStore(cfg, log)
 	if err != nil {
-		log.Error("failed to initialize object store", zap.Error(err),
-			zap.Bool("retry_safe", false),
-			zap.String("check", "OBJECT_STORE_* variables"))
-		return fmt.Errorf("objectstore: %w", err)
+		return err
 	}
 
 	ms := metastore.New(pool)

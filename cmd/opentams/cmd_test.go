@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -39,16 +38,54 @@ func TestRootCmd_HelpMentionsSubcommands(t *testing.T) {
 	assert.Contains(t, help, "migrate")
 }
 
-// TC-CMD-GC-01: gc subcommand returns a "not implemented" error (M16 scope).
-func TestGCCmd_NotImplemented(t *testing.T) {
+// TC-GC-123: gc --help names --once and the GC settings, and drops the
+// pre-M16 wording.
+func Test_TC_GC_123_HelpText(t *testing.T) {
 	root := newRootCmd()
 	buf := &bytes.Buffer{}
-	root.SetErr(buf)
-	root.SetArgs([]string{"gc"})
+	root.SetOut(buf)
+	root.SetArgs([]string{"gc", "--help"})
+
+	require.NoError(t, root.Execute())
+	help := buf.String()
+
+	for _, want := range []string{
+		"--once",
+		"GC_POLL_INTERVAL",
+		"GC_BATCH_SIZE",
+		"GC_ALLOCATION_GRACE",
+		"OPENTAMS_OBJECT_STORE_ID",
+	} {
+		assert.Contains(t, help, want)
+	}
+	for _, unwanted := range []string{"CronJob", "sidecar", "flow delete requests"} {
+		assert.NotContains(t, help, unwanted)
+	}
+}
+
+// TC-GC-124: gc --once with GC_BATCH_SIZE=0 fails before any connection,
+// and the error names GC_BATCH_SIZE. main turns the error into exit code 1.
+func Test_TC_GC_124_ConfigErrorNamesTheSetting(t *testing.T) {
+	// The other required settings are valid, so GC_BATCH_SIZE is the
+	// only error that config.Load joins.
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("DB_HOST", "localhost")
+	t.Setenv("DB_NAME", "x")
+	t.Setenv("DB_USER", "x")
+	t.Setenv("DB_PASSWORD", "x")
+	t.Setenv("OBJECT_STORE_BUCKET", "x")
+	t.Setenv("OBJECT_STORE_REGION", "us-east-1")
+	t.Setenv("STORAGE_BACKEND_PROVIDER", "s3")
+	t.Setenv("GC_BATCH_SIZE", "0")
+
+	root := newRootCmd()
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"gc", "--once"})
 
 	err := root.Execute()
 	require.Error(t, err)
-	assert.Contains(t, strings.ToLower(err.Error()), "not")
+	assert.Contains(t, err.Error(), "GC_BATCH_SIZE")
+	assert.NotContains(t, err.Error(), "required")
 }
 
 // TC-CMD-MIGRATE-01: migrate with no subcommand shows help (M17 implemented).
