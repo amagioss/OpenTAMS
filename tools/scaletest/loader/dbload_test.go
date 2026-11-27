@@ -187,6 +187,19 @@ func TestLoadEndToEnd_Small(t *testing.T) {
 	if minRefCount != 1 || maxRefCount != 1 {
 		t.Errorf("ref_count out of [1,1]: min=%d max=%d", minRefCount, maxRefCount)
 	}
+
+	// Sweep 1 deletes only objects whose storage_id is NULL or the
+	// configured storage ID (BR-GC-30). Loaded objects are controlled
+	// objects of the default backend, so every row carries "default".
+	var notDefault int64
+	if err := pool.QueryRow(ctx,
+		`SELECT count(*) FROM objects WHERE storage_id IS DISTINCT FROM 'default'`).
+		Scan(&notDefault); err != nil {
+		t.Errorf("storage_id query: %v", err)
+	}
+	if notDefault != 0 {
+		t.Errorf("objects with storage_id other than 'default': %d", notDefault)
+	}
 }
 
 // TestReset_TruncatesLoaderTables proves Reset clears every table the

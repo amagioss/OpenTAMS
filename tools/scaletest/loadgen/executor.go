@@ -152,6 +152,58 @@ func (x *executor) timed(ctx context.Context, measuring bool, bucket string, cal
 	return err == nil
 }
 
+// register posts segs to the flow and records the call into bucket. A
+// 200 with failed_segments counts as an error: the server rejected some
+// segments (for example object-not-allocated, BR-GC-71).
+func (x *executor) register(ctx context.Context, measuring bool, bucket string, flow uuid.UUID, segs []segmentPost, idemKey string) bool {
+	t0 := time.Now()
+	res, err := x.client.registerSegments(ctx, flow, segs, idemKey)
+	lat := time.Since(t0)
+	if measuring {
+		x.coll.record(bucket, lat, err == nil && res.accepted())
+	}
+	return err == nil
+}
+
+// allocate posts the object IDs of segs to POST …/storage in object_ids
+// mode, in calls of at most maxAllocObjectIDs, and records each call into
+// bucket. A controlled segment registers only after its ID is allocated
+// on the same flow (BR-GC-12). It stops at the first failed call.
+func (x *executor) allocate(ctx context.Context, measuring bool, bucket string, flow uuid.UUID, segs []segmentPost) (responded, allocated bool) {
+	ids := make([]string, len(segs))
+	for i, s := range segs {
+		ids[i] = s.ObjectID
+	}
+	for start := 0; start < len(ids); start += maxAllocObjectIDs {
+		batch := ids[start:min(start+maxAllocObjectIDs, len(ids))]
+		t0 := time.Now()
+		status, err := x.client.allocateObjectIDs(ctx, flow, batch)
+		lat := time.Since(t0)
+		success := ok(status, err)
+		if measuring {
+			x.coll.record(bucket, lat, success)
+		}
+		if !success {
+			return err == nil, false
+		}
+	}
+	return true, true
+}
+
+// allocateAndRegister allocates the object IDs of segs, then registers
+// segs. When the allocation fails, the registration is not sent (it
+// would fail with object-not-allocated) and counts as an error.
+func (x *executor) allocateAndRegister(ctx context.Context, measuring bool, allocBucket, regBucket string, flow uuid.UUID, segs []segmentPost, idemKey string) bool {
+	responded, allocated := x.allocate(ctx, measuring, allocBucket, flow, segs)
+	if !allocated {
+		if measuring {
+			x.coll.record(regBucket, 0, false)
+		}
+		return responded
+	}
+	return x.register(ctx, measuring, regBucket, flow, segs, idemKey)
+}
+
 func (x *executor) chunk() int64 { return int64(x.plan.ChunkDurationSec) }
 
 func (x *executor) doListByFlow(ctx context.Context, measuring bool) bool {
@@ -176,9 +228,7 @@ func (x *executor) doInsertDeep(ctx context.Context, measuring bool) bool {
 	flow := x.deepFlow(i)
 	segIdx := lgAppendBase(x.plan.DeepDepth, lgRegInsertDeep) + i
 	seg := segmentPost{ObjectID: fmt.Sprintf("lg-deep-%d", i), Timerange: trOne(segIdx, x.chunk()), TSOffset: "0:0"}
-	return x.timed(ctx, measuring, bktInsertDeep, func(ctx context.Context) (int, error) {
-		return x.client.registerSegments(ctx, flow, []segmentPost{seg}, fmt.Sprintf("lg-deep-k-%d", i))
-	})
+	return x.allocateAndRegister(ctx, measuring, bktInsertDeepAlloc, bktInsertDeep, flow, []segmentPost{seg}, fmt.Sprintf("lg-deep-k-%d", i))
 }
 
 func (x *executor) doInsertShallow(ctx context.Context, measuring bool) bool {
@@ -186,9 +236,7 @@ func (x *executor) doInsertShallow(ctx context.Context, measuring bool) bool {
 	flow := x.shallowFlow(i)
 	segIdx := lgAppendBase(x.plan.ShallowDepth, lgRegInsertShallow) + i
 	seg := segmentPost{ObjectID: fmt.Sprintf("lg-shallow-%d", i), Timerange: trOne(segIdx, x.chunk()), TSOffset: "0:0"}
-	return x.timed(ctx, measuring, bktInsertShallow, func(ctx context.Context) (int, error) {
-		return x.client.registerSegments(ctx, flow, []segmentPost{seg}, fmt.Sprintf("lg-shallow-k-%d", i))
-	})
+	return x.allocateAndRegister(ctx, measuring, bktInsertShallowAlloc, bktInsertShallow, flow, []segmentPost{seg}, fmt.Sprintf("lg-shallow-k-%d", i))
 }
 
 func (x *executor) doRegisterBulk(ctx context.Context, measuring bool) bool {
@@ -203,9 +251,7 @@ func (x *executor) doRegisterBulk(ctx context.Context, measuring bool) bool {
 			TSOffset:  "0:0",
 		}
 	}
-	return x.timed(ctx, measuring, bktRegisterBulk, func(ctx context.Context) (int, error) {
-		return x.client.registerSegments(ctx, flow, segs, fmt.Sprintf("lg-bulk-k-%d", i))
-	})
+	return x.allocateAndRegister(ctx, measuring, bktRegisterBulkAlloc, bktRegisterBulk, flow, segs, fmt.Sprintf("lg-bulk-k-%d", i))
 }
 
 func (x *executor) doCreateStorage(ctx context.Context, measuring bool) bool {
@@ -217,7 +263,10 @@ func (x *executor) doCreateStorage(ctx context.Context, measuring bool) bool {
 
 // doIdempotent issues the first POST then an immediate replay with the
 // same key+body, recording the two into separate buckets so the
-// dedupe-path cost is visible distinct from the initial write.
+// dedupe-path cost is visible distinct from the initial write. Only the
+// first use of a slot allocates its object ID: a later use replays a
+// registration whose object already exists, and a second allocation of
+// that ID is rejected with object-exists (BR-GC-03 row 2).
 func (x *executor) doIdempotent(ctx context.Context, measuring bool) bool {
 	i := x.next(opIdempotentRetry)
 	// Flow, body, and key all derive from the shared slot so that calls
@@ -230,12 +279,18 @@ func (x *executor) doIdempotent(ctx context.Context, measuring bool) bool {
 	seg := segmentPost{ObjectID: fmt.Sprintf("lg-idem-%d", slot), Timerange: trOne(segIdx, x.chunk()), TSOffset: "0:0"}
 	key := fmt.Sprintf("lg-idem-k-%d", slot)
 	body := []segmentPost{seg}
-	first := x.timed(ctx, measuring, bktIdempotentFirst, func(ctx context.Context) (int, error) {
-		return x.client.registerSegments(ctx, flow, body, key)
-	})
-	dedupe := x.timed(ctx, measuring, bktIdempotentDedupe, func(ctx context.Context) (int, error) {
-		return x.client.registerSegments(ctx, flow, body, key)
-	})
+	if slot == i {
+		responded, allocated := x.allocate(ctx, measuring, bktIdempotentAlloc, flow, body)
+		if !allocated {
+			if measuring {
+				x.coll.record(bktIdempotentFirst, 0, false)
+				x.coll.record(bktIdempotentDedupe, 0, false)
+			}
+			return responded
+		}
+	}
+	first := x.register(ctx, measuring, bktIdempotentFirst, flow, body, key)
+	dedupe := x.register(ctx, measuring, bktIdempotentDedupe, flow, body, key)
 	// The op "completed" only if both the first POST and the dedupe replay
 	// got a response.
 	return first && dedupe

@@ -56,11 +56,16 @@ type segmentPost struct {
 	TSOffset  string `json:"ts_offset,omitempty"`
 }
 
-// storagePost is the POST /storage body; Limit allocates that many
-// server-generated object ids.
+// storagePost is the POST /storage body. Exactly one field is set:
+// Limit allocates that many server-generated object ids; ObjectIDs
+// allocates the client's own ids (at most maxAllocObjectIDs per call).
 type storagePost struct {
-	Limit int `json:"limit,omitempty"`
+	Limit     int      `json:"limit,omitempty"`
+	ObjectIDs []string `json:"object_ids,omitempty"`
 }
+
+// maxAllocObjectIDs is the server's limit on object_ids per POST /storage.
+const maxAllocObjectIDs = 100
 
 func (c *Client) segmentsPath(flowID uuid.UUID) string {
 	return fmt.Sprintf("%s/tams/v1/flows/%s/segments", c.base, flowID)
@@ -74,14 +79,27 @@ func (c *Client) storagePath(flowID uuid.UUID) string {
 // the status code. The body is drained so the connection can be reused
 // (keep-alive) under high RPS.
 func (c *Client) do(req *http.Request) (int, error) {
+	status, _, err := c.doRead(req, false)
+	return status, err
+}
+
+// doRead is do, but returns the response body when keepBody is set.
+func (c *Client) doRead(req *http.Request, keepBody bool) (int, []byte, error) {
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	resp, err := c.hc.Do(req)
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	defer resp.Body.Close() //nolint:errcheck // body fully drained below; close error is uninteresting.
-	_, _ = io.Copy(io.Discard, resp.Body)
-	return resp.StatusCode, nil
+	if !keepBody {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return resp.StatusCode, nil, nil
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, nil, fmt.Errorf("read body: %w", err)
+	}
+	return resp.StatusCode, body, nil
 }
 
 func (c *Client) listSegments(ctx context.Context, flowID uuid.UUID, timerange string, limit int) (int, error) {
@@ -103,18 +121,45 @@ func (c *Client) listSegments(ctx context.Context, flowID uuid.UUID, timerange s
 	return c.do(req)
 }
 
-func (c *Client) registerSegments(ctx context.Context, flowID uuid.UUID, segs []segmentPost, idemKey string) (int, error) {
+// registerResult is the outcome of POST /segments. A 200 carries
+// failed_segments: the segments the server rejected one by one.
+type registerResult struct {
+	status         int
+	failedSegments int
+}
+
+func (r registerResult) accepted() bool {
+	return r.status >= 200 && r.status < 300 && r.failedSegments == 0
+}
+
+type segmentsFailure struct {
+	FailedSegments []json.RawMessage `json:"failed_segments"`
+}
+
+func (c *Client) registerSegments(ctx context.Context, flowID uuid.UUID, segs []segmentPost, idemKey string) (registerResult, error) {
 	body, err := json.Marshal(segs)
 	if err != nil {
-		return 0, fmt.Errorf("marshal segments: %w", err)
+		return registerResult{}, fmt.Errorf("marshal segments: %w", err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.segmentsPath(flowID), bytes.NewReader(body))
 	if err != nil {
-		return 0, err
+		return registerResult{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Idempotency-Key", idemKey)
-	return c.do(req)
+	status, body, err := c.doRead(req, true)
+	if err != nil {
+		return registerResult{}, err
+	}
+	res := registerResult{status: status}
+	if status == http.StatusOK && len(body) > 0 {
+		var f segmentsFailure
+		if err := json.Unmarshal(body, &f); err != nil {
+			return res, fmt.Errorf("decode failed_segments: %w", err)
+		}
+		res.failedSegments = len(f.FailedSegments)
+	}
+	return res, nil
 }
 
 func (c *Client) deleteSegments(ctx context.Context, flowID uuid.UUID, timerange, objectID string) (int, error) {
@@ -137,7 +182,17 @@ func (c *Client) deleteSegments(ctx context.Context, flowID uuid.UUID, timerange
 }
 
 func (c *Client) allocateStorage(ctx context.Context, flowID uuid.UUID, limit int) (int, error) {
-	body, err := json.Marshal(storagePost{Limit: limit})
+	return c.postStorage(ctx, flowID, storagePost{Limit: limit})
+}
+
+// allocateObjectIDs allocates the client's own object ids on the flow
+// (object_ids mode), so that a controlled registration of them succeeds.
+func (c *Client) allocateObjectIDs(ctx context.Context, flowID uuid.UUID, objectIDs []string) (int, error) {
+	return c.postStorage(ctx, flowID, storagePost{ObjectIDs: objectIDs})
+}
+
+func (c *Client) postStorage(ctx context.Context, flowID uuid.UUID, post storagePost) (int, error) {
+	body, err := json.Marshal(post)
 	if err != nil {
 		return 0, fmt.Errorf("marshal storage: %w", err)
 	}
