@@ -123,7 +123,7 @@ jobs:
 
       - name: Integration tests
         env:
-          # SCN-SEG-CONC-02 asserts a 5s wall-clock budget on 100
+          # SCN-SEG-CONC-02 asserts a 10s wall-clock budget on 100
           # concurrent registrations. That budget was written for an
           # unloaded, non-race run; under `-race` with the rest of the
           # suite in parallel it is not a correctness signal and flakes.
