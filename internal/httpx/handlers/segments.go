@@ -299,10 +299,6 @@ func (h *Handler) PostFlowSegments(ctx context.Context, req api.PostFlowSegments
 			resp := postSegments422(problemType("segment-overlap"), "Segment Overlap", err.Error())
 			finalised = h.completeWithBody(ctx, log, key, 422, resp)
 			return resp, nil
-		case errors.Is(err, metastore.ErrSegmentObjectReaping):
-			resp := postSegments409(problemType("object-reaping"), err.Error())
-			finalised = h.completeWithBody(ctx, log, key, 409, resp)
-			return resp, nil
 		}
 		// Anything else is a 5xx: a dependency failure, or a server defect
 		// such as a database constraint violation, which the service's
@@ -611,7 +607,9 @@ func cachedPostResponse(c *idempotency.CachedResponse) api.PostFlowSegmentsRespo
 		if len(c.Body) > 0 && json.Unmarshal(c.Body, &body) == nil {
 			return body
 		}
-		return postSegments409(problemType("object-reaping"), "")
+		// Only an older pod cached a 409 for an object; its type is now
+		// object-deleting (BR-GC-74).
+		return postSegments409(problemType("object-deleting"), "")
 	case 422:
 		var body api.PostFlowSegments422ApplicationProblemPlusJSONResponse
 		if len(c.Body) > 0 && json.Unmarshal(c.Body, &body) == nil {

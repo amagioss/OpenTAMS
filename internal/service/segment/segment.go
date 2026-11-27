@@ -108,8 +108,6 @@ func classifyErr(err error) string {
 		return string(apperror.ErrSchemaValidation)
 	case errors.Is(err, metastore.ErrSegmentOverlap):
 		return string(apperror.ErrSegmentOverlap)
-	case errors.Is(err, metastore.ErrSegmentObjectReaping):
-		return string(apperror.ErrObjectReaping)
 	case errors.Is(err, metastore.ErrInvalidCursor):
 		return string(apperror.ErrSchemaValidation)
 	}
@@ -197,7 +195,7 @@ func (s *segmentService) registerBatch(ctx context.Context, req domain.RegisterP
 			return domain.RegisterResult{}, fmt.Errorf("segment: register: %w", ErrFlowNotFound)
 		case errors.Is(err, metastore.ErrFlowReadOnly):
 			return domain.RegisterResult{}, fmt.Errorf("segment: register: %w", ErrFlowReadOnly)
-		case errors.Is(err, metastore.ErrSegmentOverlap), errors.Is(err, metastore.ErrSegmentObjectReaping):
+		case errors.Is(err, metastore.ErrSegmentOverlap):
 			return domain.RegisterResult{}, err
 		default:
 			return domain.RegisterResult{}, fmt.Errorf("segment: register: %w", err)
@@ -214,20 +212,24 @@ func (s *segmentService) registerBatch(ctx context.Context, req domain.RegisterP
 		if _, ok := acceptedSet[k]; ok {
 			continue
 		}
-		// Look up the parallel reject reason if the metastore supplied
-		// one; otherwise generic schema-validation. The metastore today
-		// returns whole-batch on overlap and otherwise accepts all
-		// survivors — this branch is reachable only when the metastore
-		// adds per-segment rejection in the future.
+		// Look up the parallel reject reason. A reason with an apperror
+		// code (the allocation rules, BR-GC-15) gives the problem type
+		// and title; otherwise generic schema-validation.
 		reason := "rejected by metastore"
 		typeURI := apperror.New(apperror.ErrSchemaValidation, "").ToProblemDetails("", "").Type
 		title := "Schema Validation Failed"
 		for ri, idx := range insertRes.RejectedIndices {
-			if idx == k && ri < len(insertRes.RejectReasons) {
-				reason = insertRes.RejectReasons[ri].Detail
-				if insertRes.RejectReasons[ri].Type != "" {
-					typeURI = insertRes.RejectReasons[ri].Type
-				}
+			if idx != k || ri >= len(insertRes.RejectReasons) {
+				continue
+			}
+			rr := insertRes.RejectReasons[ri]
+			reason = rr.Detail
+			switch {
+			case rr.Code != "":
+				pd := apperror.New(rr.Code, rr.Detail).ToProblemDetails("", "")
+				typeURI, title = pd.Type, pd.Title
+			case rr.Type != "":
+				typeURI = rr.Type
 			}
 		}
 		failed = append(failed, domain.FailedSegment{
