@@ -679,7 +679,8 @@ func (s *PostgresStore) ListSegments(ctx context.Context, q ListQuery) (domain.S
 }
 
 // DeleteSegmentsByTimerange deletes matching segments atomically and
-// decrements ref-counts. GC worker reaps released objects (D-25/D-29).
+// decreases ref_count by the deleted count of each object (BR-GC-21).
+// Sweep 1 of the GC deletes released objects (BR-GC-22).
 func (s *PostgresStore) DeleteSegmentsByTimerange(ctx context.Context, q DeleteQuery) (DeleteResult, error) {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
@@ -944,18 +945,6 @@ func unmarshalGetURLs(b []byte) ([]domain.GetURL, error) {
 }
 
 var _ Store = (*PostgresStore)(nil)
-
-// IsObjectRegistered reports whether objectID is referenced by at least one segment.
-func (s *PostgresStore) IsObjectRegistered(ctx context.Context, objectID string) (bool, error) {
-	var exists bool
-	err := s.db.QueryRow(ctx,
-		`SELECT EXISTS(SELECT 1 FROM segments WHERE object_id = $1)`, objectID,
-	).Scan(&exists)
-	if err != nil {
-		return false, fmt.Errorf("metastore: IsObjectRegistered: %w", err)
-	}
-	return exists, nil
-}
 
 // rangeContains reports whether `outer` fully contains `inner` —
 // every point of `inner` is also a point of `outer`. Used by BR-META-19

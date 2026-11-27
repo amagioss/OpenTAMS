@@ -154,14 +154,13 @@ func TestGeneric_ErrorString(t *testing.T) {
 	}
 }
 
-// TC-ERR-09: object-reaping (409) and request-too-large (413) catalogued
+// TC-ERR-09: request-too-large (413) catalogued
 func TestNew_NewlyCataloguedCodes(t *testing.T) {
 	cases := []struct {
 		code      apperror.ErrorCode
 		status    int
 		wantTitle string
 	}{
-		{apperror.ErrObjectReaping, 409, "Object Reaping"},
 		{apperror.ErrRequestTooLarge, 413, "Request Too Large"},
 	}
 	for _, tc := range cases {
@@ -207,11 +206,13 @@ func TestNew_ObjectErrorsAreBadRequestWithCataloguedTitles(t *testing.T) {
 	}
 }
 
-// BR-GC-74: the object-id-exists problem type is removed; object-exists replaces it.
-func TestNew_RemovedObjectIDExistsCodeIsNotCatalogued(t *testing.T) {
-	e := apperror.New("object-id-exists", "detail")
-	if e.Status != 500 {
-		t.Errorf("New(%q).Status = %d, want 500 (uncatalogued)", "object-id-exists", e.Status)
+// BR-GC-74: the object-id-exists and object-reaping problem types are
+// removed; object-exists and object-deleting (400) replace them.
+func TestNew_RemovedObjectCodesAreNotCatalogued(t *testing.T) {
+	for _, code := range []apperror.ErrorCode{"object-id-exists", "object-reaping"} {
+		if e := apperror.New(code, "detail"); e.Status != 500 {
+			t.Errorf("New(%q).Status = %d, want 500 (uncatalogued)", code, e.Status)
+		}
 	}
 }
 

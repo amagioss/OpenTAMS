@@ -34,7 +34,6 @@ const (
 	ErrForbidden              ErrorCode = "forbidden"
 	ErrTokenExpired           ErrorCode = "token-expired"
 	ErrReadOnly               ErrorCode = "read-only"
-	ErrObjectReaping          ErrorCode = "object-reaping"
 	ErrNotFound               ErrorCode = "not-found"
 	ErrNotAcceptable          ErrorCode = "not-acceptable"
 	ErrRequestTooLarge        ErrorCode = "request-too-large"
@@ -69,7 +68,6 @@ var catalogue = map[ErrorCode]catalogueEntry{
 	ErrForbidden:              {403, "Forbidden"},
 	ErrTokenExpired:           {401, "Token Expired"},
 	ErrReadOnly:               {403, "Read Only"},
-	ErrObjectReaping:          {409, "Object Reaping"},
 	ErrNotFound:               {404, "Not Found"},
 	ErrNotAcceptable:          {406, "Not Acceptable"},
 	ErrRequestTooLarge:        {413, "Request Too Large"},

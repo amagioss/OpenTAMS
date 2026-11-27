@@ -1667,36 +1667,3 @@ func Test_SCN_META_32_BYOSOnlyAllowsEmptyControlledStorageID(t *testing.T) {
 		t.Errorf("storage_id: got %v, want NULL (BYOS)", sid)
 	}
 }
-
-// TestIsObjectRegistered covers the object-existence probe used by the
-// storage service to reject re-allocation of an already-registered object.
-func TestIsObjectRegistered(t *testing.T) {
-	flowID := seedFlow(t, false)
-	store := newStore(t)
-	metastore.SeedAllocation(t, flowID, "known-obj")
-	ctx := context.Background()
-
-	if _, err := store.InsertSegments(ctx, metastore.InsertBatch{
-		FlowID:              flowID,
-		Segments:            []domain.Segment{makeSegment(t, "known-obj", "[0:0_1:0)")},
-		ControlledStorageID: "default",
-	}); err != nil {
-		t.Fatalf("InsertSegments: %v", err)
-	}
-
-	registered, err := store.IsObjectRegistered(ctx, "known-obj")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !registered {
-		t.Error("known-obj: want registered=true")
-	}
-
-	registered, err = store.IsObjectRegistered(ctx, "unknown-obj")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if registered {
-		t.Error("unknown-obj: want registered=false")
-	}
-}
