@@ -20,7 +20,7 @@ import (
 // full metastore.Store interface.
 type FlowReader interface {
 	GetFlow(ctx context.Context, id uuid.UUID) (*metastore.Flow, error)
-	IsObjectRegistered(ctx context.Context, objectID string) (bool, error)
+	AllocateObjects(ctx context.Context, p metastore.AllocateParams) error
 }
 
 // ObjectStore is the narrow subset of objectstore behaviour the
@@ -36,8 +36,7 @@ type ObjectStore interface {
 // validator before reaching this package; the check in AllocateStorage
 // is a second line for callers that bypass the HTTP layer.
 //
-// Both modes cost a presigned-URL round trip per object, and the
-// caller-supplied mode additionally costs a registration lookup per
+// Both modes cost a presigned-URL signature and an allocation row per
 // object, so the two share one bound rather than each having its own.
 const MaxAllocate = 100
 
@@ -68,18 +67,20 @@ type StorageService interface {
 }
 
 type storageService struct {
-	store FlowReader
-	obj   ObjectStore
-	dur   *prometheus.HistogramVec
-	errs  *prometheus.CounterVec
+	store     FlowReader
+	obj       ObjectStore
+	dur       *prometheus.HistogramVec
+	errs      *prometheus.CounterVec
+	storageID string
+	allocTTL  time.Duration
 }
 
 // New constructs a StorageService backed by the supplied metastore
 // reader and object store, instrumented with the shared
 // AppServiceMetrics. The returned implementation is safe for
 // concurrent use.
-func New(store FlowReader, obj ObjectStore, m *service.AppServiceMetrics) StorageService {
-	return &storageService{store: store, obj: obj, dur: m.Duration, errs: m.Errors}
+func New(store FlowReader, obj ObjectStore, m *service.AppServiceMetrics, storageID string, allocTTL time.Duration) StorageService {
+	return &storageService{store: store, obj: obj, dur: m.Duration, errs: m.Errors, storageID: storageID, allocTTL: allocTTL}
 }
 
 func (s *storageService) observe(op string, d time.Duration, err error) {
@@ -119,33 +120,16 @@ func (s *storageService) AllocateStorage(ctx context.Context, flowID uuid.UUID, 
 		contentType = *flow.Codec
 	}
 
+	ids := req.ObjectIDs
 	if req.Limit != nil {
-		result := make([]MediaObject, 0, *req.Limit)
-		for range *req.Limit {
-			objectID := uuid.New().String()
-			putURL, err := s.obj.GenerateUploadURL(ctx, objectID, contentType)
-			if err != nil {
-				s.observe("allocate", time.Since(start), err)
-				return nil, err
-			}
-			result = append(result, MediaObject{ObjectID: objectID, PutURL: putURL, ContentType: contentType})
+		ids = make([]string, *req.Limit)
+		for i := range ids {
+			ids[i] = uuid.New().String()
 		}
-		s.observe("allocate", time.Since(start), nil)
-		return result, nil
 	}
 
-	result := make([]MediaObject, 0, len(req.ObjectIDs))
-	for _, objectID := range req.ObjectIDs {
-		registered, err := s.store.IsObjectRegistered(ctx, objectID)
-		if err != nil {
-			s.observe("allocate", time.Since(start), err)
-			return nil, err
-		}
-		if registered {
-			err := apperror.New(apperror.ErrObjectIDExists, "object_id already registered as a segment: "+objectID)
-			s.observe("allocate", time.Since(start), err)
-			return nil, err
-		}
+	result := make([]MediaObject, 0, len(ids))
+	for _, objectID := range ids {
 		putURL, err := s.obj.GenerateUploadURL(ctx, objectID, contentType)
 		if err != nil {
 			s.observe("allocate", time.Since(start), err)
@@ -153,8 +137,41 @@ func (s *storageService) AllocateStorage(ctx context.Context, flowID uuid.UUID, 
 		}
 		result = append(result, MediaObject{ObjectID: objectID, PutURL: putURL, ContentType: contentType})
 	}
+
+	err = s.store.AllocateObjects(ctx, metastore.AllocateParams{
+		FlowID:    flowID,
+		StorageID: s.storageID,
+		TTL:       s.allocTTL,
+		IDs:       ids,
+		Requested: req.Limit == nil,
+	})
+	if err != nil {
+		err = mapAllocateError(err)
+		s.observe("allocate", time.Since(start), err)
+		return nil, err
+	}
 	s.observe("allocate", time.Since(start), nil)
 	return result, nil
+}
+
+// mapAllocateError turns a *metastore.ObjectError into the 400 problem of
+// BR-GC-70, BR-GC-72 or BR-GC-73. The detail names the object ID only:
+// naming the other flow would leak it to a caller of this flow.
+func mapAllocateError(err error) error {
+	var oe *metastore.ObjectError
+	if !errors.As(err, &oe) {
+		return err
+	}
+	switch {
+	case errors.Is(oe.Err, metastore.ErrObjectExists):
+		return apperror.New(apperror.ErrObjectExists, fmt.Sprintf("object_id %q already exists", oe.ID))
+	case errors.Is(oe.Err, metastore.ErrObjectWrongFlow):
+		return apperror.New(apperror.ErrObjectWrongFlow, fmt.Sprintf("object_id %q is allocated to a different flow", oe.ID))
+	case errors.Is(oe.Err, metastore.ErrObjectDeleting):
+		return apperror.New(apperror.ErrObjectDeleting, fmt.Sprintf("object_id %q is being deleted; use a new object_id", oe.ID))
+	default:
+		return err
+	}
 }
 
 // validateAllocateSize bounds an allocation request before any work is

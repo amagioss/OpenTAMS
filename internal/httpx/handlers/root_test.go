@@ -115,3 +115,16 @@ func TestGetService_minObjectTimeoutIsTimestamp(t *testing.T) {
 		})
 	}
 }
+
+// TC-GC-012: GET /service gives min_presigned_url_timeout.
+func TestGetService_minPresignedURLTimeoutEqualsMinObjectTimeout(t *testing.T) {
+	cfg := testConfig()
+	cfg.ObjectStorePresignExpiry = time.Hour
+	resp, err := newHandler(cfg).GetService(context.Background(), api.GetServiceRequestObject{})
+	require.NoError(t, err)
+	body, ok := resp.(api.GetService200JSONResponse)
+	require.True(t, ok)
+	assert.Equal(t, "3600:0", body.MinObjectTimeout)
+	require.NotNil(t, body.MinPresignedUrlTimeout, "min_presigned_url_timeout is not set")
+	assert.Equal(t, "3600:0", *body.MinPresignedUrlTimeout)
+}

@@ -24,7 +24,6 @@ const (
 	ErrFormatMismatch         ErrorCode = "format-mismatch"
 	ErrMissingIdempotencyKey  ErrorCode = "missing-idempotency-key"
 	ErrStorageModeConflict    ErrorCode = "storage-mode-conflict"
-	ErrObjectIDExists         ErrorCode = "object-id-exists"
 	ErrObjectExists           ErrorCode = "object-exists"
 	ErrObjectNotAllocated     ErrorCode = "object-not-allocated"
 	ErrObjectWrongFlow        ErrorCode = "object-wrong-flow"
@@ -60,7 +59,6 @@ var catalogue = map[ErrorCode]catalogueEntry{
 	ErrFormatMismatch:         {400, "Format Mismatch"},
 	ErrMissingIdempotencyKey:  {400, "Missing Idempotency Key"},
 	ErrStorageModeConflict:    {400, "Storage Mode Conflict"},
-	ErrObjectIDExists:         {400, "Object ID Exists"},
 	ErrObjectExists:           {400, "Object Exists"},
 	ErrObjectNotAllocated:     {400, "Object Not Allocated"},
 	ErrObjectWrongFlow:        {400, "Object Allocated to Another Flow"},
