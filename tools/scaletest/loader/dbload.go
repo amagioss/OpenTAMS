@@ -303,6 +303,11 @@ func copyFlowCollection(ctx context.Context, pool *pgxpool.Pool, g *dataset.Gen,
 	return nil
 }
 
+// loadedStorageID is the storage ID of every loaded object. It equals the
+// server's default storage ID, so sweep 1 can delete the released loaded
+// objects (BR-GC-30, scale case S3).
+const loadedStorageID = "default"
+
 func copyObjects(ctx context.Context, pool *pgxpool.Pool, g *dataset.Gen, opts LoadOptions) error {
 	if g.Plan().ObjectsCount == 0 {
 		return nil
@@ -313,7 +318,7 @@ func copyObjects(ctx context.Context, pool *pgxpool.Pool, g *dataset.Gen, opts L
 	}
 	defer conn.Release()
 
-	cols := []string{"id", "ref_count", "deleting"}
+	cols := []string{"id", "ref_count", "deleting", "storage_id"}
 	it := g.Objects()
 	var done int64
 	for {
@@ -530,7 +535,7 @@ func (s *objectCopySource) Next() bool {
 }
 func (s *objectCopySource) Values() ([]any, error) {
 	r := s.it.Row()
-	return []any{r.ID, r.RefCount, r.Deleting}, nil
+	return []any{r.ID, r.RefCount, r.Deleting, loadedStorageID}, nil
 }
 func (s *objectCopySource) Err() error { return nil }
 

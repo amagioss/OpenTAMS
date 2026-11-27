@@ -7,8 +7,11 @@ import (
 	"github.com/amagioss/opentams/tools/scaletest/report"
 )
 
-// Bucket names. Most match the mix op names; idempotent-retry is the one
-// op that records into two buckets (the first POST and the dedupe POST).
+// Bucket names. Most match the mix op names. Each registration op also
+// records its POST …/storage object_ids allocation into its own
+// "-allocate" bucket, so the registration latency stays comparable with
+// runs before the allocation step. Idempotent-retry records the first
+// POST and the dedupe POST into two buckets.
 const (
 	bktListByFlow        = "list-by-flow"
 	bktListByTimerange   = "list-by-timerange"
@@ -20,6 +23,11 @@ const (
 	bktIdempotentDedupe  = "idempotent-dedupe"
 	bktDeleteByTimerange = "delete-by-timerange"
 	bktDeleteByObject    = "delete-by-object"
+
+	bktRegisterBulkAlloc  = "register-bulk-allocate"
+	bktInsertDeepAlloc    = "insert-deep-allocate"
+	bktInsertShallowAlloc = "insert-shallow-allocate"
+	bktIdempotentAlloc    = "idempotent-allocate"
 )
 
 // bucketSpec is a report bucket the collector tracks: a name and its
@@ -30,7 +38,7 @@ type bucketSpec struct {
 }
 
 // bucketsForOp maps a mix op to the report bucket(s) it records into.
-// Idempotent-retry is the only one-to-many mapping.
+// Registration ops map to their bucket plus an allocation bucket.
 func bucketsForOp(k opKind) []bucketSpec {
 	switch k {
 	case opListByFlow:
@@ -38,17 +46,18 @@ func bucketsForOp(k opKind) []bucketSpec {
 	case opListByTimerange:
 		return []bucketSpec{{bktListByTimerange, report.OpRead}}
 	case opRegisterBulk:
-		return []bucketSpec{{bktRegisterBulk, report.OpWrite}}
+		return []bucketSpec{{bktRegisterBulk, report.OpWrite}, {bktRegisterBulkAlloc, report.OpWrite}}
 	case opInsertDeep:
-		return []bucketSpec{{bktInsertDeep, report.OpWrite}}
+		return []bucketSpec{{bktInsertDeep, report.OpWrite}, {bktInsertDeepAlloc, report.OpWrite}}
 	case opInsertShallow:
-		return []bucketSpec{{bktInsertShallow, report.OpWrite}}
+		return []bucketSpec{{bktInsertShallow, report.OpWrite}, {bktInsertShallowAlloc, report.OpWrite}}
 	case opCreateStorage:
 		return []bucketSpec{{bktCreateStorage, report.OpWrite}}
 	case opIdempotentRetry:
 		return []bucketSpec{
 			{bktIdempotentFirst, report.OpWrite},
 			{bktIdempotentDedupe, report.OpWrite},
+			{bktIdempotentAlloc, report.OpWrite},
 		}
 	case opDeleteByTimerange:
 		return []bucketSpec{{bktDeleteByTimerange, report.OpDelete}}
