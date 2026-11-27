@@ -543,39 +543,19 @@ func (s *PostgresStore) DeleteSegmentsByTimerange(ctx context.Context, q DeleteQ
 			  AND ($3::bigint IS NULL OR upper_ns <= $3)%s
 			RETURNING object_id
 		)
-		SELECT object_id, COUNT(*) FROM deleted GROUP BY object_id`, objFilter)
+		SELECT object_id, COUNT(*) FROM deleted GROUP BY object_id ORDER BY object_id COLLATE "C"`, objFilter)
 
-	rows, err := tx.Query(ctx, delSQL, args...)
+	objectIDs, counts, err := deleteSegmentsCountedByObject(ctx, tx, delSQL, args...)
 	if err != nil {
 		return DeleteResult{}, fmt.Errorf("metastore: DeleteSegmentsByTimerange: delete: %w", err)
 	}
-	type oc struct {
-		objectID string
-		count    int64
-	}
-	var perObject []oc
 	var totalDeleted int64
-	for rows.Next() {
-		var v oc
-		if err := rows.Scan(&v.objectID, &v.count); err != nil {
-			rows.Close()
-			return DeleteResult{}, fmt.Errorf("metastore: DeleteSegmentsByTimerange: scan: %w", err)
-		}
-		perObject = append(perObject, v)
-		totalDeleted += v.count
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return DeleteResult{}, fmt.Errorf("metastore: DeleteSegmentsByTimerange: rows: %w", err)
+	for _, n := range counts {
+		totalDeleted += n
 	}
 
-	for _, v := range perObject {
-		if _, err := tx.Exec(ctx,
-			`UPDATE objects SET ref_count = ref_count - $1 WHERE id = $2`,
-			v.count, v.objectID,
-		); err != nil {
-			return DeleteResult{}, fmt.Errorf("metastore: DeleteSegmentsByTimerange: decrement ref_count: %w", err)
-		}
+	if err := decreaseRefCounts(ctx, tx, objectIDs, counts); err != nil {
+		return DeleteResult{}, fmt.Errorf("metastore: DeleteSegmentsByTimerange: %w", err)
 	}
 
 	if err := refreshFlowTimerange(ctx, tx, q.FlowID); err != nil {
