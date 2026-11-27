@@ -61,8 +61,8 @@ divergence was deliberate, record it as an [ADR](adr/).
 ## Module numbers (`M1`–`M20`)
 
 Design and requirements documents refer to packages by a build-order number: `M4` is
-`internal/metastore`, `M9` is `internal/service/segment`, `M16` is the unbuilt garbage
-collector. The full mapping is the section headings of
+`internal/metastore`, `M9` is `internal/service/segment`, `M16` is the garbage
+collector (`internal/gc`). The full mapping is the section headings of
 [`implementation-spec.md`](implementation-spec.md). They are historical labels from the
 original build plan, not a versioning scheme.
 

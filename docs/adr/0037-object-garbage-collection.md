@@ -1,5 +1,5 @@
 ---
-status: "proposed"
+status: "accepted"
 date: 2026-11-25
 decision-makers: OpenTAMS maintainers
 consulted: OpenTAMS maintainers
@@ -42,7 +42,7 @@ The design is in [`../design/internal-gc/`](../design/internal-gc/README.md). Th
 
 The project rejected the CronJob mode. A CronJob process is short, so Prometheus cannot collect its metrics reliably, and the backlog waits until the next schedule.
 
-Object-store lifecycle rules are not a substitute. A lifecycle rule sees the age of one object. It cannot see that a segment on a different flow still refers to the bytes. Thus it deletes live data. `../configuration.md` gives this warning.
+Object-store lifecycle rules are not a substitute. A lifecycle rule sees the age of one object. It cannot see that a segment on a different flow still refers to the bytes. Thus it deletes live data. [`../configuration.md`](../configuration.md#garbage-collection-internalgc) gives this warning.
 
 ### Consequences
 
@@ -60,6 +60,6 @@ Object-store lifecycle rules are not a substitute. A lifecycle rule sees the age
 * Design: [`../design/internal-gc/`](../design/internal-gc/README.md).
 * Runbooks: [`../runbooks/gc.md`](../runbooks/gc.md).
 * Command: [`cmd/opentams/gc.go`](../../cmd/opentams/gc.go).
-* Schema: [`migrations/000005_objects_storage_id_reaping.up.sql`](../../migrations/000005_objects_storage_id_reaping.up.sql) (flag and partial indexes), migration 000006 (rename to `deleting`, `allocations`, index on `segments.object_id`).
+* Schema: [`migrations/000005_objects_storage_id_reaping.up.sql`](../../migrations/000005_objects_storage_id_reaping.up.sql) (flag and partial indexes), [`migrations/000006_allocations_and_deleting.up.sql`](../../migrations/000006_allocations_and_deleting.up.sql) (rename to `deleting`, `allocations`, index on `segments.object_id`).
 * Why no request path deletes bytes: [ADR-0020](0020-gc-owns-object-lifetime.md).
 * Allocation record: [ADR-0041](0041-track-storage-allocations-in-a-table.md).

@@ -99,16 +99,23 @@ The overlap path bypasses this enum entirely and is rendered as a 422
 ProblemDetails with no `failed_segments`. `RegisterOutcome` starts at `iota+1` so
 the zero value is invalid.
 
-Because `metastore.InsertSegments` is all-or-nothing (BR-META-06), the only
-failures that reach `Failed` today are the ones this service raises itself in
-BR-SEG-02.
+Two sources fill `Failed`: the timerange checks of this service (BR-SEG-02), and
+the per-segment object rejections of `metastore.InsertSegments` (BR-META-06,
+BR-META-07). The store returns the second kind in `InsertResult.RejectedIndices` and
+`RejectReasons`. Each `RejectReason` has `Code` (`apperror.ErrObjectNotAllocated`,
+`ErrObjectWrongFlow`, or `ErrObjectDeleting`) and `Detail`. If `Code` is set, the
+service takes `Type` and `Title` from the `apperror` catalogue for that code
+(`object-not-allocated`, `object-wrong-flow`, `object-deleting`), and sets `Reason` to
+`Detail`. If the store accepts no segment, it changes nothing, and the outcome is
+`OutcomeAllRejected` ([BR-GC-15](../../internal-gc/functional-design/business-rules.md#br-gc-15-a-rejection-applies-to-one-segment-not-to-the-request)).
 
 **BR-SEG-05 — Error translation at the package boundary**
 The service declares its own sentinels — `ErrFlowNotFound`, `ErrFlowReadOnly`,
 `ErrInvalidRequest` — and maps `metastore.ErrFlowNotFound` / `ErrFlowReadOnly` onto
-them. It deliberately does **not** redeclare `ErrSegmentOverlap` or
-`ErrSegmentObjectReaping`; those flow up from the metastore unwrapped so there is a
-single source for each.
+them. It deliberately does **not** redeclare `ErrSegmentOverlap`; it flows up from
+the metastore unwrapped so there is a single source. A GC claim on an object is not a
+request error: it is a per-segment `object-deleting` rejection (BR-SEG-04). The
+earlier `ErrSegmentObjectReaping` path (409 `object-reaping`) is removed.
 
 **BR-SEG-06 — Failure entries carry the problem-type URI, not a private enum**
 `domain.FailedSegment` carries `Type`, `Title`, and `Reason`. The service stamps
@@ -121,8 +128,9 @@ coupling.
 
 **BR-SEG-07 — The controlled-storage identifier is service-owned and forwarded per call**
 `Deps.ControlledStorageID` is forwarded verbatim into `metastore.InsertBatch` on
-every `RegisterBatch`. The metastore stamps it onto `objects.storage_id` for
-controlled segments and stores NULL for BYOS ones (BR-META-07).
+every `RegisterBatch`. The metastore uses it only to refuse a controlled segment
+when it is empty. A new controlled object row takes `storage_id` from its allocation
+row, and a BYOS row stores NULL (BR-META-07).
 
 It lives here rather than in the metastore because it is deployment configuration:
 holding it in the persistence layer would couple that layer to environment reads,
@@ -170,18 +178,20 @@ contains, and an empty query timerange deletes nothing (BR-META-08 and
 BR-META-21). The metastore decrements `objects.ref_count` inside
 the same transaction; rows that reach zero stay in `objects` until the GC worker
 sweeps them. The service does not call the object store and does not return released
-object IDs — `ReleasedObjects` was removed from `DeleteResult` when reaping moved to
-the GC.
+object IDs — `ReleasedObjects` was removed from `DeleteResult` when the object delete
+moved to the GC.
 
 Inline deletion was rejected: a 10k-segment delete would put 10k object-store round
 trips on a user-visible request that cannot roll them back, and BYOS segments have no
 bytes the server may delete at all. Batching also needs the GC's cross-request view
 of `ref_count = 0`, which a single request does not have. A retry loop inside the
 service would additionally duplicate state the GC already holds in the
-`(ref_count = 0, reaping = false)` view.
+`(ref_count = 0, deleting = false)` view. (Migration 000006 renamed `reaping` to
+`deleting`.)
 
-The GC worker (`internal/gc`) is not yet built; until it lands, zero-ref rows and
-their bytes accumulate. See [`docs/conformance.md`](../../../conformance.md).
+Sweep 1 of the GC worker (`internal/gc`, `opentams gc`) deletes the zero-ref rows and
+their bytes. See the [GC design](../../internal-gc/README.md) and
+[`docs/conformance.md`](../../../conformance.md).
 
 ### All write paths
 

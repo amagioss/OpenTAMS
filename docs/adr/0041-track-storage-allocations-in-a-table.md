@@ -1,5 +1,5 @@
 ---
-status: "proposed"
+status: "accepted"
 date: 2026-11-25
 decision-makers: OpenTAMS maintainers
 consulted: OpenTAMS maintainers

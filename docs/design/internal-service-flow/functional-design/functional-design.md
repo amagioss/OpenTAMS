@@ -86,8 +86,8 @@ The concrete `flowService` struct is unexported.
   `DeleteFlow` returns once the metastore transaction commits.
 - Objects whose `ref_count` reaches zero become eligible for the GC worker
   (REQ-REL-14). The GC worker owns `objectstore.Store.DeleteObjects`.
-- The GC worker is not implemented, so zero-ref objects accumulate today. See
-  [`conformance.md`](../../../conformance.md).
+- Sweep 1 of the GC worker (`opentams gc`) deletes them. See the
+  [GC design](../../internal-gc/README.md) and [`conformance.md`](../../../conformance.md).
 
 ### Sub-resource operations (PutFlowTag, PutFlowLabel, etc.)
 

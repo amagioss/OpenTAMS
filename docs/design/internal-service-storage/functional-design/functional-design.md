@@ -7,15 +7,17 @@ handlers (M12) and the metastore/objectstore backends. Responsible for:
 - Fetching the flow (for codec and read_only state)
 - Enforcing read_only access control
 - Allocating object IDs (limit mode: server-assigned UUIDs; object_ids mode: client-provided)
-- Validating object_ids are not already registered as segments
 - Generating presigned upload URLs via the objectstore
+- Recording each issued object ID as an allocation (`allocations` table, [ADR-0041](../../../adr/0041-track-storage-allocations-in-a-table.md))
+
+The allocation flow is specified in the GC design, [logic model section 4](../../internal-gc/functional-design/business-logic-model.md#4-allocation-at-post-flowsflowidstorage), and rules BR-GC-01 to BR-GC-08 of the [GC business rules](../../internal-gc/functional-design/business-rules.md). This document summarises it.
 
 ## Dependencies
 
 | Dependency | Interface | Purpose |
 |---|---|---|
 | `internal/metastore` | local `storage.FlowReader` (`GetFlow`) | Fetch flow for codec + read_only check |
-| `internal/metastore` | local `storage.FlowReader` (`IsObjectRegistered`) | Check object_id not already in segments (M4 patch) |
+| `internal/metastore` | local `storage.FlowReader` (`AllocateObjects`) | Record the allocations in one transaction |
 | `internal/objectstore` | local `storage.ObjectStore` (`GenerateUploadURL`) | Generate presigned PUT URLs |
 | `internal/service` | `*service.AppServiceMetrics` | Shared Prometheus metrics |
 
@@ -47,16 +49,24 @@ AllocateStorage(ctx context.Context, flowID uuid.UUID, req AllocateRequest) ([]M
 
 `StorageService` is exported as an interface. The concrete `storageService` struct is unexported.
 
+Constructor:
+
+```go
+New(store FlowReader, obj ObjectStore, m *service.AppServiceMetrics, storageID string, allocTTL time.Duration) StorageService
+```
+
+`serve` passes `cfg.ObjectStoreID` (`OPENTAMS_OBJECT_STORE_ID`) as `storageID`, and `cfg.ObjectStorePresignExpiry` (`OBJECT_STORE_PRESIGN_EXPIRY`) as `allocTTL`.
+
 ## Local store interface
 
 ```go
 type FlowReader interface {
     GetFlow(ctx context.Context, id uuid.UUID) (*metastore.Flow, error)
-    IsObjectRegistered(ctx context.Context, objectID string) (bool, error)
+    AllocateObjects(ctx context.Context, p metastore.AllocateParams) error
 }
 ```
 
-`metastore.PostgresStore` satisfies `FlowReader`. `IsObjectRegistered` is a new M4 patch method.
+`metastore.PostgresStore` satisfies `FlowReader`. `AllocateObjects` is in `internal/metastore/allocations.go`.
 
 ## Business Rules
 
@@ -68,29 +78,39 @@ type FlowReader interface {
 
 **BR-SVC-STG-02 — read_only check (REQ-BEH-11)**
 - After GetFlow, check `flow.ReadOnly`. If true: return `apperror.New(apperror.ErrReadOnly, "flow is read-only")`.
-- `GenerateUploadURL` is a pure objectstore call; `flowWritable` in the store layer does not cover it. Service enforces this inline.
+- The service enforces this inline, before any URL or allocation is made.
 
 **BR-SVC-STG-03 — Content-type derivation (REQ-BEH-25b)**
 - `contentType = *flow.Codec` if `flow.Codec != nil`, else `"application/octet-stream"`.
 - Used as the Content-Type binding in `GenerateUploadURL` and returned in `MediaObject.ContentType`.
 
-**BR-SVC-STG-04 — limit mode: UUID allocation + URL generation**
-- For `i := 0; i < *req.Limit; i++`: generate a new UUID (`uuid.New().String()`) as the `objectID`.
-- Call `obj.GenerateUploadURL(ctx, objectID, contentType)`.
-- On URL generation error: propagate immediately (no partial success).
-- Return the full `[]MediaObject` slice.
+**BR-SVC-STG-04 — ID list and URL generation**
+- limit mode: generate `*req.Limit` new UUIDv4 values (`uuid.New().String()`).
+- object_ids mode: use `req.ObjectIDs`.
+- For each ID, in request sequence, call `obj.GenerateUploadURL(ctx, objectID, contentType)`.
+- On URL generation error: propagate immediately. No allocation is written (BR-GC-05).
 
-**BR-SVC-STG-05 — object_ids mode: registration check (REQ-BEH-25a)**
-- For each `objectID` in `req.ObjectIDs`:
-  - Call `store.IsObjectRegistered(ctx, objectID)`.
-  - If true: return `apperror.New(apperror.ErrObjectIDExists, "object_id already registered as a segment: <id>")`.
-- If all checks pass: call `obj.GenerateUploadURL(ctx, objectID, contentType)` for each.
-- On URL generation error: propagate immediately.
-- Return the full `[]MediaObject` slice.
+**BR-SVC-STG-05 — Record the allocations (BR-GC-01 to BR-GC-04)**
+- Call `store.AllocateObjects(ctx, metastore.AllocateParams{FlowID, StorageID: storageID, TTL: allocTTL, IDs, Requested: <object_ids mode>})`.
+- The store writes one `allocations` row for each ID, with `expires_at = now() + allocTTL`, in one transaction. It locks the IDs in ascending byte order (BR-GC-06).
+- object_ids mode, for each ID (BR-GC-03):
+  - An `objects` row with `deleting = false`: `metastore.ErrObjectExists`.
+  - An `objects` row or an `allocations` row with `deleting = true`: `metastore.ErrObjectDeleting`.
+  - An `allocations` row for a different flow: `metastore.ErrObjectWrongFlow`.
+  - An `allocations` row for the same flow: the store sets a new `expires_at`. The request gets a new URL.
+- Each store error is a `*metastore.ObjectError{ID, Err}`. `errors.Is` works through `Unwrap`.
 
-**BR-SVC-STG-06 — Fail-first on registration conflict**
-- In `object_ids` mode, the first registered objectID encountered triggers an immediate return.
-- No partial allocation on conflict: the client must fix the invalid ID and retry.
+**BR-SVC-STG-06 — Error mapping, all or nothing (BR-GC-04)**
+
+| Store error | `apperror` code | HTTP |
+|---|---|---|
+| `metastore.ErrObjectExists` | `ErrObjectExists` (`object-exists`) | 400 |
+| `metastore.ErrObjectDeleting` | `ErrObjectDeleting` (`object-deleting`) | 400 |
+| `metastore.ErrObjectWrongFlow` | `ErrObjectWrongFlow` (`object-wrong-flow`) | 400 |
+| other | unchanged | 500 |
+
+- The service gets the ID with `errors.As(err, &oe)` and puts it in the detail text (BR-GC-70 to BR-GC-73).
+- On the first error, the store rolls back. The request allocates no ID. The client must fix the invalid ID and retry.
 
 ## Decisions
 
@@ -98,50 +118,34 @@ type FlowReader interface {
 `ErrStorageModeConflict` (when both/neither of `limit`/`object_ids` are present) is a request schema concern; M12 handler returns 400 before calling the service. Service assumes exactly one of `Limit` or `ObjectIDs` is set.
 
 **D-SVC-STG-02 — read_only check in service, not store**
-`GenerateUploadURL` writes nothing to the metastore so `flowWritable` (the store-level guard) never runs. Service checks `flow.ReadOnly` after GetFlow. This is consistent with REQ-BEH-11.
+`AllocateObjects` does not run `flowWritable`. Service checks `flow.ReadOnly` after GetFlow. This is consistent with REQ-BEH-11.
 
-**D-SVC-STG-03 — IsObjectRegistered: cross-flow check via segments table**
-Implementation: `SELECT EXISTS(SELECT 1 FROM segments WHERE object_id = $1)`. Cross-flow scope is correct: an object registered as a segment on ANY flow is "in use" from the system's perspective and cannot be re-uploaded. A flow-scoped check would be insufficient for shared objects (REQ-BEH-21).
+**D-SVC-STG-03 — The registration check is cross-flow**
+An object ID with an `objects` row is "in use" for all flows, and gets `object-exists`. A flow-scoped check would be insufficient for shared objects (REQ-BEH-21). An allocation is flow-scoped: a different flow gets `object-wrong-flow`.
 
 **D-SVC-STG-04 — Nil codec defaults to "application/octet-stream"**
 REQ-BEH-25b binds the upload URL to the flow's codec. If codec is absent (format allows it), `"application/octet-stream"` is the fallback. Object stores accept this for binary blobs.
 
-**D-SVC-STG-05 — No partial success in object_ids mode**
-Fail-first on the first already-registered objectID. Rationale: partial allocation creates inconsistent state (some IDs allocated, some not) that the caller cannot easily recover from. All-or-nothing is simpler and more predictable.
+**D-SVC-STG-05 — No partial success**
+One rejected ID fails the request. Rationale: partial allocation creates inconsistent state (some IDs allocated, some not) that the caller cannot easily recover from. All-or-nothing is simpler and more predictable.
 
 **D-SVC-STG-06 — local FlowReader interface**
-Service defines its own `FlowReader` interface (2 methods) rather than importing the full `metastore.FlowStore` (18 methods). Same interface-segregation principle as M8/M9.
+Service defines its own `FlowReader` interface (2 methods) rather than importing the full `metastore.FlowStore`. Same interface-segregation principle as M8/M9.
 
 **D-SVC-STG-07 — No logger dependency**
-Unlike DeleteFlow / DeleteSegments, storage allocation has no WARN-log path — all errors propagate. Logger excluded from constructor to keep the interface minimal.
+Unlike DeleteFlow / DeleteSegments, storage allocation has no WARN-log path — all errors propagate. Logger excluded from constructor to keep the interface minimal. The handler logs a 400 `AppError` at WARN.
 
 **D-SVC-STG-08 — Shared AppServiceMetrics, app_service="storage"**
 Same pattern as M8 (flow) and M9 (segment). `New()` accepts `*service.AppServiceMetrics`.
 
-**D-SVC-STG-09 — AllocateStorage performs no metastore writes**
-`AllocateStorage` does not insert into `objects`, `segments`, or any other metastore table. It only:
-1. Reads the flow (`GetFlow`) for codec + read_only state.
-2. (object_ids mode only) Reads `segments` via `IsObjectRegistered` to enforce REQ-BEH-25a.
-3. Generates presigned PUT URLs via the objectstore.
+**D-SVC-STG-09 — AllocateStorage writes allocations, not objects**
+`AllocateStorage` writes only `allocations` rows. It does not insert into `objects` or `segments`. The `objects` row for a media object is still created lazily by `InsertSegments` on the first segment that references it (`internal/metastore` BR-META-07 / BR-META-17, [ADR-0019](../../../adr/0019-lazy-object-registration.md)). At that point the same transaction deletes the allocation row. Rationale for the allocation record ([ADR-0041](../../../adr/0041-track-storage-allocations-in-a-table.md)):
 
-The `objects` row for a media object is created lazily by `InsertSegments` on the first segment that references it (see `internal/metastore` BR-META-07 / BR-META-17). Rationale:
+- **Unregistered uploads become visible.** Before the change, a client that uploaded bytes and never registered a segment left an S3 key with no row. Sweep 2 of the GC now finds such bytes through the allocation row and deletes them after `expires_at + GC_ALLOCATION_GRACE` (REQ-GC-09).
+- **Allocation enforcement.** A controlled segment must use an allocated or registered object ID (REQ-GC-10). Segments with `get_urls` (BYOS) need no allocation.
+- **Concurrency.** Two concurrent `POST /storage` calls in `object_ids` mode for the same ID on two flows cannot both succeed: the second gets `object-wrong-flow`. On the same flow, both succeed and the allocation gets the later expiry.
 
-- **Spec alignment.** REQ-BEH-17 explicitly states the server does not validate object existence in storage. REQ-REL-14 defines an orphaned object as "uploaded to S3 but never registered as a segment" — a definition that requires the absence of a metadata row, which only holds if `/storage` does not insert one. BBC TAMS ADR 0027 confirms: "Objects are registered in TAMS as part of Flow Segment registration."
-- **Symmetry with uncontrolled segments.** Segments registered with `get_urls` (uncontrolled storage, never go through `/storage`) take the same `InsertSegments` lazy-registration code path. Eager creation at `/storage` would split the implementation along controlled vs uncontrolled lines.
-- **No write amplification.** Eager creation would add one DB write per allocated id, doubling DB writes per controlled segment (one at `/storage`, one at `/segments`).
-- **Concurrency note.** A consequence: two concurrent `POST /storage` calls in `object_ids` mode for the same id can both succeed and both return PUT URLs (last-writer-wins on S3). The pre-check `IsObjectRegistered` only catches *post-registration* reuse. This is a known narrow race; mitigations (advisory lock, dedicated allocation table) are out of scope and tracked as a follow-up. In practice the BBC-cited use case for `object_ids` mode (store-to-store replication, ADR 0034) involves a single coordinated client.
-
-**S3 orphan handling.** A client that obtains a PUT URL, uploads bytes, and then crashes or never calls `/segments` produces an S3 key with no metadata row. This is the orphan case defined in REQ-REL-14 and is cleaned up by the GC reconciliation worker (REQ-GC-05, spec §17): an S3 LIST diffed against the `objects` table, with `min_object_timeout` grace before deletion. The reconciliation worker is a separate milestone (`internal/gc`); until it lands, orphans accumulate in S3 indefinitely.
-
-## Metastore patch required for M10
-
-| Addition | Details |
-|---|---|
-| `IsObjectRegistered(ctx, objectID string) (bool, error)` on `PostgresStore` | `SELECT EXISTS(SELECT 1 FROM segments WHERE object_id = $1)` |
-| Test: TC-META-SEG-XX | IsObjectRegistered returns false for absent objectID, true for registered one |
-
-The method is added to a local `storage.FlowReader` interface; `metastore.PostgresStore` satisfies it.
-The method does not need to be added to `SegmentStore` or `FlowStore` — only the local interface in the storage service package references it.
+**Bytes with no row.** Bytes with no `objects` row and no `allocations` row (for example, from an upload that started before migration 000006) are not found by the GC. A reconciliation with a bucket listing is later work (REQ-REL-14).
 
 ## Test strategy
 
@@ -151,11 +155,14 @@ The method does not need to be added to `SegmentStore` or `FlowStore` — only t
 - Cases:
   - GetFlow error (not found, other)
   - read_only flow → ErrReadOnly
-  - limit mode: success
-  - limit mode: URL generation error
-  - object_ids mode: objectID already registered → ErrObjectIDExists
-  - object_ids mode: success
+  - limit mode: success, `AllocateObjects` called with `Requested = false`
+  - limit mode: URL generation error, no `AllocateObjects` call
+  - object_ids mode: success, `AllocateObjects` called with `Requested = true`
+  - object_ids mode: `ErrObjectExists`, `ErrObjectDeleting`, `ErrObjectWrongFlow` → the matching `apperror` code, with the ID in the detail
   - object_ids mode: URL generation error
+  - `AllocateObjects` other error → 500
   - observe() nil error path (success cases)
   - observe() AppError path (apperror propagation)
   - observe() non-AppError path (internal error from URL generation)
+
+The store tests of `AllocateObjects` are in the GC test plan.

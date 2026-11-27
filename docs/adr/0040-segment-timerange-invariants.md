@@ -125,3 +125,4 @@ The rules:
   [`internal-metastore`](../design/internal-metastore/functional-design/business-rules.md)
   BR-META-05 and the schema.
 * Migration: [`../../migrations/000005_objects_storage_id_reaping.up.sql`](../../migrations/000005_objects_storage_id_reaping.up.sql).
+  The column is `deleting` since migration 000006 ([ADR-0041](0041-track-storage-allocations-in-a-table.md)).

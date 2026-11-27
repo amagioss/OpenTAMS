@@ -18,7 +18,7 @@
 | D3 | Secrets & cloud identity | The chart **never creates a Secret**. It **mandates** an externally-provisioned `existingSecret` (IaC / ESO / Vault / SealedSecrets) and references it by name. Object-store keys live in that Secret only when not using Workload Identity (IRSA/GKE WI/AKS), which is the default (ambient cred chain). Required keys are documented in the README. |
 | D4 | Backing services | **External only.** No bundled Postgres/MinIO. Dev/demo continues to use `deployments/docker/docker-compose.yml`. |
 | D5 | Migrations | Forward-only **Helm `pre-install,pre-upgrade` hook Job** running `/opentams migrate up`. DB rollback stays manual (`migrate down`). |
-| D6 | GC worker | **Omitted.** `opentams gc` returns "not implemented (M16)" and would crash-loop. Revisit when M16 lands. |
+| D6 | GC worker | **Superseded.** The chart now deploys `opentams gc` as `<fullname>-gc` (`gc.*` values, `templates/gc-*.yaml`). See the [GC design](design/internal-gc/README.md) and the chart README. The original decision was to omit it, because `opentams gc` returned "not implemented (M16)". |
 
 ---
 

@@ -49,11 +49,11 @@ stays useful long after the feature ships.
 | [0034](0034-image-only-release-with-attestation.md) | Release the server as a signed image only, and `tamsctl` as archives | accepted |
 | [0035](0035-ci-on-hosted-runners-with-pinned-actions.md) | Run CI on GitHub-hosted runners, with every action pinned by commit SHA | accepted |
 | [0036](0036-rate-limiting-is-the-operators-responsibility.md) | Leave rate limiting to the operator | accepted |
-| [0037](0037-object-garbage-collection.md) | Reclaim Object storage from a separate worker | proposed |
+| [0037](0037-object-garbage-collection.md) | Reclaim Object storage from a separate worker | accepted |
 | [0038](0038-tams-timestamp-and-timerange-format.md) | Parse timestamps and timeranges in the TAMS format, and use the BBC reference library where App Note 0008 is silent | accepted |
 | [0039](0039-timerange-stored-as-client-string-with-half-open-bounds.md) | Store the client's timerange string, and derive half-open nanosecond bounds for comparison only | accepted |
 | [0040](0040-segment-timerange-invariants.md) | Require a bounded, non-empty, start-inclusive segment timerange, and keep the database constraints as backstops | accepted |
-| [0041](0041-track-storage-allocations-in-a-table.md) | Track storage allocations in a table | proposed |
+| [0041](0041-track-storage-allocations-in-a-table.md) | Track storage allocations in a table | accepted |
 
 <!-- Add a row per ADR, in number order. Keep the status column in sync with the file's front matter. -->
 
