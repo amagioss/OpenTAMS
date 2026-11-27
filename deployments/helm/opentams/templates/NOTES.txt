@@ -44,4 +44,8 @@ Secret: this chart references the externally-provisioned Secret "{{ .Values.secr
 Rotating it requires a manual restart:
   kubectl rollout restart deployment/{{ include "opentams.fullname" . }}
 
-GC worker is NOT deployed (unimplemented — M16).
+{{ if .Values.gc.enabled -}}
+GC worker is deployed (gc.enabled=true): deployment/{{ include "opentams.fullname" . }}-gc, {{ .Values.gc.replicaCount }} replica(s).
+{{- else -}}
+GC worker is NOT deployed (gc.enabled=false). Released objects and expired allocations are not reclaimed.
+{{- end }}

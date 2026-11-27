@@ -1,0 +1,28 @@
+{{- if .Values.gc.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "opentams.fullname" . }}-gc
+  labels:
+    {{- include "opentams.gcLabels" . | nindent 4 }}
+  {{- if or .Values.service.annotations (not .Values.serviceMonitor.enabled) }}
+  annotations:
+    {{- with .Values.service.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- if not .Values.serviceMonitor.enabled }}
+    prometheus.io/scrape: "true"
+    prometheus.io/port: {{ .Values.server.port | quote }}
+    prometheus.io/path: /metrics
+    {{- end }}
+  {{- end }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.server.port }}
+      targetPort: {{ .Values.server.port }}
+      protocol: TCP
+  selector:
+    {{- include "opentams.gcSelectorLabels" . | nindent 4 }}
+{{- end }}

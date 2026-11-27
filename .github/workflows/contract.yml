@@ -14,6 +14,7 @@
 #                 ci/*-values.yaml, because the chart legitimately requires
 #                 values: a bare `helm lint` fails its own values.schema.json
 #                 by design, so linting without values would prove nothing.
+#                 `make helm-test` then asserts on the rendered manifests.
 #   * terraform — fmt and validate, via OpenTofu.
 #
 # Runners: GitHub-hosted `ubuntu-latest`. Every workflow in this repository
@@ -90,6 +91,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
       - name: Set up Helm
         uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
 
@@ -102,6 +109,9 @@ jobs:
             echo "::endgroup::"
           done
           exit $rc
+
+      - name: Render tests
+        run: make helm-test
 
   terraform:
     name: tofu fmt + validate
