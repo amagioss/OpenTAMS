@@ -43,8 +43,8 @@ runServer(ctx, srv, shutdownPeriod, sigCh):
 |---|---|---|
 | TC-CMD-ROOT-01 | `newRootCmd()` Use field and subcommand names | `opentams`, `serve`/`gc`/`migrate` registered |
 | TC-CMD-ROOT-02 | Root `--help` output | Contains `serve`, `gc`, `migrate` |
-| TC-CMD-GC-01 | `gc` subcommand execution | Returns non-nil error containing "not" |
-| TC-CMD-MIGRATE-01 | `migrate` subcommand execution | Returns non-nil error containing "not" |
+| TC-GC-123, TC-GC-124 | `gc --help`; `gc --once` with `GC_BATCH_SIZE=0` | See the [GC test plan](../../internal-gc/functional-design/test-plan.md) |
+| TC-CMD-MIGRATE-01 | `migrate --help` | Contains `up`, `down`, `version`, `force` |
 | TC-CMD-SERVE-01 | `serve` with all required env vars unset | Returns error (config failure) |
 | TC-CMD-SERVE-02 | `serve --help` | Contains "SIGTERM" and "migrate" |
 | TC-CMD-RUN-01 | `runServer` with SIGTERM | Calls Shutdown, returns nil |

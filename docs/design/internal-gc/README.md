@@ -8,7 +8,7 @@ status: Draft (not implemented)
 
 This folder is the complete design for the object garbage collector (GC) of OpenTAMS. It is the input for the code change. A reader with no other project context must be able to write the code and the tests from this folder and the documents that it links.
 
-Status: not implemented. The code does not do this yet. Each rule in this folder describes the target behaviour of the GC change.
+Status: implemented. `internal/gc`, `internal/metastore`, and `cmd/opentams/gc.go` do the behaviour that this folder gives.
 
 The text follows ASD-STE100 Simplified Technical English. Code, SQL, identifiers, commands, and quoted text keep their original form.
 

@@ -14,7 +14,7 @@ status: Draft (not implemented)
 - Level "integration" uses the build tag `integration` and (where the test names MinIO) a MinIO container. Move `setupMinIO` from `internal/objectstore/objectstore_perf_test.go` to a shared helper `internal/objtest` with the build tags `integration || perf`. Do not copy it.
 - PostgreSQL for integration tests:
   - In `internal/metastore`, use the shared `testPool` of `store_test.go` (one container for the package). Each test of sections 4 and 5 calls `resetGCTables(t)` first. Reason: the sweep methods read the full table, and other tests of the package leave committed rows (for example `segments_test.go:415` leaves `oB` and `oC` at `ref_count = 0`). The tests of the package do not use `t.Parallel`.
-  - In other packages, use `internal/dbtest.Setup`.
+  - In other packages, use `internal/dbtest.Setup`. Exception: `cmd/opentams` already has a PostgreSQL container in its `TestMain`. Its tests use that container and `freshMigrateDB`, which gives each test a new database and sets `DB_NAME` for `config.Load`.
   - Before each `InsertSegments` call with a controlled segment that a test does not name as "no allocation", call `seedAllocation` (logic model section 13).
 - Collation database: TC-GC-036, TC-GC-043, and TC-GC-071 operate on a second database in the same container. Make it with `CREATE DATABASE gc_icu TEMPLATE template0 LOCALE_PROVIDER icu ICU_LOCALE 'en-US'`, and apply the migrations. The test first makes sure that `SELECT 'a1' < 'B1'` returns true in that database. If it returns false, the test fails, because it cannot show the error. Reason: `postgres:16-alpine` sorts the default collation in byte order, and a production database (for example `en_US.UTF-8`) does not.
 - The database fixtures use plain SQL `INSERT` statements. Unless a test gives other values, use:
@@ -382,6 +382,7 @@ In these tests, a "controlled segment" has no `get_urls`, and a "BYOS segment" h
 - Given: objects `k1`, `k2`, `k3` with `deleting = true`, `claimed_at = now() - interval '10 minutes'`. T is `time.Now()` at the start of the test.
 - When: `ReclaimRetryObjects(ctx, "default", 5*time.Minute, T, 2)` three times.
 - Then: `["k1", "k2"]`, then `["k3"]`, then `[]`. After the third call, each row has a `claimed_at` later than T.
+- Short-lease case: with a lease of 5 minutes, the lease alone stops a second attempt in the same cycle, and the test cannot show a missing cycle-start condition. Thus a second test uses a lease of 1 ms. Given row `k1` as above, the first reclaim with cycle start T gives `["k1"]`. A second reclaim with the same T, after the lease expired, gives `[]`. A reclaim with a later cycle start gives `["k1"]`.
 - Rules: BR-GC-64.
 
 **TC-GC-068: The row delete removes only claimed rows.** Integration, `internal/metastore`.
@@ -397,12 +398,11 @@ In these tests, a "controlled segment" has no `get_urls`, and a "BYOS segment" h
 - Rules: BR-GC-36.
 
 **TC-GC-071: The row delete and a registration do not deadlock.** Integration, `internal/metastore`, collation database.
-- Given: in each repetition i, objects `B<i>` and `a<i>` with `ref_count = 0`, `deleting = true`.
-- When: 100 repetitions. In each, two goroutines start at a barrier. Goroutine 1 calls `InsertSegments` on flow F with one controlled segment on each of the two IDs. Goroutine 2 calls `DeleteClaimedObjects(ctx, ["a<i>", "B<i>"])`.
-- Then: no error with SQLSTATE `40P01`. Goroutine 1 gets `object-deleting` for each segment, or (if the delete committed first) `object-not-allocated`.
+- Given: in each repetition i, objects `B<i>` and `a<i>` with `ref_count = 0`, `deleting = true`, and object `Z<i>` with `ref_count = 1`. In byte order, `B<i>` < `Z<i>` < `a<i>`. In the collation database, `a<i>` < `B<i>` < `Z<i>`.
+- When: 5 repetitions. In each, a raw transaction locks row `Z<i>`. Goroutine 1 calls `InsertSegments` on flow F with one controlled segment on each of the three IDs. It locks `B<i>` and waits for `Z<i>`. The test waits until one session waits for a lock. Goroutine 2 calls `DeleteClaimedObjects(ctx, ["a<i>", "B<i>"])`. The test waits until two sessions wait for a lock. Then it releases the raw lock.
+- Then: no error with SQLSTATE `40P01`. Goroutine 1 accepts the segment on `Z<i>` and gives `object-deleting` for `a<i>` and `B<i>`. Goroutine 2 removes `B<i>` and `a<i>`.
+- Reason for the raw lock: in a mutation test, a version with two IDs and a barrier passed also when the row delete locked in collation order. The raw lock makes the overlap certain. In byte order, the row delete waits for `B<i>` and holds no lock. In collation order, it locks `a<i>` first, and the two transactions wait for each other.
 - Rules: BR-GC-23, BR-GC-36.
-
-## 5. Behaviour tests: sweep 2 store methods
 
 **TC-GC-080: An allocation after `expires_at + grace` is claimed.** Integration, `internal/metastore`.
 - Given: allocation `e1` with `expires_at = now() - interval '5 minutes' - interval '1 second'`.
@@ -444,6 +444,7 @@ In these tests, a "controlled segment" has no `get_urls`, and a "BYOS segment" h
 - Given: allocation `e4`, expired, `deleting = true`, `claimed_at = now()`.
 - When: `ClaimExpiredAllocations`. Then `ReclaimRetryAllocations(ctx, "default", 5*time.Minute, time.Now().Add(time.Minute), 1000)`. Then set `claimed_at = now() - interval '10 minutes'` with SQL, and do the reclaim again.
 - Then: `Selected = 0`. The first reclaim gives `[]`. The second reclaim gives `["e4"]`.
+- Short-lease case: the same test as the short-lease case of TC-GC-067, on `allocations` and `ReclaimRetryAllocations`.
 - Rules: BR-GC-40, BR-GC-64, BR-GC-65.
 
 **TC-GC-087: An allocation with an unknown storage ID.** Integration, `internal/metastore`.
@@ -687,7 +688,7 @@ Use the HTTP handlers through the router with authentication in development mode
 
 ## 10. Serviceability tests (`internal/gc`, unit)
 
-**TC-GC-160: Metric names.** Given a registry from `pkg/metrics.New(WithNamespace("opentams"))` and `NewMetrics`, then gather. Then each name of interface spec section 4 exists with the correct type and label names.
+**TC-GC-160: Metric names.** Given a registry from `pkg/metrics.New(WithNamespace("opentams"))` and `NewMetrics`, run one cycle, then gather. Then each name of interface spec section 4 exists with the correct type and label names. The cycle is necessary because a metric with labels has no series, and thus does not appear in a gather, until the code sets a value for one label set.
 
 **TC-GC-161: Gauges after a cycle.** Given `ReleasedBacklog` returns `{Pending 5, Retrying 2, UnknownStorage 1}`. After one cycle, `opentams_gc_backlog{sweep="released",state="pending"} = 5`, `retrying = 2`, `unknown_storage = 1`.
 

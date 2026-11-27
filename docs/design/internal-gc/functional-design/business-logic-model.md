@@ -12,15 +12,18 @@ This document gives the schema, the SQL, the algorithms, the package layout, and
 
 | Path | Contents |
 |---|---|
-| `internal/gc/gc.go` | `Config`, `Worker`, `New`, `Run`, `RunOnce`, `Report` |
-| `internal/gc/sweep_released.go` | Sweep 1: one batch, the retry phase, the gauges |
-| `internal/gc/sweep_allocation.go` | Sweep 2: one batch, the retry phase, the gauges |
+| `internal/gc/gc.go` | `Config`, `Worker`, `New`, `Run`, `RunOnce`, `Report`, and the cycle algorithm of section 9. The two sweeps use the same algorithm. |
+| `internal/gc/sweep_released.go` | Sweep 1: the `Store` methods, the row-only outcome, and the gauges that the algorithm uses |
+| `internal/gc/sweep_allocation.go` | Sweep 2: the `Store` methods, the row-only outcome, and the gauges that the algorithm uses |
 | `internal/gc/metrics.go` | `Metrics`, `NewMetrics` |
 | `internal/gc/*_test.go` | Unit tests with fakes of `Store` and `Deleter` |
 | `internal/metastore/allocations.go` | `AllocateObjects` and the allocation errors |
 | `internal/metastore/gc.go` | The methods of `gc.Store` on `*PostgresStore` |
-| `internal/metastore/gc_test.go`, `allocations_test.go` | Integration tests against PostgreSQL (testcontainers) |
+| `internal/metastore/gc_test.go`, `allocations_test.go`, `segments_alloc_test.go`, `deletes_gc_test.go`, `gc_registration_race_test.go`, `gc_fixtures_test.go` | Integration tests against PostgreSQL (testcontainers) |
 | `cmd/opentams/gc.go` | The `gc` command, the admin listener, the signal handling |
+| `cmd/opentams/setup.go` | The configuration load, the logger, the metrics registry, the database pool, and the object store. `serve` and `gc` use these functions. |
+| `cmd/opentams/gc_integration_test.go`, `gc_e2e_integration_test.go` | The tests of sections 7 and 8 of the test plan |
+| `internal/objtest/objtest.go` | The MinIO container of the integration and performance tests |
 | `migrations/000006_allocations_and_deleting.{up,down}.sql` | Rename, new table, and segment index |
 | `deployments/helm/opentams/templates/gc-*.yaml` | GC Deployment, Service, ServiceMonitor, NetworkPolicy |
 
@@ -190,9 +193,9 @@ ALTER TABLE objects RENAME COLUMN deleting TO reaping;
 |---|---|
 | `objects` | `id TEXT PK`, `ref_count INT`, `storage_id TEXT NULL`, `deleting BOOLEAN`, `claimed_at TIMESTAMPTZ NULL` |
 | `allocations` | `id TEXT PK`, `flow_id UUID`, `storage_id TEXT`, `expires_at TIMESTAMPTZ`, `created_at TIMESTAMPTZ`, `deleting BOOLEAN`, `claimed_at TIMESTAMPTZ NULL` |
-
-Invariant of both tables: `deleting = true` if and only if `claimed_at IS NOT NULL`. Only the GC sets the two values, and it sets them in the same statement.
 | `segments` | `object_id TEXT NOT NULL REFERENCES objects(id)` (unchanged), new index `segments_object_id_idx` |
+
+Invariant of `objects` and `allocations`: `deleting = true` if and only if `claimed_at IS NOT NULL`. Only the GC sets the two values, and it sets them in the same statement.
 
 `metastore.ExpectedSchemaVersion` = 6 (`internal/metastore/schema.go:23`). Change the comment "Current head is migration 000005 (objects_storage_id_reaping)" to "Current head is migration 000006 (allocations_and_deleting)".
 

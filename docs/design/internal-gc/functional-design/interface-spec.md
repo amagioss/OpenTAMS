@@ -194,7 +194,7 @@ The GC uses the JSON logger of the project (`pkg/logger`). Each line has the sta
 |---|---|---|---|
 | INFO | `gc object removed` | `object_id`, `storage_id`, `sweep`, `outcome` | One line for each row that the GC removes (audit, NFR-GC-U6) |
 | INFO | `gc cycle completed` | `sweep`, `deleted`, `row_only`, `failed`, `drift`, `duration_ms`, `ended_by` (`empty`, `batch_error`, `shutdown`) | One line at the end of each cycle |
-| INFO | `gc once completed` | `released_*` and `allocation_*` with the fields of the cycle line | `--once` only |
+| INFO | `gc once completed` | `released_deleted`, `released_row_only`, `released_failed`, `released_drift`, `released_batch_error`, the same five fields with the prefix `allocation_`, and `duration_ms` of the full run | `--once` only |
 | WARN | `gc refcount drift` | `object_id`, `stored_ref_count`, `actual_ref_count` | BR-GC-33 |
 | WARN | `gc object delete failed` | `sweep`, `object_id`, `error` | BR-GC-63 |
 | WARN | `gc gauge update failed` | `sweep`, `error` | Backlog query error |

@@ -12,9 +12,9 @@ A decision note has this form: *Decision. Rationale. Rejected.*
 
 ## 1. Problem statement and scope
 
-OpenTAMS does not delete media bytes at this time. A segment delete decreases `objects.ref_count`, and the row stays at `ref_count = 0` (`internal/metastore/flows.go:428-449`, `internal/metastore/segments.go:505-577`). The function `objectstore.DeleteObjects` exists, but no code calls it (`internal/objectstore/objectstore.go:265`). `opentams gc` stops with `errGCNotImplemented` (`cmd/opentams/gc.go`). Thus the bucket grows without limit.
+Before this change, OpenTAMS did not delete media bytes. A segment delete decreased `objects.ref_count`, and the row stayed at `ref_count = 0`. No code called `objectstore.DeleteObjects`. `opentams gc` stopped with the error `errGCNotImplemented`. Thus the bucket grew without limit.
 
-Bytes that a client uploads through `POST /flows/{flowId}/storage` and never registers have no row at all. No process can find these bytes from the database.
+Before this change, bytes that a client uploaded through `POST /flows/{flowId}/storage` and never registered had no row at all. The database had no record of these bytes.
 
 This change adds:
 
