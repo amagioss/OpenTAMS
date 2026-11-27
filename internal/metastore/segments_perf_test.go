@@ -70,7 +70,7 @@ func seedNSegments(t *testing.T, flID string, startSec, n int) {
 		// ON CONFLICT increments not needed — each seg uses a distinct
 		// object_id.
 		var ob strings.Builder
-		ob.WriteString(`INSERT INTO objects (id, ref_count, reaping) VALUES `)
+		ob.WriteString(`INSERT INTO objects (id, ref_count, deleting) VALUES `)
 		oargs := make([]any, 0, size)
 		for i := 0; i < size; i++ {
 			s := startSec + base + i

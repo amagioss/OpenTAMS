@@ -25,6 +25,10 @@ const (
 	ErrMissingIdempotencyKey  ErrorCode = "missing-idempotency-key"
 	ErrStorageModeConflict    ErrorCode = "storage-mode-conflict"
 	ErrObjectIDExists         ErrorCode = "object-id-exists"
+	ErrObjectExists           ErrorCode = "object-exists"
+	ErrObjectNotAllocated     ErrorCode = "object-not-allocated"
+	ErrObjectWrongFlow        ErrorCode = "object-wrong-flow"
+	ErrObjectDeleting         ErrorCode = "object-deleting"
 	ErrVFRFrameRateConflict   ErrorCode = "vfr-frame-rate-conflict"
 	ErrBatchTooLarge          ErrorCode = "batch-too-large"
 	ErrUnauthorized           ErrorCode = "unauthorized"
@@ -57,6 +61,10 @@ var catalogue = map[ErrorCode]catalogueEntry{
 	ErrMissingIdempotencyKey:  {400, "Missing Idempotency Key"},
 	ErrStorageModeConflict:    {400, "Storage Mode Conflict"},
 	ErrObjectIDExists:         {400, "Object ID Exists"},
+	ErrObjectExists:           {400, "Object Exists"},
+	ErrObjectNotAllocated:     {400, "Object Not Allocated"},
+	ErrObjectWrongFlow:        {400, "Object Allocated to Another Flow"},
+	ErrObjectDeleting:         {400, "Object Being Deleted"},
 	ErrVFRFrameRateConflict:   {400, "VFR Frame Rate Conflict"},
 	ErrBatchTooLarge:          {400, "Batch Too Large"},
 	ErrUnauthorized:           {401, "Unauthorized"},

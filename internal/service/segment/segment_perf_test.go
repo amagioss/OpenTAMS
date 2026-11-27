@@ -65,7 +65,7 @@ func seedSegPerfRows(t *testing.T, flID uuid.UUID, startSec, n int) {
 			t.Fatalf("seed segs chunk base=%d: %v", base, err)
 		}
 		var ob strings.Builder
-		ob.WriteString(`INSERT INTO objects (id, ref_count, reaping) VALUES `)
+		ob.WriteString(`INSERT INTO objects (id, ref_count, deleting) VALUES `)
 		oargs := make([]any, 0, size)
 		for i := 0; i < size; i++ {
 			s := startSec + base + i

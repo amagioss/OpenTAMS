@@ -241,11 +241,11 @@ func (s *PostgresStore) InsertSegments(ctx context.Context, batch InsertBatch) (
 		}
 		var inserted bool
 		err := tx.QueryRow(ctx, `
-			INSERT INTO objects (id, ref_count, storage_id, reaping)
+			INSERT INTO objects (id, ref_count, storage_id, deleting)
 			VALUES ($1, 1, $2, false)
 			ON CONFLICT (id) DO UPDATE
 				SET ref_count = objects.ref_count + 1
-				WHERE objects.reaping = false
+				WHERE objects.deleting = false
 			RETURNING (xmax = 0) AS inserted`,
 			seg.ObjectID, storageID,
 		).Scan(&inserted)

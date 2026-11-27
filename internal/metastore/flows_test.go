@@ -208,7 +208,7 @@ func TestDeleteFlow_DecrementsRefCounts(t *testing.T) {
 		t.Fatalf("shared ref_count: %v", err)
 	}
 	if err := tx.QueryRow(context.Background(),
-		`SELECT ref_count, reaping FROM objects WHERE id = $1`, exclusiveObj).Scan(&exclusiveRC, &exclusiveReaping); err != nil {
+		`SELECT ref_count, deleting FROM objects WHERE id = $1`, exclusiveObj).Scan(&exclusiveRC, &exclusiveReaping); err != nil {
 		t.Fatalf("exclusive ref_count: %v", err)
 	}
 	if sharedRC != 1 {

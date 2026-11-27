@@ -418,7 +418,7 @@ func Test_SCN_META_10_DeleteAtomicMatches(t *testing.T) {
 		if rc != 0 {
 			t.Errorf("object %s ref_count: got %d, want 0", oid, rc)
 		}
-		reaping := queryBool(t, `SELECT reaping FROM objects WHERE id = $1`, oid)
+		reaping := queryBool(t, `SELECT deleting FROM objects WHERE id = $1`, oid)
 		if reaping {
 			t.Errorf("object %s reaping: must remain false post-delete", oid)
 		}
@@ -778,7 +778,7 @@ func Test_SCN_META_27_InsertRacesGCReap(t *testing.T) {
 	flID := seedFlow(t, false)
 	store := newStore(t)
 	// Pre-create object with reaping=true (GC has claimed it).
-	exec(t, `INSERT INTO objects (id, ref_count, reaping) VALUES ($1, 0, true)`, "o-reaping")
+	exec(t, `INSERT INTO objects (id, ref_count, deleting) VALUES ($1, 0, true)`, "o-reaping")
 	t.Cleanup(func() { exec(t, `DELETE FROM objects WHERE id = 'o-reaping'`) })
 
 	res, err := store.InsertSegments(context.Background(), metastore.InsertBatch{
@@ -1348,7 +1348,7 @@ func Test_SCN_META_17_ObjectsRowCreatedWhenMissing(t *testing.T) {
 	if rc != 1 {
 		t.Errorf("ref_count = %d, want 1", rc)
 	}
-	reaping := queryBool(t, `SELECT reaping FROM objects WHERE id = $1`, "o-new-17")
+	reaping := queryBool(t, `SELECT deleting FROM objects WHERE id = $1`, "o-new-17")
 	if reaping {
 		t.Errorf("reaping = true, want false")
 	}

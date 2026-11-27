@@ -141,13 +141,15 @@ func TestLoadEndToEnd_Small(t *testing.T) {
 			t.Errorf("constraint %s missing after Load: %v", c, err)
 		}
 	}
-	var idxname string
-	if err := pool.QueryRow(ctx, `
-		SELECT indexname FROM pg_indexes
-		 WHERE tablename = 'segments'
-		   AND indexname = 'segments_flow_lower'
-	`).Scan(&idxname); err != nil {
-		t.Errorf("segments_flow_lower index missing after Load: %v", err)
+	for _, idx := range []string{"segments_flow_lower", "segments_object_id_idx"} {
+		var idxname string
+		if err := pool.QueryRow(ctx, `
+			SELECT indexname FROM pg_indexes
+			 WHERE tablename = 'segments'
+			   AND indexname = $1
+		`, idx).Scan(&idxname); err != nil {
+			t.Errorf("%s index missing after Load: %v", idx, err)
+		}
 	}
 
 	// FK integrity — every segment.flow_id must exist in flows.id; every

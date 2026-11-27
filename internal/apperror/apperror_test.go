@@ -182,6 +182,33 @@ func TestNew_NewlyCataloguedCodes(t *testing.T) {
 	}
 }
 
+// BR-GC-70 to BR-GC-73: each object-ID error is a 400 with the
+// catalogued title, so a client knows it must use a different object_id.
+func TestNew_ObjectErrorsAreBadRequestWithCataloguedTitles(t *testing.T) {
+	cases := []struct {
+		code      apperror.ErrorCode
+		slug      string
+		wantTitle string
+	}{
+		{apperror.ErrObjectExists, "object-exists", "Object Exists"},
+		{apperror.ErrObjectNotAllocated, "object-not-allocated", "Object Not Allocated"},
+		{apperror.ErrObjectWrongFlow, "object-wrong-flow", "Object Allocated to Another Flow"},
+		{apperror.ErrObjectDeleting, "object-deleting", "Object Being Deleted"},
+	}
+	for _, tc := range cases {
+		pd := apperror.New(tc.code, `object_id "obj-1"`).ToProblemDetails("/path", "rid")
+		if pd.Status != 400 {
+			t.Errorf("%s: status = %d, want 400", tc.slug, pd.Status)
+		}
+		if pd.Title != tc.wantTitle {
+			t.Errorf("%s: title = %q, want %q", tc.slug, pd.Title, tc.wantTitle)
+		}
+		if want := "https://github.com/amagioss/opentams/problems/" + tc.slug; pd.Type != want {
+			t.Errorf("%s: type = %q, want %q", tc.slug, pd.Type, want)
+		}
+	}
+}
+
 // TC-ERR-08: New with an unknown code returns 500 with "Internal Server Error" title
 func TestNew_UnknownCodeFallsBackTo500(t *testing.T) {
 	e := apperror.New("no-such-code", "detail")
