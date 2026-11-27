@@ -220,8 +220,15 @@ kubectl run opentams-migrate-down --rm -it --image=<image> -- migrate down 1
 | `podDisruptionBudget.minAvailable` | `1` | |
 | `serviceMonitor.enabled` | `false` | Prometheus Operator |
 | `networkPolicy.enabled` | `false` | |
+| `networkPolicy.ingressNamespaceSelector` | `{}` | Namespace of the ingress controller. API pods only. |
+| `networkPolicy.monitoringNamespaceSelector` | `{}` | Namespace of Prometheus. API and GC pods. |
 | `resources` | requests 100m/128Mi, limits 500m/256Mi | |
 | `extraEnv` | `[]` | Advanced tuning passthrough |
+
+When `networkPolicy.enabled` is true, the policies deny all other ingress
+(default-deny). The install fails if both selectors are empty. If
+`monitoringNamespaceSelector` is empty, Prometheus gets no scrape access to the
+API pods or the GC pods, and the install notes print a warning.
 
 See `values.yaml` for the complete annotated surface and `values.schema.json`
 for type/enum constraints.

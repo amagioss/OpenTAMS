@@ -6,7 +6,9 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -424,4 +426,101 @@ func TestGCNetworkPolicy(t *testing.T) {
 			t.Errorf("GC NetworkPolicy ingress = %v, want no rule", ingress)
 		}
 	})
+}
+
+const (
+	notesWarning        = "NetworkPolicy blocks Prometheus from the API and GC pods. Set\nnetworkPolicy.monitoringNamespaceSelector to scrape metrics."
+	notesWarningAPIOnly = "NetworkPolicy blocks Prometheus from the API pods. Set\nnetworkPolicy.monitoringNamespaceSelector to scrape metrics."
+)
+
+// renderNotes renders templates/NOTES.txt without a cluster. helm template
+// skips NOTES.txt, so a copy of the chart wraps it in a named template and
+// renders it as the value of a YAML document.
+func renderNotes(t *testing.T, setArgs ...string) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.CopyFS(dir, os.DirFS(chartDir)); err != nil {
+		t.Fatalf("copy chart: %v", err)
+	}
+	notes, err := os.ReadFile(filepath.Join(dir, "templates", "NOTES.txt"))
+	if err != nil {
+		t.Fatalf("read NOTES.txt: %v", err)
+	}
+	wrapped := `{{ define "test.notes" }}` + string(notes) + `{{ end }}`
+	if err := os.WriteFile(filepath.Join(dir, "templates", "_test_notes.tpl"), []byte(wrapped), 0o600); err != nil {
+		t.Fatalf("write notes template: %v", err)
+	}
+	doc := "kind: TestNotes\nnotes: {{ include \"test.notes\" . | toJson }}\n"
+	if err := os.WriteFile(filepath.Join(dir, "templates", "test-notes.yaml"), []byte(doc), 0o600); err != nil {
+		t.Fatalf("write notes document: %v", err)
+	}
+
+	helm := requireHelm(t)
+	args := []string{"template", releaseName, dir, "--values", filepath.Join(dir, defaultValues), "--show-only", "templates/test-notes.yaml"}
+	for _, a := range setArgs {
+		args = append(args, "--set", a)
+	}
+	cmd := exec.CommandContext(t.Context(), helm, args...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("helm %s: %v\n%s", strings.Join(args, " "), err, stderr.String())
+	}
+	var rendered struct {
+		Notes string `yaml:"notes"`
+	}
+	if err := yaml.Unmarshal(out, &rendered); err != nil {
+		t.Fatalf("decode rendered notes: %v", err)
+	}
+	if rendered.Notes == "" {
+		t.Fatal("rendered notes are empty")
+	}
+	return rendered.Notes
+}
+
+func TestNotesNetworkPolicyMonitoringWarning(t *testing.T) {
+	tests := []struct {
+		name        string
+		set         []string
+		wantWarning bool
+	}{
+		{
+			name:        "only the ingress namespace selector is set",
+			set:         []string{"networkPolicy.enabled=true", "networkPolicy.ingressNamespaceSelector.matchLabels.team=ingress"},
+			wantWarning: true,
+		},
+		{
+			name:        "the monitoring namespace selector is set",
+			set:         []string{"networkPolicy.enabled=true", "networkPolicy.monitoringNamespaceSelector.matchLabels.team=monitoring"},
+			wantWarning: false,
+		},
+		{
+			name:        "the NetworkPolicy is disabled",
+			set:         []string{"networkPolicy.enabled=false"},
+			wantWarning: false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			notes := renderNotes(t, tc.set...)
+			if got := strings.Contains(notes, notesWarning); got != tc.wantWarning {
+				t.Errorf("NOTES contains the monitoring warning = %v, want %v\n%s", got, tc.wantWarning, notes)
+			}
+		})
+	}
+}
+
+func TestNotesNetworkPolicyMonitoringWarningWithoutGC(t *testing.T) {
+	notes := renderNotes(t,
+		"gc.enabled=false",
+		"networkPolicy.enabled=true",
+		"networkPolicy.ingressNamespaceSelector.matchLabels.team=ingress",
+	)
+	if !strings.Contains(notes, notesWarningAPIOnly) {
+		t.Errorf("NOTES has no API-only monitoring warning\n%s", notes)
+	}
+	if strings.Contains(notes, "API and GC pods") {
+		t.Errorf("NOTES names the GC pods, but gc.enabled is false\n%s", notes)
+	}
 }

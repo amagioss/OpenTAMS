@@ -49,3 +49,8 @@ GC worker is deployed (gc.enabled=true): deployment/{{ include "opentams.fullnam
 {{- else -}}
 GC worker is NOT deployed (gc.enabled=false). Released objects and expired allocations are not reclaimed.
 {{- end }}
+{{- if and .Values.networkPolicy.enabled (not .Values.networkPolicy.monitoringNamespaceSelector) }}
+
+NetworkPolicy blocks Prometheus from the API{{ if .Values.gc.enabled }} and GC{{ end }} pods. Set
+networkPolicy.monitoringNamespaceSelector to scrape metrics.
+{{- end }}
