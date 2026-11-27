@@ -23,7 +23,6 @@ func TestNew_StatusMapping(t *testing.T) {
 		{apperror.ErrFormatMismatch, 400},
 		{apperror.ErrMissingIdempotencyKey, 400},
 		{apperror.ErrStorageModeConflict, 400},
-		{apperror.ErrObjectIDExists, 400},
 		{apperror.ErrVFRFrameRateConflict, 400},
 		{apperror.ErrBatchTooLarge, 400},
 		{apperror.ErrUnauthorized, 401},
@@ -106,7 +105,6 @@ func TestToProblemDetails_Titles(t *testing.T) {
 		{apperror.ErrFormatMismatch, "Format Mismatch"},
 		{apperror.ErrMissingIdempotencyKey, "Missing Idempotency Key"},
 		{apperror.ErrStorageModeConflict, "Storage Mode Conflict"},
-		{apperror.ErrObjectIDExists, "Object ID Exists"},
 		{apperror.ErrVFRFrameRateConflict, "VFR Frame Rate Conflict"},
 		{apperror.ErrBatchTooLarge, "Batch Too Large"},
 		{apperror.ErrUnauthorized, "Unauthorized"},
@@ -206,6 +204,14 @@ func TestNew_ObjectErrorsAreBadRequestWithCataloguedTitles(t *testing.T) {
 		if want := "https://github.com/amagioss/opentams/problems/" + tc.slug; pd.Type != want {
 			t.Errorf("%s: type = %q, want %q", tc.slug, pd.Type, want)
 		}
+	}
+}
+
+// BR-GC-74: the object-id-exists problem type is removed; object-exists replaces it.
+func TestNew_RemovedObjectIDExistsCodeIsNotCatalogued(t *testing.T) {
+	e := apperror.New("object-id-exists", "detail")
+	if e.Status != 500 {
+		t.Errorf("New(%q).Status = %d, want 500 (uncatalogued)", "object-id-exists", e.Status)
 	}
 }
 

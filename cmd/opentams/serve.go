@@ -161,21 +161,14 @@ func serve(ctx context.Context) error {
 
 	flowSvc := flow.New(ms, log, svcMetrics)
 	// ControlledStorageID is the deployment-wide controlled-storage
-	// backend id (BR-META-07 / D-24). "default" matches Phase 1
-	// single-backend convention; override via env for multi-backend or
-	// integration setups. Empty disables controlled writes (BYOS-only
-	// deployments).
-	controlledStorageID := os.Getenv("OPENTAMS_OBJECT_STORE_ID")
-	if controlledStorageID == "" {
-		controlledStorageID = "default"
-	}
+	// backend id (BR-META-07 / D-24), from OPENTAMS_OBJECT_STORE_ID.
 	segSvc := segment.New(segment.Deps{
 		Meta:                ms,
 		Logger:              log,
 		Metrics:             svcMetrics,
-		ControlledStorageID: controlledStorageID,
+		ControlledStorageID: cfg.ObjectStoreID,
 	})
-	storSvc := storage.New(ms, obj, svcMetrics)
+	storSvc := storage.New(ms, obj, svcMetrics, cfg.ObjectStoreID, cfg.ObjectStorePresignExpiry)
 
 	checker, err := health.New(health.Options{DB: ms, Object: obj})
 	if err != nil {

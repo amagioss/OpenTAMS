@@ -25,10 +25,12 @@ func (h *Handler) HeadRoot(ctx context.Context, req api.HeadRootRequestObject) (
 }
 
 func (h *Handler) GetService(ctx context.Context, req api.GetServiceRequestObject) (api.GetServiceResponseObject, error) {
+	timeout := timerange.TimestampFromDuration(h.cfg.ObjectStorePresignExpiry).String()
 	return api.GetService200JSONResponse(api.Service{
-		ApiVersion:       tamsAPIVersion,
-		Type:             tamsServiceType,
-		MinObjectTimeout: timerange.TimestampFromDuration(h.cfg.ObjectStorePresignExpiry).String(),
+		ApiVersion:             tamsAPIVersion,
+		Type:                   tamsServiceType,
+		MinObjectTimeout:       timeout,
+		MinPresignedUrlTimeout: &timeout,
 	}), nil
 }
 
