@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/google/uuid"
@@ -37,11 +38,11 @@ type Tx interface{}
 
 // InsertBatch is the input shape for InsertSegments. FlowID is the
 // target flow; Segments are the candidate rows in caller order — input
-// order is significant (REQ-META-03). ControlledStorageID is stamped on
-// `objects.storage_id` when the metastore classifies a segment as
-// controlled (`len(Segment.GetURLs) == 0`); BYOS segments receive NULL.
-// Caller (segment service) supplies the value from deployment config.
-// Empty ControlledStorageID is legal only for BYOS-only batches — a
+// order is significant (REQ-META-03). A new controlled object row
+// (`len(Segment.GetURLs) == 0`) takes `objects.storage_id` from its
+// allocation row, not from ControlledStorageID (BR-GC-17); BYOS segments
+// receive NULL. ControlledStorageID is used only for this check:
+// empty is legal only for BYOS-only batches — a
 // controlled segment with an empty value fails with
 // ErrControlledStorageNotConfigured (BR-META-07).
 type InsertBatch struct {
@@ -53,7 +54,9 @@ type InsertBatch struct {
 // InsertResult partitions [0, len(input)) into accepted vs rejected
 // indices when the batch did NOT trigger ErrSegmentOverlap. On overlap
 // (whole-batch reject, D-SVC-SEG-02 / BR-META-06), both slices are
-// empty and the error is non-nil.
+// empty and the error is non-nil. A segment is rejected when its object
+// group fails the allocation rules (BR-GC-12, BR-GC-14); the other
+// segments are still written (BR-GC-15).
 type InsertResult struct {
 	AcceptedIndices []int
 	RejectedIndices []int
@@ -61,9 +64,12 @@ type InsertResult struct {
 }
 
 // RejectReason is parallel-indexed to InsertResult.RejectedIndices.
-// Type is an RFC 7807 type URI / catalogued slug; Detail is
-// human-readable and includes the colliding range or other context.
+// Code is the apperror code of the rejection; the service derives the
+// problem type and title from it (BR-GC-15). Type is an RFC 7807 type
+// URI, used only when Code is empty. Detail is human-readable and names
+// the object_id or other context.
 type RejectReason struct {
+	Code   apperror.ErrorCode
 	Type   string
 	Detail string
 }
@@ -96,7 +102,7 @@ type DeleteQuery struct {
 
 // DeleteResult carries the count for log / metric / idempotency-cache /
 // test-assertion consumers. ReleasedObjects was removed (D-29) — the
-// GC worker reads `objects WHERE ref_count = 0 AND reaping = false`
+// GC worker reads `objects WHERE ref_count = 0 AND deleting = false`
 // directly; the service does NOT act on released-object IDs.
 type DeleteResult struct {
 	DeletedCount int64
@@ -121,7 +127,6 @@ var (
 	ErrInvalidCursor                  = errors.New("metastore: invalid pagination cursor")
 	ErrBadInput                       = errors.New("metastore: invalid input")
 	ErrSegmentOverlap                 = errors.New("metastore: batch contains overlap")
-	ErrSegmentObjectReaping           = errors.New("metastore: object is being reaped by GC; retry with fresh object_id")
 	ErrControlledStorageNotConfigured = errors.New("metastore: controlled segment registered but InsertBatch.ControlledStorageID is empty")
 )
 
@@ -223,42 +228,37 @@ func (s *PostgresStore) InsertSegments(ctx context.Context, batch InsertBatch) (
 		)
 	}
 
-	// Step 3: race-aware ref-count INSERT per accepted segment (BR-META-07).
-	// Classifier: len(seg.GetURLs) == 0 ⇒ controlled, stamp storage_id from
-	// caller-supplied InsertBatch.ControlledStorageID. Empty + controlled =
-	// caller misconfiguration ⇒ ErrControlledStorageNotConfigured.
+	// Step 3: register each object group against the objects and
+	// allocations tables (BR-GC-11 to BR-GC-17). A rejected group writes
+	// nothing; its segments are reported, not inserted.
 	for i := range batch.Segments {
-		seg := &batch.Segments[i]
-		var storageID any // nil ⇒ NULL (BYOS) per BR-META-07
-		if len(seg.GetURLs) == 0 {
-			if batch.ControlledStorageID == "" {
-				return InsertResult{}, fmt.Errorf(
-					"metastore: InsertSegments: object %q: %w",
-					seg.ObjectID, ErrControlledStorageNotConfigured,
-				)
-			}
-			storageID = batch.ControlledStorageID
-		}
-		var inserted bool
-		err := tx.QueryRow(ctx, `
-			INSERT INTO objects (id, ref_count, storage_id, deleting)
-			VALUES ($1, 1, $2, false)
-			ON CONFLICT (id) DO UPDATE
-				SET ref_count = objects.ref_count + 1
-				WHERE objects.deleting = false
-			RETURNING (xmax = 0) AS inserted`,
-			seg.ObjectID, storageID,
-		).Scan(&inserted)
-		if errors.Is(err, pgx.ErrNoRows) {
-			// ON CONFLICT predicate failed (reaping=true): GC has claimed the row.
+		if len(batch.Segments[i].GetURLs) == 0 && batch.ControlledStorageID == "" {
 			return InsertResult{}, fmt.Errorf(
-				"metastore: InsertSegments: object %q is being reaped: %w",
-				seg.ObjectID, ErrSegmentObjectReaping,
+				"metastore: InsertSegments: object %q: %w",
+				batch.Segments[i].ObjectID, ErrControlledStorageNotConfigured,
 			)
 		}
-		if err != nil {
-			return InsertResult{}, fmt.Errorf("metastore: InsertSegments: object upsert (%q): %w", seg.ObjectID, err)
+	}
+	rejections, err := registerObjects(ctx, tx, batch)
+	if err != nil {
+		return InsertResult{}, err
+	}
+	var result InsertResult
+	acceptedIdx := make([]int, 0, len(batch.Segments))
+	for i := range batch.Segments {
+		if code, rejected := rejections[batch.Segments[i].ObjectID]; rejected {
+			result.RejectedIndices = append(result.RejectedIndices, i)
+			result.RejectReasons = append(result.RejectReasons, RejectReason{
+				Code:   code,
+				Detail: rejectDetail(code, batch.Segments[i].ObjectID),
+			})
+			continue
 		}
+		acceptedIdx = append(acceptedIdx, i)
+	}
+	if len(acceptedIdx) == 0 {
+		// Roll back: a commit would change only segments_updated (BR-GC-15).
+		return result, nil
 	}
 
 	// Step 3.5: BR-META-19 — lazy object_timerange validation. Only when
@@ -267,7 +267,7 @@ func (s *PostgresStore) InsertSegments(ctx context.Context, batch InsertBatch) (
 	// non-NULL object_timerange across all flows for the same object_id.
 	// On violation, return a wrapped apperror.ErrInvalidObjectTimerange;
 	// the deferred tx.Rollback drops the in-flight ref-count upserts.
-	for i := range batch.Segments {
+	for _, i := range acceptedIdx {
 		seg := &batch.Segments[i]
 		if seg.ObjectTimerange == nil {
 			continue
@@ -303,7 +303,7 @@ func (s *PostgresStore) InsertSegments(ctx context.Context, batch InsertBatch) (
 	// The time columns hold the client strings (BR-META-10). An absent
 	// ts_offset is stored as '', so it reads back as absent, while an
 	// explicit "0:0" or "-0:0" reads back as sent.
-	for i := range batch.Segments {
+	for _, i := range acceptedIdx {
 		seg := &batch.Segments[i]
 		getURLsJSON, err := marshalGetURLs(seg.GetURLs)
 		if err != nil {
@@ -341,11 +341,189 @@ func (s *PostgresStore) InsertSegments(ctx context.Context, batch InsertBatch) (
 		return InsertResult{}, fmt.Errorf("metastore: InsertSegments: commit: %w", err)
 	}
 
-	accepted := make([]int, len(batch.Segments))
+	result.AcceptedIndices = acceptedIdx
+	return result, nil
+}
+
+// objectGroup is the set of segments of one batch that share an
+// object_id. It is controlled if one or more of its segments has no
+// get_urls (BR-GC-10, BR-GC-11).
+type objectGroup struct {
+	count      int
+	controlled bool
+}
+
+// registerObjects applies BR-GC-12 (controlled) or BR-GC-14 (BYOS) to
+// each object group, in ascending byte order of object_id so that two
+// transactions lock shared rows in one sequence (BR-GC-23). It returns
+// the rejection code of each rejected object_id.
+func registerObjects(ctx context.Context, tx pgx.Tx, batch InsertBatch) (map[string]apperror.ErrorCode, error) {
+	groups := make(map[string]*objectGroup, len(batch.Segments))
+	ids := make([]string, 0, len(batch.Segments))
 	for i := range batch.Segments {
-		accepted[i] = i
+		seg := &batch.Segments[i]
+		g, ok := groups[seg.ObjectID]
+		if !ok {
+			g = &objectGroup{}
+			groups[seg.ObjectID] = g
+			ids = append(ids, seg.ObjectID)
+		}
+		g.count++
+		if len(seg.GetURLs) == 0 {
+			g.controlled = true
+		}
 	}
-	return InsertResult{AcceptedIndices: accepted}, nil
+	slices.Sort(ids)
+
+	rejections := make(map[string]apperror.ErrorCode)
+	for _, id := range ids {
+		g := groups[id]
+		var code apperror.ErrorCode
+		var err error
+		if g.controlled {
+			code, err = registerControlledObject(ctx, tx, batch.FlowID, id, g.count)
+		} else {
+			code, err = registerBYOSObject(ctx, tx, id, g.count)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("metastore: InsertSegments: object %q: %w", id, err)
+		}
+		if code != "" {
+			rejections[id] = code
+		}
+	}
+	return rejections, nil
+}
+
+// registerControlledObject is the decision table of BR-GC-12 with the
+// locking of BR-GC-13. An empty code means the n segments are accepted.
+func registerControlledObject(ctx context.Context, tx pgx.Tx, flowID uuid.UUID, id string, n int) (apperror.ErrorCode, error) {
+	code, found, err := addObjectRefs(ctx, tx, id, n)
+	if err != nil || found {
+		return code, err
+	}
+
+	var (
+		allocFlowID uuid.UUID
+		storageID   string
+		deleting    bool
+	)
+	err = tx.QueryRow(ctx,
+		`SELECT flow_id, storage_id, deleting FROM allocations WHERE id = $1 FOR UPDATE`, id,
+	).Scan(&allocFlowID, &storageID, &deleting)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// A concurrent registration can have used the allocation and
+		// committed its object row.
+		code, found, err = addObjectRefs(ctx, tx, id, n)
+		if err != nil || found {
+			return code, err
+		}
+		return apperror.ErrObjectNotAllocated, nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("lock allocation: %w", err)
+	}
+	switch {
+	case deleting:
+		return apperror.ErrObjectDeleting, nil
+	case allocFlowID != flowID:
+		return apperror.ErrObjectWrongFlow, nil
+	}
+
+	if _, err := tx.Exec(ctx, `DELETE FROM allocations WHERE id = $1`, id); err != nil {
+		return "", fmt.Errorf("delete allocation: %w", err)
+	}
+	var inserted string
+	err = tx.QueryRow(ctx, `
+		INSERT INTO objects (id, ref_count, storage_id, deleting)
+		VALUES ($1, $2, $3, false)
+		ON CONFLICT (id) DO NOTHING
+		RETURNING id`,
+		id, n, storageID,
+	).Scan(&inserted)
+	if err == nil {
+		return "", nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return "", fmt.Errorf("insert object: %w", err)
+	}
+	code, found, err = addObjectRefs(ctx, tx, id, n)
+	if err != nil {
+		return "", err
+	}
+	if !found {
+		return "", errors.New("object row conflicted on insert but cannot be read")
+	}
+	return code, nil
+}
+
+// addObjectRefs is rows 1 and 2 of BR-GC-12: lock the object row, and
+// add n to ref_count unless the GC has claimed it. found is false if
+// there is no object row.
+func addObjectRefs(ctx context.Context, tx pgx.Tx, id string, n int) (code apperror.ErrorCode, found bool, err error) {
+	var deleting bool
+	err = tx.QueryRow(ctx, `SELECT deleting FROM objects WHERE id = $1 FOR UPDATE`, id).Scan(&deleting)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("lock object: %w", err)
+	}
+	if deleting {
+		return apperror.ErrObjectDeleting, true, nil
+	}
+	if _, err := tx.Exec(ctx, `UPDATE objects SET ref_count = ref_count + $2 WHERE id = $1`, id, n); err != nil {
+		return "", true, fmt.Errorf("add object refs: %w", err)
+	}
+	return "", true, nil
+}
+
+// registerBYOSObject is BR-GC-14. A BYOS group needs no allocation, but
+// an allocation that sweep 2 has claimed blocks it, because sweep 2 is
+// about to delete the bucket key of that ID. The allocation row stays.
+func registerBYOSObject(ctx context.Context, tx pgx.Tx, id string, n int) (apperror.ErrorCode, error) {
+	var allocDeleting bool
+	err := tx.QueryRow(ctx,
+		`SELECT deleting FROM allocations WHERE id = $1 FOR SHARE`, id,
+	).Scan(&allocDeleting)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return "", fmt.Errorf("lock allocation: %w", err)
+	}
+	if allocDeleting {
+		return apperror.ErrObjectDeleting, nil
+	}
+	var upserted string
+	err = tx.QueryRow(ctx, `
+		INSERT INTO objects (id, ref_count, storage_id, deleting)
+		VALUES ($1, $2, NULL, false)
+		ON CONFLICT (id) DO UPDATE
+			SET ref_count = objects.ref_count + EXCLUDED.ref_count
+			WHERE objects.deleting = false
+		RETURNING id`,
+		id, n,
+	).Scan(&upserted)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return apperror.ErrObjectDeleting, nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("upsert object: %w", err)
+	}
+	return "", nil
+}
+
+// rejectDetail is the client-facing detail of a per-segment rejection
+// (BR-GC-71 to BR-GC-73). It names the object_id and never another flow.
+func rejectDetail(code apperror.ErrorCode, objectID string) string {
+	switch code {
+	case apperror.ErrObjectNotAllocated:
+		return fmt.Sprintf("object_id %q was not allocated by POST /flows/{flowId}/storage, or its allocation expired and was deleted", objectID)
+	case apperror.ErrObjectWrongFlow:
+		return fmt.Sprintf("object_id %q is allocated to a different flow", objectID)
+	case apperror.ErrObjectDeleting:
+		return fmt.Sprintf("object_id %q is being deleted; use a new object_id", objectID)
+	default:
+		return fmt.Sprintf("object_id %q was rejected", objectID)
+	}
 }
 
 // ListSegments returns one page matching the query. Returns wrapped

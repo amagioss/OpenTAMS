@@ -26,9 +26,13 @@ func insertSegs(t *testing.T, store *metastore.PostgresStore, flID uuid.UUID, tr
 	for i, tr := range trs {
 		segs[i] = makeSegment(t, fmt.Sprintf("o-%s-%d", flID, uniqueObj()), tr)
 	}
-	_, err := store.InsertSegments(context.Background(), metastore.InsertBatch{
+	allocate(t, flID, segs...)
+	res, err := store.InsertSegments(context.Background(), metastore.InsertBatch{
 		FlowID: flID, Segments: segs, ControlledStorageID: "default",
 	})
+	if err == nil && len(res.RejectedIndices) > 0 {
+		return fmt.Errorf("segments rejected: %+v", res.RejectReasons)
+	}
 	return err
 }
 
@@ -153,6 +157,7 @@ func TestTimerange_RawStringsRoundTrip(t *testing.T) {
 				LastDuration:       &ld,
 				LastDurationRaw:    tc.lastDurRaw,
 			}
+			allocate(t, flID, in)
 			if _, err := store.InsertSegments(context.Background(), metastore.InsertBatch{
 				FlowID: flID, Segments: []domain.Segment{in}, ControlledStorageID: "default",
 			}); err != nil {

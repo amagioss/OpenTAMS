@@ -14,6 +14,7 @@ import (
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
 
+	"github.com/amagioss/opentams/internal/apperror"
 	"github.com/amagioss/opentams/internal/domain"
 	"github.com/amagioss/opentams/internal/metastore"
 	"github.com/amagioss/opentams/internal/service"
@@ -55,7 +56,7 @@ type fakeMetaStore struct {
 
 type fakeObject struct {
 	refCount int64
-	reaping  bool
+	deleting bool
 }
 
 func newFakeMetaStore() *fakeMetaStore {
@@ -846,8 +847,8 @@ func Test_SCN_SEG_14_DeleteSucceedsRefCountFallsToZero(t *testing.T) {
 	if got := ms.objects["o-fail"].refCount; got != 0 {
 		t.Errorf("o-fail ref-count = %d, want 0", got)
 	}
-	if ms.objects["o-fail"].reaping {
-		t.Errorf("o-fail.reaping = true, want false (GC worker claims the row, not the service)")
+	if ms.objects["o-fail"].deleting {
+		t.Errorf("o-fail.deleting = true, want false (GC worker claims the row, not the service)")
 	}
 }
 
@@ -1181,5 +1182,47 @@ func Test_SCN_SEG_30_ServicePropagatesControlledStorageID(t *testing.T) {
 	if captured.ControlledStorageID != wantStorageID {
 		t.Errorf("captured.ControlledStorageID = %q, want %q",
 			captured.ControlledStorageID, wantStorageID)
+	}
+}
+
+// TC-GC-016: The service maps a store rejection
+func Test_TC_GC_016_StoreRejectionCodeBecomesProblemTypeAndTitle(t *testing.T) {
+	ms := newFakeMetaStore()
+	flowID := uuid.New()
+	ms.addFlow(flowID, false)
+	ms.customInsert = func(_ metastore.InsertBatch) (metastore.InsertResult, error) {
+		return metastore.InsertResult{
+			AcceptedIndices: []int{0},
+			RejectedIndices: []int{1},
+			RejectReasons:   []metastore.RejectReason{{Code: apperror.ErrObjectNotAllocated, Detail: "d"}},
+		}, nil
+	}
+	svc := newServiceV1(t, ms)
+
+	res, err := svc.RegisterBatch(context.Background(), domain.RegisterParams{
+		FlowID:   flowID,
+		Segments: []domain.Segment{seg(t, "a1", "[0:0_2:0)"), seg(t, "zz", "[2:0_4:0)")},
+	})
+	if err != nil {
+		t.Fatalf("RegisterBatch: %v", err)
+	}
+	if res.Outcome != domain.OutcomePartial {
+		t.Errorf("Outcome = %d, want OutcomePartial", res.Outcome)
+	}
+	if len(res.Failed) != 1 {
+		t.Fatalf("Failed = %d entries, want 1", len(res.Failed))
+	}
+	got := res.Failed[0]
+	if want := "https://github.com/amagioss/opentams/problems/object-not-allocated"; got.Type != want {
+		t.Errorf("Type = %q, want %q", got.Type, want)
+	}
+	if got.Title != "Object Not Allocated" {
+		t.Errorf("Title = %q, want %q", got.Title, "Object Not Allocated")
+	}
+	if got.Reason != "d" {
+		t.Errorf("Reason = %q, want %q", got.Reason, "d")
+	}
+	if got.Segment.ObjectID != "zz" {
+		t.Errorf("Segment.ObjectID = %q, want zz", got.Segment.ObjectID)
 	}
 }

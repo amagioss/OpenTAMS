@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -1576,10 +1579,10 @@ func Test_SCN_HTTP_25_WarnPerFailedSegment(t *testing.T) {
 		},
 		{
 			Segment: domain.Segment{ObjectID: "obj-3", Timerange: mustTR(t, "[2:0_3:0)")},
-			Reason:  "object reaping in progress",
-			Type:    "https://github.com/amagioss/opentams/problems/object-reaping",
-			Title:   "Conflict",
-			Status:  409,
+			Reason:  `object_id "obj-3" is being deleted; use a new object_id`,
+			Type:    "https://github.com/amagioss/opentams/problems/object-deleting",
+			Title:   "Object Being Deleted",
+			Status:  400,
 		},
 	}
 	svc := &fakeSegmentService{
@@ -1806,4 +1809,84 @@ func Test_SCN_HTTP_39_LimitBelowMinRejected(t *testing.T) {
 				"service MUST NOT be called when the handler rejects the request")
 		})
 	}
+}
+
+// TC-GC-027: No response has status 409 for an object
+func Test_TC_GC_027_DeletingObjectIsAPerSegmentFailureWithoutStatus(t *testing.T) {
+	const deletingType = "https://github.com/amagioss/opentams/problems/object-deleting"
+	svc := &fakeSegmentService{
+		registerBatch: func(_ context.Context, _ domain.RegisterParams) (domain.RegisterResult, error) {
+			return domain.RegisterResult{
+				Outcome: domain.OutcomeAllRejected,
+				Failed: []domain.FailedSegment{{
+					Segment: domain.Segment{ObjectID: "a1", Timerange: mustTR(t, "[0:0_2:0)"), TimerangeRaw: "[0:0_2:0)"},
+					Reason:  `object_id "a1" is being deleted; use a new object_id`,
+					Type:    deletingType,
+					Title:   "Object Being Deleted",
+					Status:  400,
+				}},
+			}, nil
+		},
+	}
+	h := newSegHandler(svc, freshIdem())
+
+	resp, err := h.PostFlowSegments(context.Background(), api.PostFlowSegmentsRequestObject{
+		FlowId: uuidStr(t),
+		Params: api.PostFlowSegmentsParams{XIdempotencyKey: "k-gc-027"},
+		Body:   postBodySingle(t, "a1", "[0:0_2:0)"),
+	})
+	require.NoError(t, err)
+	bulk, ok := resp.(api.PostFlowSegments200JSONResponse)
+	require.True(t, ok, "expected 200 bulk-failure, got %T", resp)
+
+	raw, err := json.Marshal(bulk)
+	require.NoError(t, err)
+	var wire struct {
+		FailedSegments []struct {
+			Error map[string]any `json:"error"`
+		} `json:"failed_segments"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &wire))
+	require.Len(t, wire.FailedSegments, 1)
+	assert.Equal(t, deletingType, wire.FailedSegments[0].Error["type"])
+	assert.NotContains(t, wire.FailedSegments[0].Error, "status")
+}
+
+// TC-GC-027: No response has status 409 for an object
+func Test_TC_GC_027_HandlersPackageHasNoObjectReapingType(t *testing.T) {
+	removed := "object-" + "reaping"
+	files, err := filepath.Glob("*.go")
+	require.NoError(t, err)
+	require.NotEmpty(t, files)
+	for _, f := range files {
+		src, err := os.ReadFile(f)
+		require.NoError(t, err)
+		assert.Falsef(t, strings.Contains(string(src), removed), "%s still names the removed problem type %q", f, removed)
+	}
+}
+
+// TC-GC-027: No response has status 409 for an object
+func Test_TC_GC_027_CachedConflictWithEmptyBodyReplaysAsObjectDeleting(t *testing.T) {
+	idem := &mockIdempotencyStore{
+		acquire: func(_ context.Context, _, _ string, _ time.Duration) (idempotency.AcquireResult, error) {
+			return idempotency.AcquireResult{
+				Status: idempotency.StatusCached,
+				Cached: &idempotency.CachedResponse{Status: 409},
+			}, nil
+		},
+	}
+	h := newSegHandler(&fakeSegmentService{}, idem)
+
+	resp, err := h.PostFlowSegments(context.Background(), api.PostFlowSegmentsRequestObject{
+		FlowId: uuidStr(t),
+		Params: api.PostFlowSegmentsParams{XIdempotencyKey: "k-gc-027-replay"},
+		Body:   postBodySingle(t, "a1", "[0:0_2:0)"),
+	})
+	require.NoError(t, err)
+	got, ok := resp.(api.PostFlowSegments409ApplicationProblemPlusJSONResponse)
+	require.True(t, ok, "expected 409 replay, got %T", resp)
+	require.NotNil(t, got.Type)
+	assert.Equal(t, "https://github.com/amagioss/opentams/problems/object-deleting", *got.Type)
+	require.NotNil(t, got.Status)
+	assert.Equal(t, 409, *got.Status)
 }

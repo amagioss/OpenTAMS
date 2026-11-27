@@ -93,6 +93,7 @@ func Test_SCN_SEG_PERF_01_RegisterSinglePerf(t *testing.T) {
 	flID := seedRealFlow(t, false)
 	seedSegPerfRows(t, flID, 0, segPerfFlowSegments)
 	svc := newRealService(t)
+	seedAllocations(t, flID, objectIDs("o-segpf01-%d", segPerfSamples)...)
 
 	samples := make([]time.Duration, segPerfSamples)
 	for i := 0; i < segPerfSamples; i++ {
@@ -129,6 +130,9 @@ func Test_SCN_SEG_PERF_02_BulkThroughputPerf(t *testing.T) {
 	const batches = 50
 	const batchSize = 100
 	total := batches * batchSize
+	for b := 0; b < batches; b++ {
+		seedAllocations(t, flID, objectIDs(fmt.Sprintf("o-segpf02-%d-%%d", b), batchSize)...)
+	}
 
 	t0 := time.Now()
 	for b := 0; b < batches; b++ {
