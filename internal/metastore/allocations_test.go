@@ -15,32 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-var (
-	gcFlowF = uuid.MustParse("11111111-1111-1111-1111-111111111111")
-	gcFlowG = uuid.MustParse("22222222-2222-2222-2222-222222222222")
-)
-
 const gcTolerance = 5.0
-
-func gcExec(t *testing.T, sql string, args ...any) {
-	t.Helper()
-	if _, err := testPool.Exec(context.Background(), sql, args...); err != nil {
-		t.Fatalf("exec %q: %v", sql, err)
-	}
-}
-
-func gcSeedFlow(t *testing.T, flowID uuid.UUID) {
-	t.Helper()
-	sourceID := uuid.New()
-	gcExec(t, `INSERT INTO sources (id, format) VALUES ($1, 'urn:x-nmos:format:video')`, sourceID)
-	gcExec(t, `INSERT INTO flows (id, source_id, format, codec, read_only)
-		VALUES ($1, $2, 'urn:x-nmos:format:video', 'video/h264', false)`, flowID, sourceID)
-	t.Cleanup(func() {
-		ctx := context.Background()
-		_, _ = testPool.Exec(ctx, `DELETE FROM flows WHERE id = $1`, flowID)
-		_, _ = testPool.Exec(ctx, `DELETE FROM sources WHERE id = $1`, sourceID)
-	})
-}
 
 // gcSecondsFromNow returns the distance in seconds between the expression
 // expr of the row id in table and the database now() plus offset.
@@ -68,7 +43,7 @@ func gcCount(t *testing.T, sql string, args ...any) int64 {
 // TC-GC-001: Mode limit writes one allocation row for each ID.
 func TestAllocateObjects_LimitMode_WritesOneRowPerID(t *testing.T) {
 	resetGCTables(t)
-	gcSeedFlow(t, gcFlowF)
+	gcSeedFlow(t, testPool, gcFlowF, false)
 	s := New(testPool)
 
 	err := s.AllocateObjects(context.Background(), AllocateParams{
@@ -135,7 +110,7 @@ func gcRequireObjectError(t *testing.T, err error, id string, want error) {
 // TC-GC-004: Mode object_ids writes new rows.
 func TestAllocateObjects_RequestedNewID_WritesRow(t *testing.T) {
 	resetGCTables(t)
-	gcSeedFlow(t, gcFlowF)
+	gcSeedFlow(t, testPool, gcFlowF, false)
 
 	if err := gcAllocate(gcFlowF, "x1"); err != nil {
 		t.Fatalf("AllocateObjects: %v", err)
@@ -150,8 +125,8 @@ func TestAllocateObjects_RequestedIDWithObjectRow_ReturnsObjectExists(t *testing
 	for _, refCount := range []int{1, 0} {
 		t.Run(fmt.Sprintf("ref_count=%d", refCount), func(t *testing.T) {
 			resetGCTables(t)
-			gcSeedFlow(t, gcFlowF)
-			gcExec(t, `INSERT INTO objects (id, ref_count, storage_id, deleting) VALUES ('x1', $1, 'default', false)`, refCount)
+			gcSeedFlow(t, testPool, gcFlowF, false)
+			gcExec(t, testPool, `INSERT INTO objects (id, ref_count, storage_id, deleting) VALUES ('x1', $1, 'default', false)`, refCount)
 
 			err := gcAllocate(gcFlowF, "x1")
 
@@ -166,8 +141,8 @@ func TestAllocateObjects_RequestedIDWithObjectRow_ReturnsObjectExists(t *testing
 // TC-GC-006: A second request on the same flow gives a new expiry.
 func TestAllocateObjects_RequestedSameFlowAgain_ExtendsExpiry(t *testing.T) {
 	resetGCTables(t)
-	gcSeedFlow(t, gcFlowF)
-	gcExec(t, `INSERT INTO allocations (id, flow_id, storage_id, expires_at, created_at)
+	gcSeedFlow(t, testPool, gcFlowF, false)
+	gcExec(t, testPool, `INSERT INTO allocations (id, flow_id, storage_id, expires_at, created_at)
 		VALUES ('x1', $1, 'default', now() + interval '10 minutes', now() - interval '1 minute')`, gcFlowF)
 	var createdBefore time.Time
 	if err := testPool.QueryRow(context.Background(),
@@ -201,8 +176,8 @@ func TestAllocateObjects_RequestedSameFlowAgain_ExtendsExpiry(t *testing.T) {
 // TC-GC-007: An allocation for a different flow gives object-wrong-flow.
 func TestAllocateObjects_RequestedIDOnOtherFlow_ReturnsWrongFlow(t *testing.T) {
 	resetGCTables(t)
-	gcSeedFlow(t, gcFlowF)
-	gcExec(t, `INSERT INTO allocations (id, flow_id, storage_id, expires_at)
+	gcSeedFlow(t, testPool, gcFlowF, false)
+	gcExec(t, testPool, `INSERT INTO allocations (id, flow_id, storage_id, expires_at)
 		VALUES ('x1', $1, 'default', now() + interval '1 hour')`, gcFlowG)
 	var expiresBefore time.Time
 	if err := testPool.QueryRow(context.Background(),
@@ -232,8 +207,8 @@ func TestAllocateObjects_RequestedIDOnOtherFlow_ReturnsWrongFlow(t *testing.T) {
 // TC-GC-008: An object row with deleting = true gives object-deleting.
 func TestAllocateObjects_RequestedIDWithDeletingObject_ReturnsDeleting(t *testing.T) {
 	resetGCTables(t)
-	gcSeedFlow(t, gcFlowF)
-	gcExec(t, `INSERT INTO objects (id, ref_count, storage_id, deleting, claimed_at)
+	gcSeedFlow(t, testPool, gcFlowF, false)
+	gcExec(t, testPool, `INSERT INTO objects (id, ref_count, storage_id, deleting, claimed_at)
 		VALUES ('x1', 0, 'default', true, now())`)
 
 	err := gcAllocate(gcFlowF, "x1")
@@ -244,8 +219,8 @@ func TestAllocateObjects_RequestedIDWithDeletingObject_ReturnsDeleting(t *testin
 // TC-GC-009: An allocation row with deleting = true gives object-deleting.
 func TestAllocateObjects_RequestedIDWithDeletingAllocation_ReturnsDeleting(t *testing.T) {
 	resetGCTables(t)
-	gcSeedFlow(t, gcFlowF)
-	gcExec(t, `INSERT INTO allocations (id, flow_id, storage_id, expires_at, deleting, claimed_at)
+	gcSeedFlow(t, testPool, gcFlowF, false)
+	gcExec(t, testPool, `INSERT INTO allocations (id, flow_id, storage_id, expires_at, deleting, claimed_at)
 		VALUES ('x1', $1, 'default', now() + interval '1 hour', true, now())`, gcFlowF)
 
 	err := gcAllocate(gcFlowF, "x1")
@@ -259,8 +234,8 @@ func TestAllocateObjects_RequestedIDWithDeletingAllocation_ReturnsDeleting(t *te
 // TC-GC-010: One rejected ID rejects the full request.
 func TestAllocateObjects_OneRejectedID_RejectsFullRequest(t *testing.T) {
 	resetGCTables(t)
-	gcSeedFlow(t, gcFlowF)
-	gcExec(t, `INSERT INTO objects (id, ref_count, storage_id, deleting) VALUES ('b1', 1, 'default', false)`)
+	gcSeedFlow(t, testPool, gcFlowF, false)
+	gcExec(t, testPool, `INSERT INTO objects (id, ref_count, storage_id, deleting) VALUES ('b1', 1, 'default', false)`)
 
 	err := gcAllocate(gcFlowF, "a1", "b1")
 
@@ -273,8 +248,8 @@ func TestAllocateObjects_OneRejectedID_RejectsFullRequest(t *testing.T) {
 // TC-GC-013: Two requests at the same time for the same ID on two flows.
 func TestAllocateObjects_ConcurrentSameIDTwoFlows_OneWinsWithoutDeadlock(t *testing.T) {
 	resetGCTables(t)
-	gcSeedFlow(t, gcFlowF)
-	gcSeedFlow(t, gcFlowG)
+	gcSeedFlow(t, testPool, gcFlowF, false)
+	gcSeedFlow(t, testPool, gcFlowG, false)
 
 	start := make(chan struct{})
 	errs := make([]error, 2)

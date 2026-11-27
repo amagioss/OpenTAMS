@@ -29,13 +29,13 @@ func gcRequireIDs(t *testing.T, name string, got []string, want ...string) {
 
 func gcInsertObject(t *testing.T, id string, refCount int, storageID *string, deleting bool) {
 	t.Helper()
-	gcExec(t, `INSERT INTO objects (id, ref_count, storage_id, deleting, claimed_at)
+	gcExec(t, testPool, `INSERT INTO objects (id, ref_count, storage_id, deleting, claimed_at)
 		VALUES ($1, $2, $3, $4, CASE WHEN $4 THEN now() END)`, id, refCount, storageID, deleting)
 }
 
 func gcInsertSegment(t *testing.T, objectID string, lowerSec int64) {
 	t.Helper()
-	gcExec(t, `INSERT INTO segments (flow_id, object_id, timerange, lower_ns, upper_ns)
+	gcExec(t, testPool, `INSERT INTO segments (flow_id, object_id, timerange, lower_ns, upper_ns)
 		VALUES ($1, $2, '[' || $3::bigint || ':0_' || ($3::bigint + 1) || ':0)', $3::bigint * 1000000000, ($3::bigint + 1) * 1000000000)`,
 		gcFlowF, objectID, lowerSec)
 }
@@ -93,7 +93,7 @@ func TestClaimReleasedObjects_ReleasedBYOSObject_RowOnlyDelete(t *testing.T) {
 // TC-GC-062: An object in use is not a candidate.
 func TestClaimReleasedObjects_ObjectInUse_NotCandidate(t *testing.T) {
 	resetGCTables(t)
-	gcSeedFlow(t, gcFlowF)
+	gcSeedFlow(t, testPool, gcFlowF, false)
 	gcInsertObject(t, "u1", 1, gcPtr("default"), false)
 	gcInsertSegment(t, "u1", 0)
 
@@ -113,7 +113,7 @@ func TestClaimReleasedObjects_ObjectInUse_NotCandidate(t *testing.T) {
 // TC-GC-063: Drift is repaired, not deleted.
 func TestClaimReleasedObjects_Drift_RepairedNotClaimed(t *testing.T) {
 	resetGCTables(t)
-	gcSeedFlow(t, gcFlowF)
+	gcSeedFlow(t, testPool, gcFlowF, false)
 	gcInsertObject(t, "d1", 0, gcPtr("default"), false)
 	gcInsertSegment(t, "d1", 0)
 
@@ -179,7 +179,7 @@ func TestReclaimRetryObjects_ClaimedRow_LeaseProtectsUntilExpired(t *testing.T) 
 	}
 	gcRequireIDs(t, "reclaim with lease held", held)
 
-	gcExec(t, `UPDATE objects SET claimed_at = now() - interval '10 minutes' WHERE id = 'r1'`)
+	gcExec(t, testPool, `UPDATE objects SET claimed_at = now() - interval '10 minutes' WHERE id = 'r1'`)
 	expired, err := s.ReclaimRetryObjects(ctx, "default", 5*time.Minute, time.Now().Add(time.Minute), 1000)
 	if err != nil {
 		t.Fatalf("ReclaimRetryObjects (lease expired): %v", err)
@@ -231,7 +231,7 @@ func TestReclaimRetryObjects_RepeatedInOneCycle_EachRowOnce(t *testing.T) {
 	for _, id := range []string{"k1", "k2", "k3"} {
 		gcInsertObject(t, id, 0, gcPtr("default"), true)
 	}
-	gcExec(t, `UPDATE objects SET claimed_at = now() - interval '10 minutes'`)
+	gcExec(t, testPool, `UPDATE objects SET claimed_at = now() - interval '10 minutes'`)
 	s := New(testPool)
 	ctx := context.Background()
 
@@ -265,7 +265,7 @@ func TestDeleteClaimedObjects_UnclaimedRow_NotDeleted(t *testing.T) {
 // TC-GC-069: The foreign key stops a row delete with a segment.
 func TestDeleteClaimedObjects_RowWithSegment_ForeignKeyError(t *testing.T) {
 	resetGCTables(t)
-	gcSeedFlow(t, gcFlowF)
+	gcSeedFlow(t, testPool, gcFlowF, false)
 	gcInsertObject(t, "r1", 0, gcPtr("default"), true)
 	gcInsertSegment(t, "r1", 0)
 
@@ -284,7 +284,7 @@ func TestDeleteClaimedObjects_RowWithSegment_ForeignKeyError(t *testing.T) {
 // now() + expiresIn.
 func gcInsertAllocation(t *testing.T, id, storageID string, expiresIn time.Duration, deleting bool) {
 	t.Helper()
-	gcExec(t, `INSERT INTO allocations (id, flow_id, storage_id, expires_at, deleting, claimed_at)
+	gcExec(t, testPool, `INSERT INTO allocations (id, flow_id, storage_id, expires_at, deleting, claimed_at)
 		VALUES ($1, $2, $3, now() + make_interval(secs => $4), $5, CASE WHEN $5 THEN now() END)`,
 		id, gcFlowF, storageID, expiresIn.Seconds(), deleting)
 }
@@ -411,7 +411,7 @@ func TestReclaimRetryAllocations_ClaimedRow_LeaseProtectsUntilExpired(t *testing
 	}
 	gcRequireIDs(t, "reclaim with lease held", held)
 
-	gcExec(t, `UPDATE allocations SET claimed_at = now() - interval '10 minutes' WHERE id = 'e4'`)
+	gcExec(t, testPool, `UPDATE allocations SET claimed_at = now() - interval '10 minutes' WHERE id = 'e4'`)
 	expired, err := s.ReclaimRetryAllocations(ctx, "default", 5*time.Minute, time.Now().Add(time.Minute), 1000)
 	if err != nil {
 		t.Fatalf("ReclaimRetryAllocations (lease expired): %v", err)
@@ -455,5 +455,80 @@ func TestAllocationBacklog_MixedRows_ReturnsGaugeValues(t *testing.T) {
 	}
 	if math.Abs(b.OldestOverdue-600) > gcTolerance {
 		t.Errorf("OldestOverdue: got %.1f, want 600 (tolerance %.0f)", b.OldestOverdue, gcTolerance)
+	}
+}
+
+// TC-GC-067, short-lease case: when the lease is shorter than the gap
+// between two reclaims, only the cycle start stops a second attempt in
+// the same cycle. The next cycle takes the row again (BR-GC-64).
+func TestReclaimRetryObjects_ShortLease_CycleStartAllowsOneAttemptPerCycle(t *testing.T) {
+	resetGCTables(t)
+	gcInsertObject(t, "k1", 0, gcPtr("default"), true)
+	gcExec(t, testPool, `UPDATE objects SET claimed_at = now() - interval '10 minutes'`)
+	gcRequireReclaimOncePerCycle(t, New(testPool).ReclaimRetryObjects)
+}
+
+// TC-GC-086, short-lease case: the same rule for allocations (BR-GC-64).
+func TestReclaimRetryAllocations_ShortLease_CycleStartAllowsOneAttemptPerCycle(t *testing.T) {
+	resetGCTables(t)
+	gcInsertAllocation(t, "k1", "default", -time.Hour, true)
+	gcExec(t, testPool, `UPDATE allocations SET claimed_at = now() - interval '10 minutes'`)
+	gcRequireReclaimOncePerCycle(t, New(testPool).ReclaimRetryAllocations)
+}
+
+type gcReclaimFunc func(ctx context.Context, storageID string, lease time.Duration, cycleStart time.Time, limit int) ([]string, error)
+
+func gcRequireReclaimOncePerCycle(t *testing.T, reclaim gcReclaimFunc) {
+	t.Helper()
+	ctx := context.Background()
+	const lease = time.Millisecond
+	cycleStart := gcDBNow(t)
+
+	first, err := reclaim(ctx, "default", lease, cycleStart, 1000)
+	if err != nil {
+		t.Fatalf("first reclaim: %v", err)
+	}
+	gcRequireIDs(t, "first reclaim", first, "k1")
+
+	time.Sleep(20 * lease)
+	second, err := reclaim(ctx, "default", lease, cycleStart, 1000)
+	if err != nil {
+		t.Fatalf("second reclaim: %v", err)
+	}
+	gcRequireIDs(t, "second reclaim in the same cycle", second)
+
+	next, err := reclaim(ctx, "default", lease, gcDBNow(t), 1000)
+	if err != nil {
+		t.Fatalf("reclaim in the next cycle: %v", err)
+	}
+	gcRequireIDs(t, "reclaim in the next cycle", next, "k1")
+}
+
+func gcDBNow(t *testing.T) time.Time {
+	t.Helper()
+	var now time.Time
+	if err := testPool.QueryRow(context.Background(), `SELECT clock_timestamp()`).Scan(&now); err != nil {
+		t.Fatalf("database clock: %v", err)
+	}
+	return now
+}
+
+// Sweep 1 backlog values (interface spec section 4; the sweep 1
+// counterpart of TC-GC-088). A BYOS row at ref_count = 0 is pending,
+// because sweep 1 deletes its row (BR-GC-34).
+func TestReleasedBacklog_MixedRows_ReturnsGaugeValues(t *testing.T) {
+	resetGCTables(t)
+	gcInsertObject(t, "p1", 0, gcPtr("default"), false)
+	gcInsertObject(t, "p2", 0, nil, false)
+	gcInsertObject(t, "r1", 0, gcPtr("default"), true)
+	gcInsertObject(t, "u1", 1, gcPtr("default"), false)
+	gcInsertObject(t, "o1", 0, gcPtr("other"), false)
+
+	b, err := New(testPool).ReleasedBacklog(context.Background(), "default")
+	if err != nil {
+		t.Fatalf("ReleasedBacklog: %v", err)
+	}
+	if b.Pending != 2 || b.Retrying != 1 || b.UnknownStorage != 1 {
+		t.Errorf("Pending, Retrying, UnknownStorage: got %d, %d, %d, want 2, 1, 1", b.Pending, b.Retrying, b.UnknownStorage)
 	}
 }
