@@ -260,7 +260,7 @@ const deleteBatchSize = 1000
 //   - Per-id 5xx / network → wraps ErrTransient (INV-OBJ-03).
 //   - Slice-level credentials failure → wraps ErrAuth, nil results
 //     (INV-OBJ-04).
-//   - No internal retry — failed ids stay reaping=true for the next GC
+//   - No internal retry — failed ids stay deleting = true for the next GC
 //     sweep.
 func (s *S3Store) DeleteObjects(ctx context.Context, ids []string) ([]DeleteResult, error) {
 	if len(ids) == 0 {

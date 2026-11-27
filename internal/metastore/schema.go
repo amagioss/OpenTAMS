@@ -19,8 +19,8 @@ import (
 // match: `version >= ExpectedSchemaVersion` passes; `version <
 // ExpectedSchemaVersion` fails with ErrSchemaTooOld.
 //
-// Current head is migration 000005 (objects_storage_id_reaping).
-const ExpectedSchemaVersion int64 = 5
+// Current head is migration 000006 (allocations_and_deleting).
+const ExpectedSchemaVersion int64 = 6
 
 // Sentinel errors returned by VerifySchema. Wrapped so callers can match
 // with errors.Is and produce operator-friendly messages without re-parsing

@@ -118,7 +118,7 @@ func Load(ctx context.Context, pool *pgxpool.Pool, plan dataset.Plan, seed uint6
 // dropSegmentsConstraintsAndIndex strips per-row work from the COPY hot
 // path: GiST EXCLUDE (overlap probe), FKs (parent-table lookups), and
 // the local btree (page updates). The COPY then streams into a bare heap.
-// Order doesn't matter for the drops — all four are independent.
+// Order doesn't matter for the drops — all five are independent.
 // Reset truncates every table the loader writes — sources, flows,
 // flow_collection, objects, segments, plus the two tag tables. The
 // BIGSERIAL on segments.id restarts at 1 (RESTART IDENTITY) and any
@@ -146,6 +146,7 @@ func dropSegmentsConstraintsAndIndex(ctx context.Context, pool *pgxpool.Pool) er
 		`ALTER TABLE segments DROP CONSTRAINT IF EXISTS segments_flow_id_fkey`,
 		`ALTER TABLE segments DROP CONSTRAINT IF EXISTS segments_object_id_fkey`,
 		`DROP INDEX IF EXISTS segments_flow_lower`,
+		`DROP INDEX IF EXISTS segments_object_id_idx`,
 	}
 	for _, s := range stmts {
 		if _, err := pool.Exec(ctx, s); err != nil {
@@ -169,11 +170,12 @@ func dropSegmentsConstraintsAndIndex(ctx context.Context, pool *pgxpool.Pool) er
 //     strong lock that a plain ADD CONSTRAINT would.
 //
 // The recreated objects' definitions match migrations/000001_init.up.sql
-// exactly — the scale test would be measuring a different schema
+// and 000006_allocations_and_deleting.up.sql exactly — the scale test would be measuring a different schema
 // otherwise.
 func rebuildSegmentsConstraintsAndIndex(ctx context.Context, pool *pgxpool.Pool) error {
 	stmts := []string{
 		`CREATE INDEX segments_flow_lower ON segments (flow_id, lower_ns)`,
+		`CREATE INDEX segments_object_id_idx ON segments (object_id)`,
 		`ALTER TABLE segments ADD CONSTRAINT no_segment_overlap
             EXCLUDE USING gist (
                 flow_id WITH =,
@@ -301,6 +303,11 @@ func copyFlowCollection(ctx context.Context, pool *pgxpool.Pool, g *dataset.Gen,
 	return nil
 }
 
+// loadedStorageID is the storage ID of every loaded object. It equals the
+// server's default storage ID, so sweep 1 can delete the released loaded
+// objects (BR-GC-30, scale case S3).
+const loadedStorageID = "default"
+
 func copyObjects(ctx context.Context, pool *pgxpool.Pool, g *dataset.Gen, opts LoadOptions) error {
 	if g.Plan().ObjectsCount == 0 {
 		return nil
@@ -311,7 +318,7 @@ func copyObjects(ctx context.Context, pool *pgxpool.Pool, g *dataset.Gen, opts L
 	}
 	defer conn.Release()
 
-	cols := []string{"id", "ref_count", "reaping"}
+	cols := []string{"id", "ref_count", "deleting", "storage_id"}
 	it := g.Objects()
 	var done int64
 	for {
@@ -528,7 +535,7 @@ func (s *objectCopySource) Next() bool {
 }
 func (s *objectCopySource) Values() ([]any, error) {
 	r := s.it.Row()
-	return []any{r.ID, r.RefCount, r.Reaping}, nil
+	return []any{r.ID, r.RefCount, r.Deleting, loadedStorageID}, nil
 }
 func (s *objectCopySource) Err() error { return nil }
 

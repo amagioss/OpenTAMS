@@ -90,12 +90,12 @@ func TestClientRegisterSegmentsSendsIdempotencyAndArrayBody(t *testing.T) {
 		{ObjectID: "o1", Timerange: "[0:0_6:0)", TSOffset: "0:0"},
 		{ObjectID: "o2", Timerange: "[6:0_12:0)", TSOffset: "0:0"},
 	}
-	status, err := c.registerSegments(context.Background(), fid, segs, "idem-key-123")
+	res, err := c.registerSegments(context.Background(), fid, segs, "idem-key-123")
 	if err != nil {
 		t.Fatalf("registerSegments: %v", err)
 	}
-	if status != http.StatusCreated {
-		t.Errorf("status = %d, want 201", status)
+	if res.status != http.StatusCreated {
+		t.Errorf("status = %d, want 201", res.status)
 	}
 	if got.method != http.MethodPost {
 		t.Errorf("method = %s, want POST", got.method)
@@ -154,6 +154,81 @@ func TestClientAllocateStorage(t *testing.T) {
 	}
 	if body["limit"].(float64) != 10 {
 		t.Errorf("limit = %v, want 10", body["limit"])
+	}
+}
+
+func TestClientAllocateObjectIDsSendsObjectIDsMode(t *testing.T) {
+	srv, got := newCapturingServer(t, http.StatusCreated)
+	c := newClient(srv.URL, "tok", 5*time.Second, 16)
+	fid := uuid.New()
+
+	status, err := c.allocateObjectIDs(context.Background(), fid, []string{"o1", "o2"})
+	if err != nil {
+		t.Fatalf("allocateObjectIDs: %v", err)
+	}
+	if status != http.StatusCreated {
+		t.Errorf("status = %d, want 201", status)
+	}
+	if got.method != http.MethodPost {
+		t.Errorf("method = %s, want POST", got.method)
+	}
+	if want := "/tams/v1/flows/" + fid.String() + "/storage"; got.path != want {
+		t.Errorf("path = %s, want %s", got.path, want)
+	}
+	// Exactly one of limit / object_ids may be present.
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal(got.body, &body); err != nil {
+		t.Fatalf("body not JSON: %v", err)
+	}
+	if _, has := body["limit"]; has {
+		t.Errorf("object_ids mode body carries limit: %s", got.body)
+	}
+	var ids []string
+	if err := json.Unmarshal(body["object_ids"], &ids); err != nil {
+		t.Fatalf("object_ids not a string array: %v (%s)", err, got.body)
+	}
+	if len(ids) != 2 || ids[0] != "o1" || ids[1] != "o2" {
+		t.Errorf("object_ids = %v, want [o1 o2]", ids)
+	}
+}
+
+func TestClientRegisterSegmentsReportsFailedSegments(t *testing.T) {
+	const failedBody = `{"failed_segments":[{"object_id":"o1","timerange":"[0:0_6:0)",` +
+		`"error":{"type":"https://github.com/amagioss/opentams/problems/object-not-allocated","title":"Object Not Allocated"}}]}`
+	cases := []struct {
+		name       string
+		status     int
+		body       string
+		wantFailed int
+	}{
+		{"all accepted", http.StatusCreated, "", 0},
+		{"partial failure", http.StatusOK, failedBody, 1},
+		{"empty failed list", http.StatusOK, `{"failed_segments":[]}`, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				if tc.body != "" {
+					w.Header().Set("Content-Type", "application/json")
+				}
+				w.WriteHeader(tc.status)
+				_, _ = io.WriteString(w, tc.body)
+			}))
+			t.Cleanup(srv.Close)
+			c := newClient(srv.URL, "tok", 5*time.Second, 16)
+
+			res, err := c.registerSegments(context.Background(), uuid.New(),
+				[]segmentPost{{ObjectID: "o1", Timerange: "[0:0_6:0)"}}, "k")
+			if err != nil {
+				t.Fatalf("registerSegments: %v", err)
+			}
+			if res.status != tc.status {
+				t.Errorf("status = %d, want %d", res.status, tc.status)
+			}
+			if res.failedSegments != tc.wantFailed {
+				t.Errorf("failedSegments = %d, want %d", res.failedSegments, tc.wantFailed)
+			}
+		})
 	}
 }
 

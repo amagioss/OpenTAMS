@@ -47,7 +47,7 @@ func TestCaptureAgainstRealPostgres(t *testing.T) {
 	for i := range 500 {
 		oid := fmt.Sprintf("o-stat-%d", i)
 		if _, err := pool.Exec(ctx,
-			`INSERT INTO objects (id, ref_count, reaping) VALUES ($1, 1, false)`, oid); err != nil {
+			`INSERT INTO objects (id, ref_count, deleting) VALUES ($1, 1, false)`, oid); err != nil {
 			t.Fatalf("seed object %d: %v", i, err)
 		}
 		lo := int64(i) * 1_000_000_000

@@ -388,6 +388,17 @@ periodic `dbstats` snapshots → a time series of bloat / autovacuum / leak
 signals — needs a periodic-capture mode) and a dedicated connection-pool
 saturation test (partly emergent from the overload ramp). Track as follow-ups.
 
+### 8.1 Garbage collector cases (not built)
+
+These cases belong to the GC change ([design](design/internal-gc/README.md), test plan section 13). They use the budgets of §6.5 and add no new budget. A result outside a budget goes to the maintainers for a decision. It does not change the GC design automatically.
+
+| Case | Setup | Measured value | Pass rule |
+|---|---|---|---|
+| S1 (TC-GC-190) | Segment registration with the allocation step, the index `segments_object_id_idx`, and the sorted lock sequence. Compare with the same run on `main`. | Insert p99, bulk segments each second | Inside §6.5 |
+| S3 (TC-GC-191) | Sweep 1 on the 500M-segment dataset, with a backlog of released objects and the normal loadgen profile at the same time | Objects each second for each GC replica. API p99 while the GC operates. | API p99 inside §6.5. The pending backlog does not grow during a 1 h mixed run. |
+| S4 (TC-GC-192) | `POST …/storage` and registration at the bulk rate for 1 h, with sweep 2 | Dead tuples, autovacuum runs, and the size of `allocations` (`dbstats`) | The table size stays limited during the run |
+| S5 (TC-GC-193) | `DeleteFlow` after the correction (flow lock, delete with `RETURNING`, sorted decrease) | Delete p99 | Inside the delete budget of §6.5 |
+
 ## 9. Design-choice evaluation (Phase 2 — deferred)
 
 Documented now, built after the baseline harness proves the methodology. Each

@@ -37,6 +37,7 @@ type Config struct {
 	ObjectStoreAccessKeyID     string
 	ObjectStoreSecretAccessKey string
 	ObjectStorePresignExpiry   time.Duration
+	ObjectStoreID              string
 	StorageBackendProvider     string
 	StorageBackendProduct      string
 
@@ -58,8 +59,9 @@ type Config struct {
 	IdempotencyReaperInterval time.Duration
 
 	// GC
-	GCPollInterval time.Duration
-	GCBatchSize    int
+	GCPollInterval    time.Duration
+	GCBatchSize       int
+	GCAllocationGrace time.Duration
 }
 
 // Load reads all environment variables, applies defaults, validates, and returns
@@ -106,6 +108,7 @@ func Load() (*Config, error) {
 	c.ObjectStoreSecretAccessKey = getString("OBJECT_STORE_SECRET_ACCESS_KEY", "")
 	c.ObjectStorePresignExpiry, err = getDuration("OBJECT_STORE_PRESIGN_EXPIRY", time.Hour)
 	add(err)
+	c.ObjectStoreID = getString("OPENTAMS_OBJECT_STORE_ID", "default")
 	c.StorageBackendProvider = getString("STORAGE_BACKEND_PROVIDER", "")
 	c.StorageBackendProduct = getString("STORAGE_BACKEND_PRODUCT", "s3")
 
@@ -141,9 +144,11 @@ func Load() (*Config, error) {
 	c.IdempotencyReaperInterval, err = getDuration("IDEMPOTENCY_REAPER_INTERVAL", time.Minute)
 	add(err)
 
-	c.GCPollInterval, err = getDuration("GC_POLL_INTERVAL", 5*time.Minute)
+	c.GCPollInterval, err = getDuration("GC_POLL_INTERVAL", 15*time.Minute)
 	add(err)
-	c.GCBatchSize, err = getInt("GC_BATCH_SIZE", 100)
+	c.GCBatchSize, err = getInt("GC_BATCH_SIZE", 1000)
+	add(err)
+	c.GCAllocationGrace, err = getDuration("GC_ALLOCATION_GRACE", 5*time.Minute)
 	add(err)
 
 	// Required fields
@@ -223,6 +228,21 @@ func Load() (*Config, error) {
 	if c.IdempotencyStaleThreshold >= c.IdempotencyKeyTTL {
 		errs = append(errs, fmt.Errorf("IDEMPOTENCY_STALE_THRESHOLD (%v) must be less than IDEMPOTENCY_KEY_TTL (%v)",
 			c.IdempotencyStaleThreshold, c.IdempotencyKeyTTL))
+	}
+
+	// Upstream TAMS requires min_object_timeout of 300:0 or more (BR-GC-09).
+	if c.ObjectStorePresignExpiry < 300*time.Second {
+		errs = append(errs, fmt.Errorf("OBJECT_STORE_PRESIGN_EXPIRY: must be at least 300s, got %v", c.ObjectStorePresignExpiry))
+	}
+
+	if c.GCPollInterval <= 0 {
+		errs = append(errs, fmt.Errorf("GC_POLL_INTERVAL: must be positive, got %v", c.GCPollInterval))
+	}
+	if c.GCBatchSize < 1 || c.GCBatchSize > 1000 {
+		errs = append(errs, fmt.Errorf("GC_BATCH_SIZE: must be between 1 and 1000, got %d", c.GCBatchSize))
+	}
+	if c.GCAllocationGrace < 0 {
+		errs = append(errs, fmt.Errorf("GC_ALLOCATION_GRACE: must not be negative, got %v", c.GCAllocationGrace))
 	}
 
 	// Pool sizing — bounded above so the pgxpool int32 cast in

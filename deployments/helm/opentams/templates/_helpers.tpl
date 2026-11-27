@@ -49,6 +49,27 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
+GC selector labels. They differ from opentams.selectorLabels so that the API
+Service and ServiceMonitor never select the GC pods.
+*/}}
+{{- define "opentams.gcSelectorLabels" -}}
+app.kubernetes.io/name: {{ include "opentams.name" . }}-gc
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
+{{/*
+GC labels
+*/}}
+{{- define "opentams.gcLabels" -}}
+helm.sh/chart: {{ include "opentams.chart" . }}
+{{ include "opentams.gcSelectorLabels" . }}
+{{- if .Chart.AppVersion }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+{{- end }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end }}
+
+{{/*
 ServiceAccount name to use.
 */}}
 {{- define "opentams.serviceAccountName" -}}

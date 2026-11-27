@@ -120,6 +120,17 @@
         "activeDeadlineSeconds": { "type": "integer", "minimum": 1 }
       }
     },
+    "gc": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "replicaCount": { "type": "integer", "minimum": 0 },
+        "pollInterval": { "type": "string" },
+        "batchSize": { "type": "integer", "minimum": 1, "maximum": 1000 },
+        "allocationGrace": { "type": "string" },
+        "resources": { "type": "object" }
+      }
+    },
     "service": {
       "type": "object",
       "properties": {

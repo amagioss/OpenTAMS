@@ -13,7 +13,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 
 	"github.com/amagioss/opentams/internal/auth"
 	"github.com/amagioss/opentams/internal/config"
@@ -55,20 +54,12 @@ Run 'opentams migrate' before the first start to apply the database schema.`,
 }
 
 func serve(ctx context.Context) error {
-	cfg, err := config.Load()
+	cfg, err := loadConfig()
 	if err != nil {
-		// No application logger yet; use a temporary production logger for REQ-USE-05.
-		tmpLog := zap.Must(zap.NewProduction())
-		defer tmpLog.Sync() //nolint:errcheck // process is exiting; an unflushed final-log error is not actionable.
-		tmpLog.Error("configuration invalid",
-			zap.Error(err),
-			zap.Bool("retry_safe", false),
-			zap.String("check", "environment variables listed in the error"))
 		return err
 	}
 
-	level, _ := logger.ParseLevel(cfg.LogLevel) // validated by config.Load
-	log, atom := logger.New(os.Stdout, level, logger.WithStacktrace(zapcore.ErrorLevel))
+	log, atom := newProcessLogger(cfg)
 	defer log.Sync() //nolint:errcheck // process is exiting; an unflushed final-log error is not actionable.
 
 	log.Info("opentams starting", zap.Any("config", cfg.Redacted()))
@@ -96,48 +87,26 @@ func serve(ctx context.Context) error {
 		}
 	}()
 
-	reg, err := metrics.New(metrics.WithNamespace("opentams"))
+	reg, err := newMetricsRegistry(log)
 	if err != nil {
-		log.Error("failed to initialize metrics registry", zap.Error(err),
-			zap.Bool("retry_safe", false),
-			zap.String("check", "duplicate metric registration"))
-		return fmt.Errorf("metrics: %w", err)
+		return err
 	}
 
-	dsn := fmt.Sprintf("host=%s port=%d dbname=%s user=%s password=%s sslmode=%s",
-		cfg.DBHost, cfg.DBPort, cfg.DBName, cfg.DBUser, cfg.DBPassword, cfg.DBSSLMode)
-	poolCfg, err := pgxpool.ParseConfig(dsn)
+	pool, err := openDB(ctx, cfg, log)
 	if err != nil {
-		log.Error("failed to parse database DSN", zap.Error(err),
-			zap.Bool("retry_safe", false),
-			zap.String("check", "DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, DB_SSLMODE"))
-		return fmt.Errorf("db: parse config: %w", err)
-	}
-	// DBPoolMin/Max are validated in config.Validate to be in the
-	// range [1, 100_000], far below MaxInt32 — the int32 cast cannot
-	// overflow in practice. G115 suppressed with this rationale.
-	poolCfg.MinConns = int32(cfg.DBPoolMin) //nolint:gosec // bounded above by config.Validate
-	poolCfg.MaxConns = int32(cfg.DBPoolMax) //nolint:gosec // bounded above by config.Validate
-
-	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
-	if err != nil {
-		log.Error("failed to connect to database", zap.Error(err),
-			zap.Bool("retry_safe", true),
-			zap.String("check", "DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD and network"))
-		return fmt.Errorf("db: connect: %w", err)
+		return err
 	}
 	defer pool.Close()
 
-	obj, err := objectstore.NewS3Store(cfg)
+	obj, err := openObjectStore(cfg, log)
 	if err != nil {
-		log.Error("failed to initialize object store", zap.Error(err),
-			zap.Bool("retry_safe", false),
-			zap.String("check", "OBJECT_STORE_* variables"))
-		return fmt.Errorf("objectstore: %w", err)
+		return err
 	}
 
-	ms := metastore.New(pool)
-	idmStore := idempotency.NewStore(pool)
+	srv, idmStore, err := newAPIServer(cfg, log, reg, pool, obj)
+	if err != nil {
+		return err
+	}
 
 	// Clamp IDEMPOTENCY_STALE_THRESHOLD to >= http.Server.WriteTimeout. A
 	// running request can hold an idempotency row in_flight for the full
@@ -151,38 +120,56 @@ func serve(ctx context.Context) error {
 		staleThreshold = server.DefaultWriteTimeout
 	}
 
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+	defer signal.Stop(sigCh)
+
+	// Idempotency reaper: prunes expired keys (TTL) and reaps orphaned
+	// in_flight rows whose owning request crashed before Complete/Release.
+	// Stopped before serve returns so the deferred pool.Close cannot race
+	// with an in-flight DELETE.
+	reapCtx, reapCancel := context.WithCancel(ctx) //nolint:gosec // G118 false positive: reapCancel is invoked inside the deferred closure below; gosec's static analysis does not see through deferred anonymous functions.
+	reapDone := make(chan struct{})
+	go runIdempotencyReaper(reapCtx, log, idmStore, cfg.IdempotencyReaperInterval, staleThreshold, reapDone)
+	defer func() {
+		reapCancel()
+		<-reapDone
+	}()
+
+	log.Info("server ready", zap.String("addr", srv.Addr()))
+	return runServer(ctx, srv, cfg.ServerGracefulShutdownPeriod, sigCh)
+}
+
+// newAPIServer wires the TAMS API on pool and obj.
+func newAPIServer(cfg *config.Config, log *zap.Logger, reg *metrics.Registry, pool *pgxpool.Pool, obj *objectstore.S3Store) (*server.Server, *idempotency.PostgresStore, error) {
+	ms := metastore.New(pool)
+	idmStore := idempotency.NewStore(pool)
+
 	svcMetrics, err := service.NewAppServiceMetrics(reg.NamespacedRegisterer())
 	if err != nil {
 		log.Error("failed to register service metrics", zap.Error(err),
 			zap.Bool("retry_safe", false),
 			zap.String("check", "duplicate metric names"))
-		return fmt.Errorf("service metrics: %w", err)
+		return nil, nil, fmt.Errorf("service metrics: %w", err)
 	}
 
 	flowSvc := flow.New(ms, log, svcMetrics)
 	// ControlledStorageID is the deployment-wide controlled-storage
-	// backend id (BR-META-07 / D-24). "default" matches Phase 1
-	// single-backend convention; override via env for multi-backend or
-	// integration setups. Empty disables controlled writes (BYOS-only
-	// deployments).
-	controlledStorageID := os.Getenv("OPENTAMS_OBJECT_STORE_ID")
-	if controlledStorageID == "" {
-		controlledStorageID = "default"
-	}
+	// backend id (BR-META-07 / D-24), from OPENTAMS_OBJECT_STORE_ID.
 	segSvc := segment.New(segment.Deps{
 		Meta:                ms,
 		Logger:              log,
 		Metrics:             svcMetrics,
-		ControlledStorageID: controlledStorageID,
+		ControlledStorageID: cfg.ObjectStoreID,
 	})
-	storSvc := storage.New(ms, obj, svcMetrics)
+	storSvc := storage.New(ms, obj, svcMetrics, cfg.ObjectStoreID, cfg.ObjectStorePresignExpiry)
 
 	checker, err := health.New(health.Options{DB: ms, Object: obj})
 	if err != nil {
 		log.Error("failed to initialize health checker", zap.Error(err),
 			zap.Bool("retry_safe", false),
 			zap.String("check", "internal configuration"))
-		return fmt.Errorf("health: %w", err)
+		return nil, nil, fmt.Errorf("health: %w", err)
 	}
 
 	authProvider, err := buildAuth(cfg)
@@ -190,7 +177,7 @@ func serve(ctx context.Context) error {
 		log.Error("failed to initialize auth provider", zap.Error(err),
 			zap.Bool("retry_safe", false),
 			zap.String("check", "AUTH_* variables"))
-		return fmt.Errorf("auth: %w", err)
+		return nil, nil, fmt.Errorf("auth: %w", err)
 	}
 
 	h := handlers.New(log, cfg, ms, flowSvc, segSvc, storSvc, idmStore, checker, obj)
@@ -212,27 +199,9 @@ func serve(ctx context.Context) error {
 		log.Error("failed to initialize HTTP server", zap.Error(err),
 			zap.Bool("retry_safe", false),
 			zap.String("check", "SERVER_TLS_* variables if TLS is configured"))
-		return fmt.Errorf("server: %w", err)
+		return nil, nil, fmt.Errorf("server: %w", err)
 	}
-
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
-	defer signal.Stop(sigCh)
-
-	// Idempotency reaper: prunes expired keys (TTL) and reaps orphaned
-	// in_flight rows whose owning request crashed before Complete/Release.
-	// Stopped before serve returns so the deferred pool.Close cannot race
-	// with an in-flight DELETE.
-	reapCtx, reapCancel := context.WithCancel(ctx) //nolint:gosec // G118 false positive: reapCancel is invoked inside the deferred closure below; gosec's static analysis does not see through deferred anonymous functions.
-	reapDone := make(chan struct{})
-	go runIdempotencyReaper(reapCtx, log, idmStore, cfg.IdempotencyReaperInterval, staleThreshold, reapDone)
-	defer func() {
-		reapCancel()
-		<-reapDone
-	}()
-
-	log.Info("server ready", zap.String("addr", srv.Addr()))
-	return runServer(ctx, srv, cfg.ServerGracefulShutdownPeriod, sigCh)
+	return srv, idmStore, nil
 }
 
 // runIdempotencyReaper runs Prune (TTL-expired) and ReapStale (orphaned

@@ -62,7 +62,7 @@ func seedSmall(t *testing.T, pool *pgxpool.Pool, g *dataset.Gen) {
 	for it := g.Segments(); it.Next(); {
 		s := it.Row()
 		if _, err := pool.Exec(ctx,
-			`INSERT INTO objects (id, ref_count, reaping) VALUES ($1, 1, false) ON CONFLICT (id) DO NOTHING`,
+			`INSERT INTO objects (id, ref_count, deleting) VALUES ($1, 1, false) ON CONFLICT (id) DO NOTHING`,
 			s.ObjectID); err != nil {
 			t.Fatalf("seed object: %v", err)
 		}

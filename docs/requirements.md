@@ -55,7 +55,7 @@ All features are categorized against the TAMS v8.0 spec.
 
 **Service:**
 - `GET /` — list root paths (only implemented endpoints advertised)
-- `GET /service` — service info including `api_version`, `min_object_timeout`, `min_presigned_url_timeout`, `event_stream_mechanisms` (empty array in Phase 1), storage backend references
+- `GET /service` — service info including `api_version`, `min_object_timeout`, `event_stream_mechanisms` (empty array in Phase 1), storage backend references, and `min_presigned_url_timeout` with the same value as `min_object_timeout` ([`conformance.md`](conformance.md)).
 - `GET /service/storage-backends` — list configured storage backends
 - `HEAD` supported on all above
 
@@ -100,7 +100,7 @@ All features are categorized against the TAMS v8.0 spec.
 
 | Feature | Rationale |
 |---------|-----------|
-| GC Worker (all 5 mechanisms) | See Section 4.10. Requires `DELETE /flows/{flowId}/segments` above. Implemented as separate binary or mode of main binary. |
+| GC worker (sweep 1 and sweep 2) and retention | See sections 4.11 and 4.12. The GC is the subcommand `opentams gc` of the main binary. Retention is a separate client of the API. |
 
 #### Deferred to Phase 2+
 
@@ -111,7 +111,6 @@ All features are categorized against the TAMS v8.0 spec.
 | `/objects/{objectId}/instances` POST/DELETE | TAMS v8.0 Objects | Same as above |
 | Async flow DELETE + `/flow-delete-requests` | TAMS v8.0 Flow Delete Requests | Phase 1 flows are small enough for synchronous metadata delete |
 | `POST /service` (update service info) | TAMS v8.0 Service | Read-only service info sufficient |
-| Object garbage collection (active) | TAMS v8.0 behavioral | Covered as conditional Phase 1 via GC worker (Section 4.10); mandatory Phase 2 if deferred |
 | ETag concurrency on Flow/Source updates | TAMS v8.0 optional | No concurrent writers to same entity in Phase 1 |
 | OpenAPI spec endpoint (`/openapi.json`) | OpenTAMS extension | Developers reference TAMS spec directly |
 | Deprecation signaling headers (RFC 8594) | OpenTAMS extension | Phase 2 when deprecated fields are removed |
@@ -244,7 +243,7 @@ Phase 1 does not expose `/objects` endpoints but tracks object metadata internal
 
 [REQ-BEH-16] `GET /flows/{flowId}/segments` returns 404 for a non-existent flow. This diverges from the TAMS specification, which asks for an empty list, deliberately: returning `[]` for a mistyped flow id turns a client bug into a plausible-looking empty result. Recorded in [`conformance.md`](conformance.md).
 
-[REQ-BEH-17] The server stores segment metadata as provided by the client. It does not validate the existence or content of referenced media objects. Data quality of media references is the client's responsibility.
+[REQ-BEH-17] The server stores segment metadata as provided by the client. It does not validate the content of referenced media objects. Data quality of media references is the client's responsibility. A controlled segment (no `get_urls`) must use an object ID that `POST /flows/{flowId}/storage` allocated for the same flow, or an object ID that is already registered (REQ-GC-10).
 
 [REQ-BEH-18] Clients may provide `get_urls` on segment POST to register uncontrolled (external) download URLs alongside or instead of controlled (server-managed) URLs.
 
@@ -270,7 +269,7 @@ Phase 1 does not expose `/objects` endpoints but tracks object metadata internal
 
 [REQ-BEH-25] The server generates time-limited URLs for media upload and download. The URL generation mechanism is provided by the object store interface. Each backend implementation uses its native signing mechanism. Upload URLs are signed with the flow's `codec` value as the Content-Type, binding the URL to that media type.
 
-[REQ-BEH-25a] If a presigned upload URL expires before the client completes the upload, the client MUST call `POST /flows/{flowId}/storage` again to obtain a fresh URL. In `limit` mode, a new `object_id` is allocated. In `object_ids` mode, the client MAY re-request the same `object_id` provided it has not already been registered as a segment; re-requesting an `object_id` that is already registered as a segment returns 400.
+[REQ-BEH-25a] If a presigned upload URL expires before the client completes the upload, the client MUST call `POST /flows/{flowId}/storage` again to obtain a fresh URL. In `limit` mode, a new `object_id` is allocated. In `object_ids` mode, the client MAY re-request the same `object_id` provided it has not already been registered as a segment; re-requesting an `object_id` that is already registered as a segment returns 400 `object-exists`. An `object_id` that is allocated to a different flow returns 400 `object-wrong-flow`. An `object_id` that the GC is about to delete returns 400 `object-deleting`. A request for the same `object_id` on the same flow returns a new URL and gives the allocation a new expiry.
 
 [REQ-BEH-25b] Each `put_url` object in the storage allocation response includes a `content-type` field set to the flow's `codec` value. The client MUST use this exact Content-Type header when uploading via the presigned URL; uploads with a mismatched Content-Type will be rejected by the object store.
 
@@ -292,39 +291,45 @@ Phase 1 does not expose `/objects` endpoints but tracks object metadata internal
 
 [REQ-BEH-32] `DELETE /flows/{flowId}/segments` deletes all segments within the specified `timerange` query parameter. Returns 204 on success. Returns 404 for non-existent flows.
 
-[REQ-BEH-33] For each deleted segment, the referenced media object's reference count is decremented. When an object's reference count reaches zero, it is deleted from the object store. This is the mechanism by which TAMS controls object lifecycle — no S3 lifecycle policies are relied upon for this purpose.
+[REQ-BEH-33] For each deleted segment, the referenced media object's reference count is decremented. When an object's reference count reaches zero, the GC deletes it from the object store later (section 4.11). The delete request does not delete media bytes. This is the mechanism by which TAMS controls object lifecycle — no S3 lifecycle policies are relied upon for this purpose.
 
 [REQ-BEH-34] Segment deletion on a `read_only` flow returns 403.
 
 [REQ-BEH-35] Segment deletion is atomic per request: either all matching segments in the specified timerange are deleted, or none are (on failure).
 
-### 4.11 GC Worker (not implemented)
+### 4.11 Object garbage collection
 
-> **Status: not implemented.** No released build of OpenTAMS runs a garbage collector.
-> `opentams gc` exits with an error, `GC_POLL_INTERVAL` and `GC_BATCH_SIZE` are parsed
-> and ignored, and objects orphaned by partial failures accumulate until deleted by hand.
-> REQ-GC-01 through REQ-GC-08 describe the intended design and are the acceptance
-> criteria for that work — they do not describe current behaviour.
+> **Status:** `opentams gc` operates sweep 1 (released objects) and sweep 2 (expired
+> allocations). The design is in [`design/internal-gc/`](design/internal-gc/README.md).
+> The operator procedures are in [`runbooks/gc.md`](runbooks/gc.md). Reconciliation with a
+> bucket listing and the asynchronous delete are not implemented (REQ-REL-14).
 
-> This section is conditional Phase 1 scope, subject to development bandwidth. All requirements in this section depend on REQ-BEH-32–35 being implemented first.
+The garbage collector (GC) deletes the media bytes that no segment uses, and the rows that record them. It does not decide what to delete from a flow. Retention does that (section 4.12).
 
-The GC worker is responsible for automated cleanup of segments and flows based on configurable retention policies. It operates against the OpenTAMS API (same API all clients use) and requires no internal access.
+[REQ-GC-01] The GC worker is the subcommand `opentams gc` of the server binary. It operates as a separate long-running process (a Kubernetes Deployment), not in the API server. `opentams gc --once` does one cycle and stops.
 
-[REQ-GC-01] The GC worker is implemented as a separate binary or as an explicit mode of the main server binary (e.g., `opentams --mode=gc-worker`). It runs independently of the API server and is deployed as a separate process or job.
-
-[REQ-GC-02] **Segment Retention (Loop Recording):** Flows tagged with `segment_retention_offset` are eligible for automatic segment pruning. The GC worker polls `GET /flows?tag_exists.segment_retention_offset=true` at a configurable interval, then deletes old segments via `DELETE /flows/<flow_id>/segments?timerange=<timerange up to now minus offset>`. TAMS decrements ref counts and deletes objects from the object store when ref count reaches zero.
-
-[REQ-GC-03] **Flow Retention (Inactivity-based):** Flows tagged with `flow_retention_offset` are eligible for automatic deletion on inactivity. The GC worker polls `GET /flows?tag_exists.flow_retention_offset=true`, evaluates the inactivity condition against the flow's `segments_updated` timestamp, and deletes inactive flows via `DELETE /flows/<flow_id>`. TAMS handles segment deletion, ref count updates, and object store cleanup.
-
-[REQ-GC-04] **Empty Flow Cleanup:** The GC worker identifies flows with no segments that are also inactive (no updates within a configurable period), and deletes them via `DELETE /flows/<flow_id>`. No object store cleanup is required as there are no segments.
-
-[REQ-GC-05] **Object Reference Count GC:** Object deletion is driven by segment deletion (REQ-BEH-33). The GC worker does not need to directly manage object deletion; it is a side effect of segment and flow deletion. For forced cleanup: references to a specific object can be found via `GET /objects/<object_id>` (Phase 2 endpoint) or by querying flows; segments are then deleted via `DELETE /flows/<flow_id>/segments?object_id=<object_id>`.
+[REQ-GC-05] **Object reference count GC:** The GC deletes the bytes and the row of each object at `ref_count = 0` (sweep 1). For a BYOS object, it deletes only the row. Before it claims an object, it makes sure that no segment refers to it (BR-GC-30 to BR-GC-37).
 
 [REQ-GC-06] **Manual / Business-rule Deletion:** External systems (e.g., FCS) may trigger deletion directly via `DELETE /flows/<flow_id>/segments` or `DELETE /flows/<flow_id>`. TAMS handles ref counts and object store cleanup as per REQ-BEH-09 and REQ-BEH-33.
 
-[REQ-GC-07] GC worker polling intervals, retention tag names, and inactivity thresholds are configurable. Defaults are documented in the configuration reference.
+[REQ-GC-07] The poll interval (`GC_POLL_INTERVAL`), the batch size (`GC_BATCH_SIZE`), and the allocation grace time (`GC_ALLOCATION_GRACE`) are configurable. The configuration reference gives the defaults.
 
-[REQ-GC-08] GC worker activity is observable: each deletion action is logged with the flow_id, timerange, and reason. GC worker errors are surfaced in metrics.
+[REQ-GC-08] The GC is observable. Each row that the GC removes gives one INFO log line with `object_id`, `storage_id`, `sweep`, and `outcome`. The errors, the backlog, and the time of the last successful batch are metrics (BR-GC-60 to BR-GC-64, interface specification section 4).
+
+[REQ-GC-09] **Allocation GC:** `POST /flows/{flowId}/storage` records each issued object ID. The GC deletes the bytes of an allocation that no segment registered, after `expires_at + GC_ALLOCATION_GRACE` (sweep 2). It never deletes the bytes of an ID that has an object row (BR-GC-40 to BR-GC-46).
+
+[REQ-GC-10] **Allocation enforcement:** A controlled segment (no `get_urls`) must use an object ID with an allocation for the same flow, or an object ID that is registered and not claimed by the GC. Else the segment is rejected with `object-not-allocated`, `object-wrong-flow`, or `object-deleting` (BR-GC-12).
+
+### 4.12 Retention (not implemented)
+
+> **Status: not implemented.** Retention follows upstream ADR-0043 and upstream application
+> note 0019. A retention worker is a client of the public API. It is separate from the GC.
+
+[REQ-RET-01] (formerly REQ-GC-02) **Segment retention (loop recording):** Flows with the tag `segment_retention_offset` are candidates for automatic segment deletion. A retention worker polls `GET /flows?tag_exists.segment_retention_offset=true` at a configurable interval. Then it deletes old segments with `DELETE /flows/<flow_id>/segments?timerange=_<now minus offset>)`. The GC then deletes the released objects.
+
+[REQ-RET-02] (formerly REQ-GC-03) **Flow retention (inactivity):** Flows with the tag `flow_retention_offset` are candidates for automatic deletion. A retention worker polls `GET /flows?tag_exists.flow_retention_offset=true`. It adds the offset to the greater of `metadata_updated` and `segments_updated` (upstream application note 0019). If the result is in the past, it reads the flow again and then deletes it with `DELETE /flows/<flow_id>`.
+
+[REQ-RET-03] (formerly REQ-GC-04) **Empty flow clean-up:** A retention worker finds flows with no segments with `GET /flows?timerange=()`. It deletes each such flow whose `metadata_updated` and `segments_updated` are both older than a configured offset.
 
 ---
 
@@ -448,7 +453,10 @@ All `type` URIs use the base `https://github.com/amagioss/opentams/problems/` pr
 | `https://github.com/amagioss/opentams/problems/format-mismatch` | 400 | `PUT /flows/{flowId}` — Flow `format` is incompatible with the existing Source `format` |
 | `https://github.com/amagioss/opentams/problems/missing-idempotency-key` | 400 | `POST /flows/{flowId}/segments` — `X-Idempotency-Key` header absent |
 | `https://github.com/amagioss/opentams/problems/storage-mode-conflict` | 400 | `POST /flows/{flowId}/storage` — both `limit` and `object_ids` provided, or neither provided. **Reserved — not currently emitted.** |
-| `https://github.com/amagioss/opentams/problems/object-id-exists` | 400 | `POST /flows/{flowId}/storage` — a supplied `object_id` in `object_ids` mode already exists as a registered segment |
+| `https://github.com/amagioss/opentams/problems/object-exists` | 400 | `POST /flows/{flowId}/storage` — a supplied `object_id` in `object_ids` mode is already registered. Replaces `object-id-exists`. |
+| `https://github.com/amagioss/opentams/problems/object-not-allocated` | 400 | `POST /flows/{flowId}/segments`, per segment in `failed_segments` — a controlled segment uses an `object_id` that has no allocation and no registration, or whose allocation expired and was deleted |
+| `https://github.com/amagioss/opentams/problems/object-wrong-flow` | 400 | `POST /flows/{flowId}/storage` (whole request), or `POST /flows/{flowId}/segments` (per segment in `failed_segments`) — the `object_id` is allocated to a different flow |
+| `https://github.com/amagioss/opentams/problems/object-deleting` | 400 | `POST /flows/{flowId}/storage` (whole request), or `POST /flows/{flowId}/segments` (per segment in `failed_segments`) — the GC claimed the `object_id`. Use a new `object_id`. Replaces the 409 `object-reaping`. |
 | `https://github.com/amagioss/opentams/problems/vfr-frame-rate-conflict` | 400 | `PUT /flows/{flowId}` — `vfr: false` set without `frame_rate`, or `vfr: true` set with `frame_rate` |
 | `https://github.com/amagioss/opentams/problems/batch-too-large` | 400 | `POST /flows/{flowId}/segments` — array exceeds 1000 segments |
 | `https://github.com/amagioss/opentams/problems/unauthorized` | 401 | Any TAMS API endpoint — missing or invalid JWT Bearer token |
@@ -529,7 +537,7 @@ All `type` URIs use the base `https://github.com/amagioss/opentams/problems/` pr
    - **In S3, not in metadata** → orphaned object (object exists but is not indexed). Resolution: move to a quarantine prefix; hold for N days, then delete.
 4. Reconciliation tooling requirements and runbook are provided as an operational document.
 
-[REQ-REL-14] Orphaned objects (allocated via storage but never registered as segments, or resulting from partial failures) are addressed by the GC worker (conditional Phase 1, Section 4.11). If the GC worker is not implemented in Phase 1, orphaned objects accumulate and are addressed in Phase 2. Object store lifecycle policies are **not** used as an automated safety net, as TAMS is the authoritative controller of object lifecycle.
+[REQ-REL-14] Orphaned objects of two kinds exist. (1) Bytes of an allocation that no segment registered: the GC deletes them (REQ-GC-09, section 4.11). (2) Bytes with no row and no allocation (for example, from a partial failure, or from an upload that started before the GC release): the GC does not find them. A reconciliation with a bucket listing (REQ-REL-13) is later work. Until then, such bytes stay in the bucket. Object store lifecycle policies are **not** used as an automated safety net, as TAMS is the authoritative controller of object lifecycle.
 
 > *Decision: Reference-count-based object GC managed by OpenTAMS; S3 lifecycle policies not used. Rationale: TAMS allows multiple segments across different flows to reference the same media object (copy-on-write). S3 lifecycle policies operate on object age or prefix — they cannot know whether an object is still referenced by another flow. Deleting a referenced object would cause silent data corruption. OpenTAMS must be the sole authority on object lifecycle. Rejected: S3 lifecycle policies (cannot account for cross-flow references); client-managed deletion (no guarantee of cleanup on failure). Tradeoff: OpenTAMS must reliably decrement ref counts and run GC — orphan accumulation is the failure mode if GC is deferred.*
 
@@ -663,7 +671,7 @@ These are marked as drafts to be validated after first production deployment.
 [REQ-OBS-09] The repository includes a starter set of alerting rule definitions. Rules are organized by operator persona:
 
 - **DevOps / Platform:** 5xx error rate exceeds threshold; readiness probe failure duration exceeds threshold; database connection pool exhaustion; server memory/CPU utilization.
-- **Operator:** storage allocation failure rate; GC worker error rate (if Phase 1 GC implemented); object store error rate.
+- **Operator:** storage allocation failure rate; GC worker error rate (`opentams_gc_errors_total`); object store error rate.
 - **Developer / L2 Support:** rate limiter rejection rate spike; unexpected 4xx error pattern.
 
 Alert definitions are provided as a starting point and are expected to be extended based on operational experience and observed usage patterns.
@@ -814,7 +822,7 @@ All parameters apply to `opentams serve` unless marked **gc-only** (applies to `
 | `OBJECT_STORE_ENDPOINT` | string | — | no* | yes | serve | Custom object store endpoint URL. **Required for non-AWS S3-compatible providers** (e.g. MinIO, GCS, Cloudflare R2). Omit when using AWS S3 directly. |
 | `OBJECT_STORE_ACCESS_KEY_ID` | string | — | no | yes | serve | Object store access key. If absent, Pod Identity (IRSA/Workload Identity) is used. |
 | `OBJECT_STORE_SECRET_ACCESS_KEY` | string | — | no | yes | serve | Object store secret key. Required if `OBJECT_STORE_ACCESS_KEY_ID` is set. |
-| `OBJECT_STORE_PRESIGN_EXPIRY` | duration | `1h` | no | yes | serve | Expiry duration for presigned upload and download URLs. |
+| `OBJECT_STORE_PRESIGN_EXPIRY` | duration | `1h` | no | yes | both | Expiry duration for presigned upload and download URLs, and the lifetime of an allocation. Must be 300 s or more. |
 | `AUTH_EXTERNAL_ISSUER_URL` | string (URL) | — | **yes** | yes | serve | OIDC issuer URL for external client JWTs. Used to fetch JWKS for token validation. Required in production. Optional when `APP_ENV=development` (auth disabled). |
 | `AUTH_EXTERNAL_AUDIENCE` | string | — | **yes** | yes | serve | Expected audience claim for external client JWTs. Required in production. Optional when `APP_ENV=development`. |
 | `AUTH_INTERNAL_ISSUER_URL` | string (URL) | — | no | yes | serve | OIDC issuer URL for service-to-service JWTs from a separate IdP (e.g. Kubernetes API server, an M2M issuer). Optional — omit on plain Docker / VM topologies where service callers authenticate via the external issuer. Both-or-neither: if set, `AUTH_INTERNAL_AUDIENCE` must also be set, and vice versa. |
@@ -825,8 +833,10 @@ All parameters apply to `opentams serve` unless marked **gc-only** (applies to `
 | `IDEMPOTENCY_REAPER_INTERVAL` | duration | `1m` | no | yes | serve | Period of the background goroutine that runs both the TTL Prune (cached rows past `IDEMPOTENCY_KEY_TTL`) and the orphan ReapStale (in-flight rows past `IDEMPOTENCY_STALE_THRESHOLD`). Each tick adds ±25% jitter to avoid thundering-herd DELETE storms across HA replicas. |
 | `APP_ENV` | enum | `production` | no | yes | both | Runtime environment. Valid values: `production`, `development`. Development mode disables auth. |
 | `LOG_LEVEL` | enum | `info` | no | **no** | both | Log verbosity. Valid values: `debug`, `info`, `warn`, `error`. Updated at runtime by sending `SIGHUP` to the server process — the process re-reads `LOG_LEVEL` from the environment without restart. |
-| `GC_POLL_INTERVAL` | duration | `5m` | no | yes | gc-only | How long GC worker sleeps between sweep runs. Conditional Phase 1. |
-| `GC_BATCH_SIZE` | integer | `100` | no | yes | gc-only | Maximum segments processed per GC sweep. Conditional Phase 1. |
+| `GC_POLL_INTERVAL` | duration | `15m` | no | yes | gc-only | Idle time of each GC sweep between two cycles. Must be more than 0. |
+| `GC_BATCH_SIZE` | integer | `1000` | no | yes | gc-only | Maximum rows in one GC batch. Valid values: 1 to 1000. |
+| `GC_ALLOCATION_GRACE` | duration | `5m` | no | yes | gc-only | Time after the expiry of an allocation before sweep 2 deletes its bytes. Must be 0 or more. |
+| `OPENTAMS_OBJECT_STORE_ID` | string | `default` | no | yes | both | Storage ID of the controlled object store. `serve` and `gc` must use the same value. |
 
 ---
 
@@ -1107,7 +1117,7 @@ Phase 1 is complete when ALL of the following are true.
 
 These are documented in README and release notes.
 
-1. **Segment deletion and object GC are conditional Phase 1.** `DELETE /flows/{flowId}/segments` and ref-count-based object cleanup are targeted for Phase 1 subject to bandwidth. If not implemented in Phase 1: flow DELETE removes metadata only; unreferenced media objects accumulate; Phase 2 GC becomes mandatory.
+1. **Object GC does not find bytes that have no row.** The GC deletes released objects and expired allocations (section 4.11). Bytes with no object row and no allocation stay in the bucket, for example bytes uploaded before the GC release. A reconciliation with a bucket listing is later work (REQ-REL-14).
 2. **No webhooks / event streaming.** Clients must poll for changes.
 3. **No MXF container mapping.** MPEG-TS, ISOBMFF, and generic mappings supported.
 4. **Single storage backend.** Multiple backends supported architecturally but Phase 1 configures one.
@@ -1130,10 +1140,9 @@ These are documented in README and release notes.
 | TAMS spec evolves during development | Low | Pinned to v8.0 commit hash. Spec updates evaluated after Phase 1 release. |
 | Object store provider behavior differences beyond API | Medium | Multi-backend smoke test (REQ-TEST-05). Document tested providers. |
 | Interface design couples to first implementation | Medium | Review interface against at least one alternative backend before finalizing. |
-| Orphaned objects accumulate faster than expected | Low | GC worker (conditional Phase 1) is the primary mitigation. If GC deferred, monitor storage growth and prioritize Phase 2 GC. |
+| Orphaned objects accumulate faster than expected | Low | The GC worker (section 4.11) is the primary mitigation. Monitor the GC backlog metrics ([`runbooks/gc.md`](runbooks/gc.md)). |
 | Quickstart doesn't work for new users | Medium | Test on clean environment before launch. |
 | 100% test coverage slows velocity | Medium | Modules are small by design. Tests generated alongside implementation. Coverage is quality assurance, not overhead. |
-| GC worker not completed in Phase 1 | Medium | Clearly documented as conditional scope. Object accumulation is tolerable short-term; Phase 2 GC is mandatory if deferred. |
 
 ---
 

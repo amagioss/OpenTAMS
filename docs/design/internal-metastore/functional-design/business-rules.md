@@ -82,8 +82,11 @@ no mirror structs.
 
 Segment errors are sentinels, wrapped so callers use `errors.Is`:
 `ErrFlowNotFound`, `ErrFlowReadOnly`, `ErrInvalidCursor`, `ErrBadInput`,
-`ErrSegmentOverlap`, `ErrSegmentObjectReaping`, and
-`ErrControlledStorageNotConfigured`. The older flow and source methods signal
+`ErrSegmentOverlap`, and `ErrControlledStorageNotConfigured`. An object that the GC
+claimed is not an error: it is a per-segment `RejectReason` with
+`Code = apperror.ErrObjectDeleting` (BR-META-06). `AllocateObjects` returns
+`*ObjectError` values that wrap `ErrObjectExists`, `ErrObjectDeleting`, or
+`ErrObjectWrongFlow`. The older flow and source methods signal
 through `apperror.AppError` codes instead; the segments slice moved to sentinels so
 the service can translate at one boundary.
 
@@ -352,53 +355,74 @@ Either check finding an overlap aborts the whole call with a wrapped `ErrSegment
 
 The `no_segment_overlap` EXCLUSION constraint on `segments` is retained as defence-in-depth for concurrent transactions. A `23P01` exclusion violation on INSERT is also mapped to `ErrSegmentOverlap`, but that path is only reachable under a race between two writers on the same flow — the flow-row lock (BR-META-15) makes it rare.
 
-### BR-META-06: InsertSegments is all-or-nothing
-A batch either commits in full or persists nothing. There is no per-segment savepoint and no partial success: the first failure of any kind — overlap, an object claimed by the GC, an `object_timerange` violation, a controlled segment with no configured storage id, or a driver error — returns immediately and the deferred rollback discards every write the call had made, including in-flight ref-count upserts.
+### BR-META-06: InsertSegments rejects the full request or single object groups
+These failures stop the full request, and the deferred rollback discards every write the call made: flow not found, flow read-only, overlap, an `object_timerange` violation, a controlled segment with no configured storage id, or a driver error.
 
-On success `InsertResult.AcceptedIndices` holds every input index and `RejectedIndices` is empty. The rejected-index machinery exists for a future partial-acceptance path; nothing populates it today, so the only entries a client sees in `failed_segments` are the ones the segment service rejects before the store is called (BR-SEG-02).
+The object checks of BR-META-07 reject one object group, not the request. The store adds each segment index of a rejected group to `InsertResult.RejectedIndices`, with a `RejectReason` at the same position. The reason has `Code` (`apperror.ErrObjectNotAllocated`, `ErrObjectWrongFlow`, or `ErrObjectDeleting`) and `Detail`. The store writes only the accepted segments. If it accepts no segment, it rolls back the transaction and returns the rejections with a nil error. Then the flow row, and `segments_updated`, do not change ([BR-GC-15](../../internal-gc/functional-design/business-rules.md#br-gc-15-a-rejection-applies-to-one-segment-not-to-the-request)).
+
+The segment service turns the rejections into `failed_segments` entries.
 
 Whole-batch rejection on overlap is a deliberate divergence from TAMS `REQ-BEH-15`, recorded in [ADR-0024](../../../adr/0024-whole-batch-reject-on-segment-overlap.md).
 
-### BR-META-07: InsertSegments lazily registers the object, stamps its backend, and refuses reaped rows
-For each segment the referenced `object_id` is upserted into `objects` before the segment row is inserted:
+### BR-META-07: InsertSegments registers the object, enforces the allocation, and refuses claimed rows
+Step 3 of `InsertSegments` runs after the overlap checks and before `INSERT INTO segments`. It groups the segments by `object_id`, and processes the groups in ascending byte order of `object_id` ([BR-GC-11](../../internal-gc/functional-design/business-rules.md#br-gc-11-group-the-segments-by-object-id), [BR-GC-23](../../internal-gc/functional-design/business-rules.md#br-gc-23-lock-rows-in-ascending-byte-order-of-the-id)). n is the number of segments in the group. A group is controlled if one or more of its segments has no `get_urls`. Else it is BYOS.
+
+**Controlled group** ([BR-GC-12](../../internal-gc/functional-design/business-rules.md#br-gc-12-decision-table-for-each-controlled-group)). The first row that matches gives the result:
+
+| Condition | Result |
+|---|---|
+| An `objects` row exists, `deleting = false` | Add n to `ref_count`. Accept. |
+| An `objects` row exists, `deleting = true` | Reject: `object-deleting` |
+| No `objects` row. An `allocations` row for the same flow, `deleting = false` | Delete the allocation row. Insert the `objects` row with `ref_count = n` and the `storage_id` of the allocation. Accept. |
+| No `objects` row. An `allocations` row with `deleting = true` | Reject: `object-deleting` |
+| No `objects` row. An `allocations` row for a different flow | Reject: `object-wrong-flow` |
+| No `objects` row and no `allocations` row | Reject: `object-not-allocated` |
+
+The store locks the `objects` row, or else the `allocations` row, with `FOR UPDATE` before it uses it. The insert of a new `objects` row uses `ON CONFLICT (id) DO NOTHING`, and a lost race reads the `objects` row again ([BR-GC-13](../../internal-gc/functional-design/business-rules.md#br-gc-13-concurrency-in-the-decision-table)).
+
+**BYOS group** ([BR-GC-14](../../internal-gc/functional-design/business-rules.md#br-gc-14-byos-segments)). There is no allocation check. If an `allocations` row with `deleting = true` exists for the ID, the group is rejected with `object-deleting`. Else the store upserts the object:
 
 ```sql
-INSERT INTO objects (id, ref_count, storage_id, reaping)
-VALUES ($1, 1, $2, false)
+INSERT INTO objects (id, ref_count, storage_id, deleting)
+VALUES ($1, $2, NULL, false)
 ON CONFLICT (id) DO UPDATE
-    SET ref_count = objects.ref_count + 1
-    WHERE objects.reaping = false
-RETURNING (xmax = 0) AS inserted
+    SET ref_count = objects.ref_count + EXCLUDED.ref_count
+    WHERE objects.deleting = false
+RETURNING id
 ```
 
-Three decisions are folded into that statement.
+No returned row means that the GC claimed the object: the group is rejected with `object-deleting`.
 
-**Ordering.** The upsert must run before `INSERT INTO segments`. The `segments.object_id REFERENCES objects(id)` FK is enforced at INSERT time, so a missing parent row fails with `23503`. The `ON CONFLICT` branch handles repeat references from the same or another flow.
+**Ordering.** Step 3 must run before `INSERT INTO segments`. The `segments.object_id REFERENCES objects(id)` FK is enforced at INSERT time, so a missing parent row fails with `23503`.
 
-**Storage id (`$2`).** The metastore classifies a segment by shape: `len(seg.GetURLs) == 0` means the server owns the bytes (controlled) and `InsertBatch.ControlledStorageID` is stamped onto `objects.storage_id`; a segment carrying client URLs is BYOS and stores NULL. A controlled segment in a batch whose `ControlledStorageID` is empty is a deployment misconfiguration and fails with `ErrControlledStorageNotConfigured` rather than writing a NULL that would later read as BYOS. The value is supplied per call by the segment service, not read from the environment here (BR-SEG-07).
+**Shape classifier.** `len(seg.GetURLs) == 0` means the server owns the bytes (controlled). A segment carrying client URLs is BYOS and stores NULL in `objects.storage_id`. A controlled segment in a batch whose `InsertBatch.ControlledStorageID` is empty is a deployment misconfiguration and fails with `ErrControlledStorageNotConfigured`. A new controlled `objects` row takes its `storage_id` from the allocation row, not from `ControlledStorageID` ([BR-GC-17](../../internal-gc/functional-design/business-rules.md#br-gc-17-the-object-row-gets-storage_id-from-the-allocation)). The same shape classifier is used on the read path, so `ListSegments` needs no join onto `objects` to tell the two apart.
 
-The same shape classifier is used on the read path, so `ListSegments` needs no join onto `objects` to tell the two apart.
+**The claim flag `deleting`.** It closes the window in which the GC has claimed an object and is deleting its bytes. Without it, a segment could be registered against an object whose bytes are moments from deletion. Migration 000006 renamed the column from `reaping` to `deleting`.
 
-**The `WHERE objects.reaping = false` predicate.** It closes the window in which the GC has claimed a zero-ref object and is deleting its bytes. When the predicate fails, `RETURNING` yields no row, and the store returns `ErrSegmentObjectReaping` — the handler renders 409 and the client retries with a fresh `object_id`. Without it, a segment could be registered against an object whose bytes are moments from deletion.
-
-**Why the metastore does this and not the service**: `internal/service/storage` (`AllocateStorage`) is intentionally write-free against the metastore. It mints object ids and returns presigned PUT URLs only — no row in `objects` is created at `/storage` time. Lazy registration during `/segments` matches:
-- REQ-BEH-17 — server does not validate that an object exists in storage before accepting the segment.
-- REQ-REL-14 — orphans are defined as "object exists in S3 but never registered as a segment" (no DB row).
+**Why the metastore does this and not the service**: `internal/service/storage` (`AllocateStorage`) writes only `allocations` rows (`AllocateObjects`). No row in `objects` is created at `/storage` time. The `objects` row appears at segment registration ([ADR-0019](../../../adr/0019-lazy-object-registration.md)):
+- REQ-BEH-17 — the server does not validate the content of an object.
 - BBC TAMS ADR 0027 — "objects are registered in TAMS as part of Flow Segment registration".
 
 This is the same pattern used for sources in `UpsertFlow` (BR-META-01). See BR-META-17 for the consolidated rule.
 
-**S3-orphan implication**: a client that calls `/storage`, uploads bytes, and never calls `/segments` produces an S3 key with no metadata row. This is by design; cleanup is handled by the GC reconciliation pass per REQ-GC-05 / spec §17 (S3 LIST diffed against `objects`, with `min_object_timeout` grace). The `internal/gc` worker that performs this reconciliation is not yet built.
+**Unregistered uploads**: a client that calls `/storage`, uploads bytes, and never calls `/segments` leaves an `allocations` row. Sweep 2 of the GC deletes the bytes and the row after `expires_at + GC_ALLOCATION_GRACE` (REQ-GC-09). Bytes with no `objects` row and no `allocations` row (for example, uploaded before migration 000006) are not found. A reconciliation with a bucket listing is later work (REQ-REL-14).
 
-**Known limitation**: the upsert does not populate `objects.timerange` or `objects.key_frame_count` from `Segment.ObjectTimerange` / `Segment.KeyFrameCount`. The columns exist and are intended for first-write-wins denormalisation (REQ-DATA-06). The containment rule in BR-META-19 reads the earliest prior `segments.object_timerange` instead.
+**Known limitation**: the upsert does not populate `objects.timerange` or `objects.key_frame_count` from `Segment.ObjectTimerange` / `Segment.KeyFrameCount`. The columns exist and are intended for first-write-wins denormalisation (REQ-DATA-06). The containment rule in BR-META-19 reads the earliest prior `segments.object_timerange` instead, and examines only the accepted segments.
 
 ### BR-META-08: DeleteSegmentsByTimerange is atomic and leaves object cleanup to the GC
-The store removes every segment whose timerange is **contained in** the query, optionally narrowed by `object_id`. It removes them in one transaction, behind the same flow-row lock as an insert (BR-META-21). TAMS says "Only delete Flow Segments that are completely covered by the given timerange". The `DELETE … RETURNING object_id` feeds a `GROUP BY`, so each object's `ref_count` is decremented once by the number of its segments that went away rather than once per row.
+The store removes every segment whose timerange is **contained in** the query, optionally narrowed by `object_id`. It removes them in one transaction, behind the same flow-row lock as an insert (BR-META-15). TAMS says "Only delete Flow Segments that are completely covered by the given timerange". The `DELETE … RETURNING object_id` feeds a `GROUP BY`. The store locks the affected `objects` rows in ascending byte order, then decreases each `ref_count` by the number of its segments that went away, with one statement ([BR-GC-21](../../internal-gc/functional-design/business-rules.md#br-gc-21-the-timerange-delete-uses-the-sorted-lock-sequence)).
 
-Objects that reach `ref_count = 0` are **left in place**. `DeleteResult` carries only `DeletedCount`; there is no released-object list for a caller to act on. The GC worker owns cleanup, reading `objects WHERE ref_count = 0 AND reaping = false`, deleting the bytes, and reaping the rows. The rationale for keeping the object store off this path is in BR-SEG-10.
+Objects that reach `ref_count = 0` are **left in place**. `DeleteResult` carries only `DeletedCount`; there is no released-object list for a caller to act on. Sweep 1 of the GC owns cleanup: it claims `objects WHERE ref_count = 0 AND deleting = false`, deletes the bytes, and deletes the rows. The rationale for keeping the object store off this path is in BR-SEG-10.
 
-### BR-META-09: DeleteFlow cascades and returns zero-ref object IDs
-`DELETE FROM flows WHERE id=?` cascades to segments and flow_tags via FK. Before deletion, collect all `object_id` values from segments. After deletion, return those whose `ref_count` has reached zero.
+### BR-META-09: DeleteFlow locks the flow, counts each segment, and returns only an error
+`DeleteFlow` runs in one transaction ([BR-GC-20](../../internal-gc/functional-design/business-rules.md#br-gc-20-deleteflow-locks-the-flow-and-counts-each-segment)):
+
+1. `SELECT read_only FROM flows WHERE id = $1 FOR UPDATE`. No row: `apperror.ErrNotFound`. `read_only = true`: `apperror.ErrReadOnly`, and nothing changes.
+2. `DELETE FROM segments WHERE flow_id = $1 RETURNING object_id`, grouped by `object_id` with a count.
+3. Lock the affected `objects` rows in ascending byte order, and decrease each `ref_count` by its count.
+4. `DELETE FROM flows WHERE id = $1`. The cascade deletes `flow_tags` and the other child rows.
+
+`DeleteFlow` returns only an error. It returns no object IDs. It does not delete `allocations` rows (no foreign key, BR-GC-08).
 
 ### BR-META-10: Stored time values and bounds
 - **Client strings.** `segments.timerange`, `ts_offset`, `object_timerange`, and `last_duration` hold exactly the string the client sent. The conversion layer puts that string in `domain.Segment.TimerangeRaw`, `TSOffsetRaw`, `ObjectTimerangeRaw`, and `LastDurationRaw` (BR-CONV-08). The service passes those fields through unchanged. `InsertSegments` writes the `*Raw` fields to the four columns, and `ListSegments` reads the columns back into the same fields. The store never writes `TimeRange.String()` for a client value. The store parses stored strings for semantic checks and never compares them as text: `10:0`, `[10:0]`, and `[10:0_10:0]` are one range.
@@ -433,7 +457,7 @@ All write methods that operate on a flow check the flow's `read_only` flag befor
 
 Methods that enforce this check:
 - `UpsertFlow` (update path only — creation is always allowed)
-- `DeleteFlow`
+- `DeleteFlow` (takes the flow-row lock, BR-META-09)
 - `InsertSegments`, `DeleteSegmentsByTimerange`
 - `PutFlowTag`, `DeleteFlowTag`
 - `PutFlowLabel`, `DeleteFlowLabel`
@@ -446,7 +470,7 @@ Methods that enforce this check:
 
 Implementation: each enforced method runs `SELECT read_only FROM flows WHERE id = $1` within its transaction before proceeding.
 
-On the segments path this read takes a row-level lock — `GetFlowForSegmentWrite` issues `SELECT read_only FROM flows WHERE id = $1 FOR UPDATE` and returns a `FlowGuard{FlowID, Exists, ReadOnly}` as the first step of both `InsertSegments` and `DeleteSegmentsByTimerange`. The lock is what makes the check sound: without it a concurrent `PUT /flows/{id}/read_only` could flip the flag between the read and the write, and the write would land on a flow that had just been frozen. It also serialises writers on the same flow, which is what keeps the overlap probe in BR-META-05 from racing.
+On the segments path this read takes a row-level lock — `GetFlowForSegmentWrite` issues `SELECT read_only FROM flows WHERE id = $1 FOR UPDATE` and returns a `FlowGuard{FlowID, Exists, ReadOnly}` as the first step of both `InsertSegments` and `DeleteSegmentsByTimerange`. `DeleteFlow` takes the same lock with its own `SELECT read_only FROM flows WHERE id = $1 FOR UPDATE` (BR-META-09). The lock is what makes the check sound: without it a concurrent `PUT /flows/{id}/read_only` could flip the flag between the read and the write, and the write would land on a flow that had just been frozen. It also serialises writers on the same flow, which is what keeps the overlap probe in BR-META-05 from racing.
 
 `GetFlowForSegmentRead` is the unlocked counterpart used by `ListSegments` for the existence check only.
 
@@ -461,14 +485,14 @@ Concrete instances:
 | Child write | Parent table | Where the parent row is created |
 |---|---|---|
 | `UpsertFlow` (new flow) | `sources` (FK `flows.source_id`) | Inside `UpsertFlow` txn (BR-META-01) |
-| `InsertSegments` (any segment) | `objects` (FK `segments.object_id`) | Inside `InsertSegments` per-segment savepoint (BR-META-07) |
+| `InsertSegments` (any segment) | `objects` (FK `segments.object_id`) | Inside the `InsertSegments` transaction, one transaction for the full batch, with no savepoint (BR-META-07) |
 
 Properties shared by all instances of the pattern:
 1. **Single transaction**: the parent insert and the child insert run in the same transaction (or savepoint). A failure in either rolls back both.
 2. **Idempotent**: parent insertion uses `INSERT ... ON CONFLICT` (objects) or a pre-check `SELECT ... THEN INSERT` (sources) so repeat writes don't error.
-3. **No public service-layer parent writes**: there is no `POST /sources/{id}` in the API and `AllocateStorage` is deliberately write-free against the metastore. Clients drive the API only at the child level (flows, segments).
+3. **No public service-layer parent writes**: there is no `POST /sources/{id}` in the API, and `AllocateStorage` writes only `allocations` rows, never `objects` rows. Clients drive the API only at the child level (flows, segments).
 4. **Format/integrity invariants checked on conflict**: `UpsertFlow` rejects a flow whose format mismatches an existing source (`ErrFormatMismatch`); `InsertSegments` does not currently enforce object-level invariants beyond the FK, but the schema (`objects.timerange`, `objects.key_frame_count`) is shaped to support first-write-wins denormalization (REQ-DATA-06) when added.
-5. **GC implication**: when the parent table acts as a reference index (objects), unreferenced parent rows accumulate at `ref_count=0` until the GC worker sweeps them; rows lost between presigned upload and segment registration are picked up by S3-vs-DB reconciliation (REQ-REL-14, REQ-GC-05, spec §17). When the parent table is purely structural (sources), no GC is needed — sources persist for the lifetime of their flows.
+5. **GC implication**: when the parent table acts as a reference index (objects), unreferenced parent rows stay at `ref_count=0` until sweep 1 of the GC deletes them (REQ-GC-05). Uploads that no segment registered keep an `allocations` row, and sweep 2 deletes them (REQ-GC-09). When the parent table is purely structural (sources), no GC is needed — sources persist for the lifetime of their flows.
 
 This pattern exists because the TAMS API surface is deliberately minimal — there is no `POST /sources` and `POST /storage` is byte-allocation only. Pushing parent creation into service layers would either (a) require duplicate write logic in every caller of the metastore, or (b) require the metastore to expose explicit `EnsureSource` / `EnsureObject` methods that callers must remember to invoke. The lazy-write-on-FK-need approach centralizes integrity in the metastore, where the FK is also defined.
 

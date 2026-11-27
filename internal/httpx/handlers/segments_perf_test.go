@@ -106,6 +106,26 @@ func seedHTTPPerfFlow(t *testing.T) uuid.UUID {
 	return flID
 }
 
+// seedHTTPPerfAllocations writes one allocation on flowID for each ID
+// fmt.Sprintf(format, i), i in [0, n), as POST /flows/{flowId}/storage
+// does. A controlled registration needs it (BR-GC-12).
+func seedHTTPPerfAllocations(t *testing.T, flowID uuid.UUID, format string, n int) {
+	t.Helper()
+	ids := make([]string, n)
+	for i := range ids {
+		ids[i] = fmt.Sprintf(format, i)
+	}
+	if _, err := httpPerfPool.Exec(context.Background(), `
+		INSERT INTO allocations (id, flow_id, storage_id, expires_at)
+		SELECT id, $2, 'default', now() + interval '1 hour' FROM unnest($1::text[]) AS id`,
+		ids, flowID); err != nil {
+		t.Fatalf("seed allocations: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = httpPerfPool.Exec(context.Background(), `DELETE FROM allocations WHERE id = ANY($1)`, ids)
+	})
+}
+
 // seedHTTPPerfSegments bulk-inserts non-overlapping segments at one-second
 // intervals starting `startSec`. Object rows are seeded too so the
 // LEFT JOIN in ListSegments resolves Controlled correctly.
@@ -143,7 +163,7 @@ func seedHTTPPerfSegments(t *testing.T, flID uuid.UUID, startSec, n int) {
 			t.Fatalf("seed segs base=%d: %v", base, err)
 		}
 		var ob strings.Builder
-		ob.WriteString(`INSERT INTO objects (id, ref_count, reaping) VALUES `)
+		ob.WriteString(`INSERT INTO objects (id, ref_count, deleting) VALUES `)
 		oargs := make([]any, 0, size)
 		for i := 0; i < size; i++ {
 			s := startSec + base + i
@@ -216,6 +236,7 @@ func Test_SCN_HTTP_PERF_02_PostSingleP99(t *testing.T) {
 	flID := seedHTTPPerfFlow(t)
 	seedHTTPPerfSegments(t, flID, 0, httpPerfFlowSegments)
 	h := newPerfHandler(t)
+	seedHTTPPerfAllocations(t, flID, "o-httppf02-%d", httpPerfSamples)
 
 	samples := make([]time.Duration, httpPerfSamples)
 	for i := 0; i < httpPerfSamples; i++ {
@@ -253,6 +274,9 @@ func Test_SCN_HTTP_PERF_03_BulkThroughput(t *testing.T) {
 	const batches = 50
 	const batchSize = 100
 	total := batches * batchSize
+	for b := 0; b < batches; b++ {
+		seedHTTPPerfAllocations(t, flID, fmt.Sprintf("o-httppf03-%d-%%d", b), batchSize)
+	}
 
 	t0 := time.Now()
 	for b := 0; b < batches; b++ {

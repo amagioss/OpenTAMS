@@ -86,12 +86,6 @@ func TestLoad_ValidMinimum(t *testing.T) {
 	if cfg.IdempotencyReaperInterval != time.Minute {
 		t.Errorf("IdempotencyReaperInterval = %v, want 1m", cfg.IdempotencyReaperInterval)
 	}
-	if cfg.GCPollInterval != 5*time.Minute {
-		t.Errorf("GCPollInterval = %v, want 5m", cfg.GCPollInterval)
-	}
-	if cfg.GCBatchSize != 100 {
-		t.Errorf("GCBatchSize = %d, want 100", cfg.GCBatchSize)
-	}
 	// DB_SSLMODE defaults to "require" in production (setRequiredEnv leaves
 	// APP_ENV unset, so AppEnv resolves to its production default).
 	if cfg.DBSSLMode != "require" {
@@ -649,5 +643,120 @@ func TestLoad_DBSSLModeInvalid(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "DB_SSLMODE") {
 		t.Errorf("error %q does not mention DB_SSLMODE", err.Error())
+	}
+}
+
+func assertLoadErrorNames(t *testing.T, env, value string) {
+	t.Helper()
+	setRequiredEnv(t)
+	t.Setenv(env, value)
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatalf("Load() expected error for %s=%s, got nil", env, value)
+	}
+	if !strings.Contains(err.Error(), env) {
+		t.Errorf("error %q does not mention %s", err.Error(), env)
+	}
+}
+
+func assertLoadAccepts(t *testing.T, env, value string) *config.Config {
+	t.Helper()
+	setRequiredEnv(t)
+	t.Setenv(env, value)
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load() unexpected error for %s=%s: %v", env, value, err)
+	}
+	return cfg
+}
+
+// TC-GC-150: Presign time below 300 s
+func TestLoad_PresignExpiryMinimum(t *testing.T) {
+	t.Run("299s rejected", func(t *testing.T) {
+		assertLoadErrorNames(t, "OBJECT_STORE_PRESIGN_EXPIRY", "299s")
+	})
+	t.Run("300s accepted", func(t *testing.T) {
+		cfg := assertLoadAccepts(t, "OBJECT_STORE_PRESIGN_EXPIRY", "300s")
+		if cfg.ObjectStorePresignExpiry != 300*time.Second {
+			t.Errorf("ObjectStorePresignExpiry = %v, want 5m0s", cfg.ObjectStorePresignExpiry)
+		}
+	})
+}
+
+// TC-GC-151: Batch size range
+func TestLoad_GCBatchSizeRange(t *testing.T) {
+	for _, v := range []string{"0", "1001"} {
+		t.Run(v+" rejected", func(t *testing.T) {
+			assertLoadErrorNames(t, "GC_BATCH_SIZE", v)
+		})
+	}
+	for _, tc := range []struct {
+		value string
+		want  int
+	}{{"1", 1}, {"1000", 1000}} {
+		t.Run(tc.value+" accepted", func(t *testing.T) {
+			cfg := assertLoadAccepts(t, "GC_BATCH_SIZE", tc.value)
+			if cfg.GCBatchSize != tc.want {
+				t.Errorf("GCBatchSize = %d, want %d", cfg.GCBatchSize, tc.want)
+			}
+		})
+	}
+}
+
+// TC-GC-152: Poll interval
+func TestLoad_GCPollIntervalPositive(t *testing.T) {
+	t.Run("0s rejected", func(t *testing.T) {
+		assertLoadErrorNames(t, "GC_POLL_INTERVAL", "0s")
+	})
+	t.Run("1s accepted", func(t *testing.T) {
+		cfg := assertLoadAccepts(t, "GC_POLL_INTERVAL", "1s")
+		if cfg.GCPollInterval != time.Second {
+			t.Errorf("GCPollInterval = %v, want 1s", cfg.GCPollInterval)
+		}
+	})
+}
+
+// TC-GC-153: Allocation grace
+func TestLoad_GCAllocationGraceNotNegative(t *testing.T) {
+	t.Run("-1s rejected", func(t *testing.T) {
+		assertLoadErrorNames(t, "GC_ALLOCATION_GRACE", "-1s")
+	})
+	t.Run("0s accepted", func(t *testing.T) {
+		cfg := assertLoadAccepts(t, "GC_ALLOCATION_GRACE", "0s")
+		if cfg.GCAllocationGrace != 0 {
+			t.Errorf("GCAllocationGrace = %v, want 0s", cfg.GCAllocationGrace)
+		}
+	})
+}
+
+// TC-GC-154: Defaults
+func TestLoad_GCDefaults(t *testing.T) {
+	setRequiredEnv(t)
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load() unexpected error: %v", err)
+	}
+	if cfg.GCPollInterval != 15*time.Minute {
+		t.Errorf("GCPollInterval = %v, want 15m", cfg.GCPollInterval)
+	}
+	if cfg.GCBatchSize != 1000 {
+		t.Errorf("GCBatchSize = %d, want 1000", cfg.GCBatchSize)
+	}
+	if cfg.GCAllocationGrace != 5*time.Minute {
+		t.Errorf("GCAllocationGrace = %v, want 5m", cfg.GCAllocationGrace)
+	}
+	if cfg.ObjectStoreID != "default" {
+		t.Errorf("ObjectStoreID = %q, want default", cfg.ObjectStoreID)
+	}
+}
+
+// TC-GC-155: The storage ID setting
+func TestLoad_ObjectStoreID(t *testing.T) {
+	cfg := assertLoadAccepts(t, "OPENTAMS_OBJECT_STORE_ID", "store-b")
+	if cfg.ObjectStoreID != "store-b" {
+		t.Errorf("ObjectStoreID = %q, want store-b", cfg.ObjectStoreID)
 	}
 }

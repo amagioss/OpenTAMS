@@ -141,13 +141,15 @@ func TestLoadEndToEnd_Small(t *testing.T) {
 			t.Errorf("constraint %s missing after Load: %v", c, err)
 		}
 	}
-	var idxname string
-	if err := pool.QueryRow(ctx, `
-		SELECT indexname FROM pg_indexes
-		 WHERE tablename = 'segments'
-		   AND indexname = 'segments_flow_lower'
-	`).Scan(&idxname); err != nil {
-		t.Errorf("segments_flow_lower index missing after Load: %v", err)
+	for _, idx := range []string{"segments_flow_lower", "segments_object_id_idx"} {
+		var idxname string
+		if err := pool.QueryRow(ctx, `
+			SELECT indexname FROM pg_indexes
+			 WHERE tablename = 'segments'
+			   AND indexname = $1
+		`, idx).Scan(&idxname); err != nil {
+			t.Errorf("%s index missing after Load: %v", idx, err)
+		}
 	}
 
 	// FK integrity — every segment.flow_id must exist in flows.id; every
@@ -184,6 +186,19 @@ func TestLoadEndToEnd_Small(t *testing.T) {
 	}
 	if minRefCount != 1 || maxRefCount != 1 {
 		t.Errorf("ref_count out of [1,1]: min=%d max=%d", minRefCount, maxRefCount)
+	}
+
+	// Sweep 1 deletes only objects whose storage_id is NULL or the
+	// configured storage ID (BR-GC-30). Loaded objects are controlled
+	// objects of the default backend, so every row carries "default".
+	var notDefault int64
+	if err := pool.QueryRow(ctx,
+		`SELECT count(*) FROM objects WHERE storage_id IS DISTINCT FROM 'default'`).
+		Scan(&notDefault); err != nil {
+		t.Errorf("storage_id query: %v", err)
+	}
+	if notDefault != 0 {
+		t.Errorf("objects with storage_id other than 'default': %d", notDefault)
 	}
 }
 

@@ -2,20 +2,20 @@
 
 ## Performance
 
-- **NFR-SVC-STG-P1**: AllocateStorage is synchronous. Latency = 1 GetFlow + (1 IsObjectRegistered × N in object_ids mode) + N GenerateUploadURL calls. No goroutines, no retries.
-- **NFR-SVC-STG-P2**: IsObjectRegistered calls are sequential with fail-first semantics. No parallel DB fan-out.
+- **NFR-SVC-STG-P1**: AllocateStorage is synchronous. Latency = 1 GetFlow + N GenerateUploadURL calls + 1 AllocateObjects transaction. In limit mode the transaction is one multi-row INSERT. In object_ids mode it is up to three statements for each ID. No goroutines, no retries.
+- **NFR-SVC-STG-P2**: AllocateObjects processes the IDs sequentially, in ascending byte order, with fail-first semantics. No parallel DB fan-out.
 - **NFR-SVC-STG-P3**: Prometheus observation wraps the full AllocateStorage call duration.
 
 ## Reliability / Error Handling
 
 - **NFR-SVC-STG-R1**: All errors propagate immediately — no retries, no fallbacks.
-- **NFR-SVC-STG-R2**: No partial allocation. First GenerateUploadURL failure aborts the entire call.
-- **NFR-SVC-STG-R3**: IsObjectRegistered fail-first: first already-registered objectID returns ErrObjectIDExists immediately.
+- **NFR-SVC-STG-R2**: No partial allocation. First GenerateUploadURL failure aborts the entire call before any allocation is written.
+- **NFR-SVC-STG-R3**: AllocateObjects fail-first: the first rejected objectID (ErrObjectExists, ErrObjectWrongFlow, or ErrObjectDeleting) rolls back the transaction, and no ID of the request is allocated.
 - **NFR-SVC-STG-R4**: No WARN-log path. Logger excluded from constructor.
 
 ## Security
 
-- **NFR-SVC-STG-S1**: read_only check is mandatory in the service layer (GenerateUploadURL bypasses the store-level flowWritable guard).
+- **NFR-SVC-STG-S1**: read_only check is mandatory in the service layer (GenerateUploadURL and AllocateObjects do not run the store-level flowWritable guard).
 - **NFR-SVC-STG-S2**: Content-type is server-derived from flow.Codec and bound at presign time; callers cannot override it.
 
 ## Observability

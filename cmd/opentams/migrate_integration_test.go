@@ -34,7 +34,6 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic("start postgres: " + err.Error())
 	}
-	defer func() { _ = ctr.Terminate(ctx) }()
 
 	migrateTestAdminDSN, err = ctr.ConnectionString(ctx, "sslmode=disable")
 	if err != nil {
@@ -50,18 +49,27 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 
-	os.Setenv("DB_HOST", host)
-	os.Setenv("DB_PORT", mappedPort.Port())
-	os.Setenv("DB_USER", "test")
-	os.Setenv("DB_PASSWORD", "test")
-	os.Setenv("DB_SSLMODE", "disable")
-	os.Setenv("APP_ENV", "development")
-	// Stub object store vars — required by config.Load but unused by migrate commands.
-	os.Setenv("OBJECT_STORE_BUCKET", "test-bucket")
-	os.Setenv("OBJECT_STORE_REGION", "us-east-1")
-	os.Setenv("STORAGE_BACKEND_PROVIDER", "s3")
+	for k, v := range map[string]string{
+		"DB_HOST":     host,
+		"DB_PORT":     mappedPort.Port(),
+		"DB_USER":     "test",
+		"DB_PASSWORD": "test",
+		"DB_SSLMODE":  "disable",
+		"APP_ENV":     "development",
+		// Stub object store vars — required by config.Load but unused by migrate commands.
+		"OBJECT_STORE_BUCKET":      "test-bucket",
+		"OBJECT_STORE_REGION":      "us-east-1",
+		"STORAGE_BACKEND_PROVIDER": "s3",
+	} {
+		if err := os.Setenv(k, v); err != nil {
+			panic(err)
+		}
+	}
 
-	os.Exit(m.Run())
+	code := m.Run()
+	stopSharedMinIO()
+	_ = ctr.Terminate(ctx)
+	os.Exit(code)
 }
 
 // freshMigrateDB creates an isolated database for a test and sets DB_NAME via

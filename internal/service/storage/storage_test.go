@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
@@ -15,15 +16,21 @@ import (
 )
 
 type mockFlowReader struct {
-	getFlowFn            func(context.Context, uuid.UUID) (*metastore.Flow, error)
-	isObjectRegisteredFn func(context.Context, string) (bool, error)
+	getFlowFn         func(context.Context, uuid.UUID) (*metastore.Flow, error)
+	allocateObjectsFn func(context.Context, metastore.AllocateParams) error
+	allocateCalls     []metastore.AllocateParams
 }
 
 func (m *mockFlowReader) GetFlow(ctx context.Context, id uuid.UUID) (*metastore.Flow, error) {
 	return m.getFlowFn(ctx, id)
 }
-func (m *mockFlowReader) IsObjectRegistered(ctx context.Context, objectID string) (bool, error) {
-	return m.isObjectRegisteredFn(ctx, objectID)
+
+func (m *mockFlowReader) AllocateObjects(ctx context.Context, p metastore.AllocateParams) error {
+	m.allocateCalls = append(m.allocateCalls, p)
+	if m.allocateObjectsFn == nil {
+		return nil
+	}
+	return m.allocateObjectsFn(ctx, p)
 }
 
 type mockObjectStore struct {
@@ -41,8 +48,13 @@ func newSvc(t *testing.T, store storage.FlowReader, obj storage.ObjectStore) sto
 	if err != nil {
 		t.Fatalf("NewAppServiceMetrics: %v", err)
 	}
-	return storage.New(store, obj, m)
+	return storage.New(store, obj, m, testStorageID, testAllocTTL)
 }
+
+const (
+	testStorageID = "default"
+	testAllocTTL  = time.Hour
+)
 
 func okFlow(codec *string) *metastore.Flow {
 	return &metastore.Flow{ID: uuid.New(), Codec: codec}
@@ -150,43 +162,23 @@ func TestAllocateStorage_LimitMode_URLError(t *testing.T) {
 	}
 }
 
-// TC-SVC-STG-06: object_ids mode, IsObjectRegistered returns error — propagated.
-func TestAllocateStorage_ObjectIDsMode_IsRegisteredError(t *testing.T) {
-	regErr := errors.New("db error")
+// TC-SVC-STG-06: object_ids mode, AllocateObjects returns a raw error — propagated.
+func TestAllocateStorage_ObjectIDsMode_AllocateError(t *testing.T) {
+	storeErr := errors.New("db error")
 	store := &mockFlowReader{
 		getFlowFn: func(_ context.Context, _ uuid.UUID) (*metastore.Flow, error) {
 			return okFlow(nil), nil
 		},
-		isObjectRegisteredFn: func(_ context.Context, _ string) (bool, error) {
-			return false, regErr
+		allocateObjectsFn: func(_ context.Context, _ metastore.AllocateParams) error {
+			return storeErr
 		},
 	}
-	svc := newSvc(t, store, &mockObjectStore{})
+	svc := newSvc(t, store, &mockObjectStore{generateUploadURLFn: okUploadURL})
 	_, err := svc.AllocateStorage(context.Background(), uuid.New(), storage.AllocateRequest{
 		ObjectIDs: []string{"obj-1"},
 	})
-	if !errors.Is(err, regErr) {
-		t.Errorf("expected regErr, got %v", err)
-	}
-}
-
-// TC-SVC-STG-07: object_ids mode, objectID already registered — ErrObjectIDExists.
-func TestAllocateStorage_ObjectIDsMode_AlreadyRegistered(t *testing.T) {
-	store := &mockFlowReader{
-		getFlowFn: func(_ context.Context, _ uuid.UUID) (*metastore.Flow, error) {
-			return okFlow(nil), nil
-		},
-		isObjectRegisteredFn: func(_ context.Context, _ string) (bool, error) {
-			return true, nil
-		},
-	}
-	svc := newSvc(t, store, &mockObjectStore{})
-	_, err := svc.AllocateStorage(context.Background(), uuid.New(), storage.AllocateRequest{
-		ObjectIDs: []string{"obj-1"},
-	})
-	var ae *apperror.AppError
-	if !errors.As(err, &ae) || ae.Code != apperror.ErrObjectIDExists {
-		t.Errorf("expected ErrObjectIDExists, got %v", err)
+	if !errors.Is(err, storeErr) {
+		t.Errorf("expected storeErr, got %v", err)
 	}
 }
 
@@ -196,9 +188,6 @@ func TestAllocateStorage_ObjectIDsMode_Success(t *testing.T) {
 	store := &mockFlowReader{
 		getFlowFn: func(_ context.Context, _ uuid.UUID) (*metastore.Flow, error) {
 			return okFlow(&codec), nil
-		},
-		isObjectRegisteredFn: func(_ context.Context, _ string) (bool, error) {
-			return false, nil
 		},
 	}
 	obj := &mockObjectStore{generateUploadURLFn: okUploadURL}
@@ -227,9 +216,6 @@ func TestAllocateStorage_ObjectIDsMode_URLError(t *testing.T) {
 	store := &mockFlowReader{
 		getFlowFn: func(_ context.Context, _ uuid.UUID) (*metastore.Flow, error) {
 			return okFlow(nil), nil
-		},
-		isObjectRegisteredFn: func(_ context.Context, _ string) (bool, error) {
-			return false, nil
 		},
 	}
 	obj := &mockObjectStore{
@@ -293,9 +279,8 @@ func TestAllocateStorage_SizeBounds(t *testing.T) {
 	}
 }
 
-// The cap applies to both modes: they cost the same presigned-URL round
-// trip per object, and the caller-supplied mode additionally costs a
-// registration lookup per object.
+// The cap applies to both modes: they cost the same presigned-URL
+// signature and allocation row per object.
 func TestAllocateStorage_AtTheCap(t *testing.T) {
 	store := &mockFlowReader{
 		getFlowFn: func(_ context.Context, _ uuid.UUID) (*metastore.Flow, error) {

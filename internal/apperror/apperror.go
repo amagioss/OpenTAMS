@@ -24,14 +24,16 @@ const (
 	ErrFormatMismatch         ErrorCode = "format-mismatch"
 	ErrMissingIdempotencyKey  ErrorCode = "missing-idempotency-key"
 	ErrStorageModeConflict    ErrorCode = "storage-mode-conflict"
-	ErrObjectIDExists         ErrorCode = "object-id-exists"
+	ErrObjectExists           ErrorCode = "object-exists"
+	ErrObjectNotAllocated     ErrorCode = "object-not-allocated"
+	ErrObjectWrongFlow        ErrorCode = "object-wrong-flow"
+	ErrObjectDeleting         ErrorCode = "object-deleting"
 	ErrVFRFrameRateConflict   ErrorCode = "vfr-frame-rate-conflict"
 	ErrBatchTooLarge          ErrorCode = "batch-too-large"
 	ErrUnauthorized           ErrorCode = "unauthorized"
 	ErrForbidden              ErrorCode = "forbidden"
 	ErrTokenExpired           ErrorCode = "token-expired"
 	ErrReadOnly               ErrorCode = "read-only"
-	ErrObjectReaping          ErrorCode = "object-reaping"
 	ErrNotFound               ErrorCode = "not-found"
 	ErrNotAcceptable          ErrorCode = "not-acceptable"
 	ErrRequestTooLarge        ErrorCode = "request-too-large"
@@ -56,14 +58,16 @@ var catalogue = map[ErrorCode]catalogueEntry{
 	ErrFormatMismatch:         {400, "Format Mismatch"},
 	ErrMissingIdempotencyKey:  {400, "Missing Idempotency Key"},
 	ErrStorageModeConflict:    {400, "Storage Mode Conflict"},
-	ErrObjectIDExists:         {400, "Object ID Exists"},
+	ErrObjectExists:           {400, "Object Exists"},
+	ErrObjectNotAllocated:     {400, "Object Not Allocated"},
+	ErrObjectWrongFlow:        {400, "Object Allocated to Another Flow"},
+	ErrObjectDeleting:         {400, "Object Being Deleted"},
 	ErrVFRFrameRateConflict:   {400, "VFR Frame Rate Conflict"},
 	ErrBatchTooLarge:          {400, "Batch Too Large"},
 	ErrUnauthorized:           {401, "Unauthorized"},
 	ErrForbidden:              {403, "Forbidden"},
 	ErrTokenExpired:           {401, "Token Expired"},
 	ErrReadOnly:               {403, "Read Only"},
-	ErrObjectReaping:          {409, "Object Reaping"},
 	ErrNotFound:               {404, "Not Found"},
 	ErrNotAcceptable:          {406, "Not Acceptable"},
 	ErrRequestTooLarge:        {413, "Request Too Large"},

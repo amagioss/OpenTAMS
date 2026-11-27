@@ -93,6 +93,16 @@ migration:
       cpu: 200m
       memory: 128Mi
 
+# -- Object garbage collector (`opentams gc`), a separate Deployment.
+# Set replicaCount to 0 to stop the GC without removing its resources.
+gc:
+  enabled: true
+  replicaCount: 1
+  pollInterval: 15m       # GC_POLL_INTERVAL
+  batchSize: 1000         # GC_BATCH_SIZE (1..1000)
+  allocationGrace: 5m     # GC_ALLOCATION_GRACE
+  resources: {}
+
 # -- Service
 service:
   type: ClusterIP

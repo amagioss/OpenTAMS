@@ -14,6 +14,7 @@ erDiagram
     flows ||--o{ flow_collection : groups
     flows ||--o{ segments : contains
     objects ||--o{ segments : referenced_by
+    flows ||--o{ allocations : "allocated_for (no FK)"
 
     sources {
         uuid id PK
@@ -60,7 +61,18 @@ erDiagram
         text timerange
         text storage_id
         int ref_count
-        boolean reaping
+        boolean deleting
+        timestamptz claimed_at
+    }
+
+    allocations {
+        text id PK
+        uuid flow_id
+        text storage_id
+        timestamptz expires_at
+        timestamptz created_at
+        boolean deleting
+        timestamptz claimed_at
     }
 
     segments {
@@ -94,6 +106,7 @@ erDiagram
 | `flows` | A TAMS flow. Flows carry format, codec/container metadata, timing metadata, and read-only state. |
 | `segments` | Time-addressed media metadata for a single flow. A segment points to one object and occupies a timerange. |
 | `objects` | Object references used by segments. Objects may represent OpenTAMS-controlled bytes or bring-your-own-storage bytes. |
+| `allocations` | Object IDs that `POST /flows/{flowId}/storage` issued an upload URL for, and that no segment has registered yet. |
 | `idempotency_keys` | Request lifecycle state for idempotent writes. This protects retries; it is not part of the TAMS domain model. |
 
 ## Tags And Collections
@@ -121,9 +134,17 @@ The `objects.storage_id` column is the ownership marker:
 | Non-null | Controlled storage | OpenTAMS issued the storage URL and may delete bytes through GC when unreferenced. |
 | `NULL` | BYOS | The client supplied external object access; OpenTAMS stores metadata only and does not delete bytes. |
 
-`objects.ref_count` tracks how many segment rows currently reference the object. When it reaches zero, controlled objects become eligible for garbage collection. BYOS objects are skipped by OpenTAMS GC.
+`objects.ref_count` tracks how many segment rows currently reference the object. When it reaches zero, the object is released. The GC (sweep 1) deletes the bytes and the row of a released controlled object. For a released BYOS object, it deletes only the row.
 
-`objects.reaping` is a GC claim flag. It prevents a race where one process is deleting an unreferenced controlled object while another request tries to attach a new segment to the same object id.
+`objects.deleting` is the GC claim flag, and `objects.claimed_at` is the time of the claim. A row with `deleting = true` cannot get a new segment: registration rejects it with `object-deleting`. This prevents a race where the GC deletes the bytes of an object while another request attaches a new segment to the same object id. Migration 000006 renamed the column from `reaping` to `deleting`.
+
+## Allocations
+
+`POST /flows/{flowId}/storage` writes one `allocations` row for each object ID that it issues. The row records the flow, the storage ID, and `expires_at` (the expiry of the upload URL). It has no foreign key to `flows`, so a flow delete does not delete its allocations.
+
+When a controlled segment registers an allocated ID on the same flow, the same transaction deletes the allocation row and writes the `objects` row. A controlled segment with no allocation and no object row is rejected with `object-not-allocated`.
+
+The GC (sweep 2) deletes the bytes and the row of each allocation that no segment registered, after `expires_at + GC_ALLOCATION_GRACE`. `allocations.deleting` and `allocations.claimed_at` have the same meaning as in `objects`. The decision record is [ADR-0041](../adr/0041-track-storage-allocations-in-a-table.md).
 
 ## Idempotency State
 

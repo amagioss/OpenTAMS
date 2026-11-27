@@ -124,6 +124,24 @@ func newStore(t *testing.T) *metastore.PostgresStore {
 	return metastore.New(metastore.SharedTestPool())
 }
 
+// allocate seeds one allocation on flowID for each distinct object_id of
+// the controlled segments, as POST /flows/{flowId}/storage does before a
+// client registers new objects (BR-GC-12).
+func allocate(t *testing.T, flowID uuid.UUID, segs ...domain.Segment) {
+	t.Helper()
+	seen := make(map[string]bool, len(segs))
+	ids := make([]string, 0, len(segs))
+	for i := range segs {
+		if len(segs[i].GetURLs) == 0 && !seen[segs[i].ObjectID] {
+			seen[segs[i].ObjectID] = true
+			ids = append(ids, segs[i].ObjectID)
+		}
+	}
+	if len(ids) > 0 {
+		metastore.SeedAllocation(t, flowID, ids...)
+	}
+}
+
 // makeSegment builds a domain.Segment with timerange parsed.
 func makeSegment(t *testing.T, objectID, tr string) domain.Segment {
 	t.Helper()
@@ -140,6 +158,7 @@ func makeSegment(t *testing.T, objectID, tr string) domain.Segment {
 func Test_SCN_META_01_SingleInsertAccepted(t *testing.T) {
 	flID := seedFlow(t, false)
 	store := newStore(t)
+	metastore.SeedAllocation(t, flID, "o1")
 
 	res, err := store.InsertSegments(context.Background(), metastore.InsertBatch{
 		FlowID:              flID,
@@ -172,6 +191,7 @@ func Test_SCN_META_01_SingleInsertAccepted(t *testing.T) {
 func Test_SCN_META_02_BulkFiveNonOverlapping(t *testing.T) {
 	flID := seedFlow(t, false)
 	store := newStore(t)
+	metastore.SeedAllocation(t, flID, "o0", "o1", "o2", "o3", "o4")
 
 	segs := make([]domain.Segment, 5)
 	for i := range segs {
@@ -195,6 +215,7 @@ func Test_SCN_META_02_BulkFiveNonOverlapping(t *testing.T) {
 func Test_SCN_META_03_AgainstExistingOverlapWholeBatchReject(t *testing.T) {
 	flID := seedFlow(t, false)
 	store := newStore(t)
+	metastore.SeedAllocation(t, flID, "o-existing")
 
 	// pre-existing row at [10:0_20:0)
 	if _, err := store.InsertSegments(context.Background(), metastore.InsertBatch{
@@ -283,6 +304,7 @@ func Test_SCN_META_05_ThreeCollidingRowsWholeBatchReject(t *testing.T) {
 func Test_SCN_META_06_AdjacentRangesAccepted(t *testing.T) {
 	flID := seedFlow(t, false)
 	store := newStore(t)
+	metastore.SeedAllocation(t, flID, "o0", "o1")
 	res, err := store.InsertSegments(context.Background(), metastore.InsertBatch{
 		FlowID: flID,
 		Segments: []domain.Segment{
@@ -388,6 +410,7 @@ func mustTS(t *testing.T, s string) timerange.Timestamp {
 func Test_SCN_META_10_DeleteAtomicMatches(t *testing.T) {
 	flID := seedFlow(t, false)
 	store := newStore(t)
+	metastore.SeedAllocation(t, flID, "oA", "oB", "oC", "oD")
 	segs := []domain.Segment{
 		makeSegment(t, "oA", "[0:0_10:0)"),
 		makeSegment(t, "oB", "[10:0_20:0)"),
@@ -412,15 +435,14 @@ func Test_SCN_META_10_DeleteAtomicMatches(t *testing.T) {
 		t.Errorf("remaining: %d, want 2", len(page.Items))
 	}
 
-	// objects oB, oC have ref_count 0 but still present (no reaping by metastore).
+	// objects oB, oC have ref_count 0 but still present (only the GC deletes them).
 	for _, oid := range []string{"oB", "oC"} {
 		rc := queryInt(t, `SELECT ref_count FROM objects WHERE id = $1`, oid)
 		if rc != 0 {
 			t.Errorf("object %s ref_count: got %d, want 0", oid, rc)
 		}
-		reaping := queryBool(t, `SELECT reaping FROM objects WHERE id = $1`, oid)
-		if reaping {
-			t.Errorf("object %s reaping: must remain false post-delete", oid)
+		if queryBool(t, `SELECT deleting FROM objects WHERE id = $1`, oid) {
+			t.Errorf("object %s deleting: must remain false post-delete", oid)
 		}
 	}
 }
@@ -432,6 +454,7 @@ func Test_SCN_META_11_RefCountDecrementCrossFlow(t *testing.T) {
 	flA := seedFlow(t, false)
 	flB := seedFlow(t, false)
 	store := newStore(t)
+	metastore.SeedAllocation(t, flA, "o-A", "o-B", "o-C")
 
 	if _, err := store.InsertSegments(context.Background(), metastore.InsertBatch{
 		FlowID: flA, Segments: []domain.Segment{
@@ -482,6 +505,7 @@ func Test_SCN_META_11_RefCountDecrementCrossFlow(t *testing.T) {
 func Test_SCN_META_13_FlowTimestampsRefresh(t *testing.T) {
 	flID := seedFlow(t, false)
 	store := newStore(t)
+	metastore.SeedAllocation(t, flID, "o0")
 
 	// Anchor an older segments_updated. The flow seed left it NULL.
 	exec(t, `UPDATE flows SET segments_updated = now() - interval '1 hour' WHERE id = $1`, flID)
@@ -586,6 +610,7 @@ func Test_SCN_META_20_DeleteOnMissingFlow(t *testing.T) {
 func Test_SCN_META_21_DeleteOnReadOnlyFlow(t *testing.T) {
 	flID := seedFlow(t, false)
 	store := newStore(t)
+	metastore.SeedAllocation(t, flID, "o0")
 	if _, err := store.InsertSegments(context.Background(), metastore.InsertBatch{
 		FlowID:              flID,
 		Segments:            []domain.Segment{makeSegment(t, "o0", "[0:0_10:0)")},
@@ -608,6 +633,7 @@ func Test_SCN_META_21_DeleteOnReadOnlyFlow(t *testing.T) {
 func Test_SCN_META_22_DeleteWithObjectIDFilter(t *testing.T) {
 	flID := seedFlow(t, false)
 	store := newStore(t)
+	metastore.SeedAllocation(t, flID, "o-X", "o-Y")
 	if _, err := store.InsertSegments(context.Background(), metastore.InsertBatch{
 		FlowID: flID, Segments: []domain.Segment{
 			makeSegment(t, "o-X", "[0:0_10:0)"),
@@ -640,6 +666,7 @@ func Test_SCN_META_22_DeleteWithObjectIDFilter(t *testing.T) {
 func Test_SCN_META_23_InvalidCursor(t *testing.T) {
 	flID := seedFlow(t, false)
 	store := newStore(t)
+	metastore.SeedAllocation(t, flID, "o0")
 	if _, err := store.InsertSegments(context.Background(), metastore.InsertBatch{
 		FlowID:              flID,
 		Segments:            []domain.Segment{makeSegment(t, "o0", "[0:0_10:0)")},
@@ -661,6 +688,7 @@ func Test_SCN_META_23_InvalidCursor(t *testing.T) {
 func Test_SCN_META_24_ListFilters(t *testing.T) {
 	flID := seedFlow(t, false)
 	store := newStore(t)
+	metastore.SeedAllocation(t, flID, "o-A", "o-B")
 
 	// 10 segments alternating o-A/o-B at [i*10, (i+1)*10).
 	segs := make([]domain.Segment, 10)
@@ -726,6 +754,7 @@ func Test_SCN_META_25_LimitClamp(t *testing.T) {
 	for i := range segs {
 		segs[i] = makeSegment(t, fmt.Sprintf("o%d", i), fmt.Sprintf("[%d:0_%d:0)", i, i+1))
 	}
+	allocate(t, flID, segs...)
 	if _, err := store.InsertSegments(context.Background(), metastore.InsertBatch{FlowID: flID, Segments: segs, ControlledStorageID: "default"}); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -748,6 +777,7 @@ func Test_SCN_META_25_LimitClamp(t *testing.T) {
 func Test_SCN_META_26_DeleteEternityTimerange(t *testing.T) {
 	flID := seedFlow(t, false)
 	store := newStore(t)
+	metastore.SeedAllocation(t, flID, "oA", "oB", "oC")
 	segs := []domain.Segment{
 		makeSegment(t, "oA", "[0:0_10:0)"),
 		makeSegment(t, "oB", "[100:0_200:0)"),
@@ -772,34 +802,37 @@ func Test_SCN_META_26_DeleteEternityTimerange(t *testing.T) {
 }
 
 // =============================================================================
-// SCN-META-27 — Insert races GC reap → ErrSegmentObjectReaping, batch rolls back
+// SCN-META-27 — Insert on an object the GC claimed → per-segment
+// object-deleting rejection, nothing written (BR-GC-12 row 2, BR-GC-15)
 // =============================================================================
-func Test_SCN_META_27_InsertRacesGCReap(t *testing.T) {
+func Test_SCN_META_27_InsertOnClaimedObjectIsRejectedAsDeleting(t *testing.T) {
 	flID := seedFlow(t, false)
 	store := newStore(t)
-	// Pre-create object with reaping=true (GC has claimed it).
-	exec(t, `INSERT INTO objects (id, ref_count, reaping) VALUES ($1, 0, true)`, "o-reaping")
-	t.Cleanup(func() { exec(t, `DELETE FROM objects WHERE id = 'o-reaping'`) })
+	exec(t, `INSERT INTO objects (id, ref_count, deleting, claimed_at) VALUES ($1, 0, true, now())`, "o-deleting")
+	t.Cleanup(func() { exec(t, `DELETE FROM objects WHERE id = 'o-deleting'`) })
 
 	res, err := store.InsertSegments(context.Background(), metastore.InsertBatch{
 		FlowID:              flID,
-		Segments:            []domain.Segment{makeSegment(t, "o-reaping", "[0:0_10:0)")},
+		Segments:            []domain.Segment{makeSegment(t, "o-deleting", "[0:0_10:0)")},
 		ControlledStorageID: "default",
 	})
-	if !errors.Is(err, metastore.ErrSegmentObjectReaping) {
-		t.Fatalf("err: got %v, want ErrSegmentObjectReaping", err)
+	if err != nil {
+		t.Fatalf("err: got %v, want nil (per-segment rejection)", err)
 	}
 	if len(res.AcceptedIndices) != 0 {
-		t.Errorf("must not accept any when batch races a reap")
+		t.Errorf("AcceptedIndices = %v, want none", res.AcceptedIndices)
+	}
+	if !equalInts(res.RejectedIndices, []int{0}) || len(res.RejectReasons) != 1 ||
+		res.RejectReasons[0].Code != apperror.ErrObjectDeleting {
+		t.Errorf("rejections = %v %+v, want [0] object-deleting", res.RejectedIndices, res.RejectReasons)
 	}
 	count := queryInt(t, `SELECT COUNT(*) FROM segments WHERE flow_id = $1`, flID)
 	if count != 0 {
-		t.Errorf("segments persisted despite reap race: count=%d", count)
+		t.Errorf("segments persisted on a claimed object: count=%d", count)
 	}
-	// objects row untouched
-	rc := queryInt(t, `SELECT ref_count FROM objects WHERE id = 'o-reaping'`)
+	rc := queryInt(t, `SELECT ref_count FROM objects WHERE id = 'o-deleting'`)
 	if rc != 0 {
-		t.Errorf("o-reaping ref_count: got %d, want 0", rc)
+		t.Errorf("o-deleting ref_count: got %d, want 0", rc)
 	}
 }
 
@@ -835,7 +868,9 @@ func Test_SCN_META_29_ControlledStorageIDSetOnce(t *testing.T) {
 	flA := seedFlow(t, false)
 	flB := seedFlow(t, false)
 	store := newStore(t)
-	const storageID = "primary"
+	const storageID = "store-a"
+	exec(t, `INSERT INTO allocations (id, flow_id, storage_id, expires_at)
+		VALUES ('o-ctrl', $1, $2, now() + interval '1 hour')`, flA, storageID)
 	in := domain.Segment{
 		ObjectID:     "o-ctrl",
 		Timerange:    mustTR(t, "[0:0_10:0)"),
@@ -843,7 +878,7 @@ func Test_SCN_META_29_ControlledStorageIDSetOnce(t *testing.T) {
 		// controlled ⇒ no GetURLs
 	}
 	if _, err := store.InsertSegments(context.Background(), metastore.InsertBatch{
-		FlowID: flA, Segments: []domain.Segment{in}, ControlledStorageID: storageID,
+		FlowID: flA, Segments: []domain.Segment{in}, ControlledStorageID: "primary",
 	}); err != nil {
 		t.Fatalf("insert flA: %v", err)
 	}
@@ -887,6 +922,7 @@ func Test_SCN_META_29_ControlledStorageIDSetOnce(t *testing.T) {
 func Test_SCN_META_30_ListPreservesGetURLsClassifier(t *testing.T) {
 	flID := seedFlow(t, false)
 	store := newStore(t)
+	metastore.SeedAllocation(t, flID, "o-ctrl-30")
 
 	ctrl := domain.Segment{
 		ObjectID:     "o-ctrl-30",
@@ -926,8 +962,8 @@ func Test_SCN_META_30_ListPreservesGetURLsClassifier(t *testing.T) {
 	}
 	// Storage row classifier matches: controlled has storage_id, BYOS has NULL.
 	sidCtrl := queryStrPtr(t, `SELECT storage_id FROM objects WHERE id = 'o-ctrl-30'`)
-	if sidCtrl == nil || *sidCtrl != "primary" {
-		t.Errorf("o-ctrl-30 storage_id: got %v, want %q", sidCtrl, "primary")
+	if sidCtrl == nil || *sidCtrl != "default" {
+		t.Errorf("o-ctrl-30 storage_id: got %v, want %q (from the allocation)", sidCtrl, "default")
 	}
 	sidByos := queryStrPtr(t, `SELECT storage_id FROM objects WHERE id = 'o-byos-30'`)
 	if sidByos != nil {
@@ -946,6 +982,9 @@ func Test_SCN_META_CONC_01_ConcurrentCollidingInserts(t *testing.T) {
 	store := newStore(t)
 
 	const N = 20
+	for i := 0; i < N; i++ {
+		metastore.SeedAllocation(t, flID, fmt.Sprintf("o-%d", i))
+	}
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var wins, overlapErrs int
@@ -1023,6 +1062,7 @@ func segWithObjTR(t *testing.T, objectID, tr, objTR string) domain.Segment {
 func Test_SCN_META_09_MidBatchErrorRollback(t *testing.T) {
 	flID := seedFlow(t, false)
 	store := newStore(t)
+	metastore.SeedAllocation(t, flID, "o-T9", "o-other-09", "o-tail-09")
 
 	// Seed: object o-T9 with stored object_timerange [0:0_60:0).
 	if _, err := store.InsertSegments(context.Background(), metastore.InsertBatch{
@@ -1070,6 +1110,9 @@ func Test_SCN_META_09_MidBatchErrorRollback(t *testing.T) {
 		exists := queryInt(t, `SELECT COUNT(*) FROM objects WHERE id = $1`, oid)
 		if exists != 0 {
 			t.Errorf("objects row %q persisted across rollback", oid)
+		}
+		if n := queryInt(t, `SELECT COUNT(*) FROM allocations WHERE id = $1`, oid); n != 1 {
+			t.Errorf("allocation %q consumed across rollback", oid)
 		}
 	}
 	// segments_updated unchanged.
@@ -1129,12 +1172,14 @@ func Test_SCN_META_15_StablePaginationUnderWrites(t *testing.T) {
 	}
 	flID := seedFlow(t, false)
 	store := newStore(t)
+	metastore.SeedAllocation(t, flID, "o-15-0-replay")
 
 	const N = 200
 	segs := make([]domain.Segment, N)
 	for i := range segs {
 		segs[i] = makeSegment(t, fmt.Sprintf("o-15-%d", i), fmt.Sprintf("[%d:0_%d:0)", i*10, (i+1)*10))
 	}
+	allocate(t, flID, segs...)
 	if _, err := store.InsertSegments(context.Background(), metastore.InsertBatch{FlowID: flID, Segments: segs, ControlledStorageID: "default"}); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -1211,6 +1256,7 @@ func Test_SCN_META_15_StablePaginationUnderWrites(t *testing.T) {
 func Test_SCN_META_16a_ObjectTimerangeContainedAccepted(t *testing.T) {
 	flID := seedFlow(t, false)
 	store := newStore(t)
+	metastore.SeedAllocation(t, flID, "o-T16a")
 
 	if _, err := store.InsertSegments(context.Background(), metastore.InsertBatch{
 		FlowID:              flID,
@@ -1232,6 +1278,7 @@ func Test_SCN_META_16a_ObjectTimerangeContainedAccepted(t *testing.T) {
 func Test_SCN_META_16b_ObjectTimerangeExtendsRejected(t *testing.T) {
 	flID := seedFlow(t, false)
 	store := newStore(t)
+	metastore.SeedAllocation(t, flID, "o-T16b")
 
 	if _, err := store.InsertSegments(context.Background(), metastore.InsertBatch{
 		FlowID:              flID,
@@ -1257,6 +1304,7 @@ func Test_SCN_META_16b_ObjectTimerangeExtendsRejected(t *testing.T) {
 func Test_SCN_META_16c_NewObjectTimerangeNilAccepted(t *testing.T) {
 	flID := seedFlow(t, false)
 	store := newStore(t)
+	metastore.SeedAllocation(t, flID, "o-T16c")
 
 	if _, err := store.InsertSegments(context.Background(), metastore.InsertBatch{
 		FlowID:              flID,
@@ -1286,6 +1334,7 @@ func Test_SCN_META_16c_NewObjectTimerangeNilAccepted(t *testing.T) {
 func Test_SCN_META_16d_StoredNilThenSetBecomesStored(t *testing.T) {
 	flID := seedFlow(t, false)
 	store := newStore(t)
+	metastore.SeedAllocation(t, flID, "o-T16d")
 
 	// First insert: object_timerange = NULL.
 	if _, err := store.InsertSegments(context.Background(), metastore.InsertBatch{
@@ -1348,9 +1397,8 @@ func Test_SCN_META_17_ObjectsRowCreatedWhenMissing(t *testing.T) {
 	if rc != 1 {
 		t.Errorf("ref_count = %d, want 1", rc)
 	}
-	reaping := queryBool(t, `SELECT reaping FROM objects WHERE id = $1`, "o-new-17")
-	if reaping {
-		t.Errorf("reaping = true, want false")
+	if queryBool(t, `SELECT deleting FROM objects WHERE id = $1`, "o-new-17") {
+		t.Errorf("deleting = true, want false")
 	}
 	// BYOS-shaped segment ⇒ storage_id NULL.
 	sid := queryStrPtr(t, `SELECT storage_id FROM objects WHERE id = $1`, "o-new-17")
@@ -1366,6 +1414,7 @@ func Test_SCN_META_18_RefCountIncrementOnExistingObject(t *testing.T) {
 	flA := seedFlow(t, false)
 	flB := seedFlow(t, false)
 	store := newStore(t)
+	metastore.SeedAllocation(t, flA, "o-pre-18")
 
 	// Pre-populate via flow A.
 	if _, err := store.InsertSegments(context.Background(), metastore.InsertBatch{
@@ -1417,6 +1466,9 @@ func Test_SCN_META_CONC_02_ReadOnlyFlipDuringInsert(t *testing.T) {
 	}
 	out := make(chan insertOutcome, inserters)
 
+	for i := 0; i < inserters; i++ {
+		metastore.SeedAllocation(t, flID, fmt.Sprintf("o-conc2-%d", i))
+	}
 	var wg sync.WaitGroup
 	for i := 0; i < inserters; i++ {
 		wg.Add(1)
@@ -1497,6 +1549,9 @@ func Test_SCN_META_CONC_03_FiftyConcurrentDisjointInserts(t *testing.T) {
 	store := newStore(t)
 
 	const N = 50
+	for i := 0; i < N; i++ {
+		metastore.SeedAllocation(t, flID, fmt.Sprintf("o-conc3-%d", i))
+	}
 	var wg sync.WaitGroup
 	errs := make(chan error, N)
 	start := time.Now()
@@ -1536,39 +1591,34 @@ func Test_SCN_META_CONC_03_FiftyConcurrentDisjointInserts(t *testing.T) {
 }
 
 // =============================================================================
-// SCN-META-29 (extension) — Controlled storage_id stamped from InsertBatch
+// SCN-META-29 (extension) — Controlled storage_id comes from the allocation
 // =============================================================================
 //
-// Companion to SCN-META-29 above. The original asserts immutability across
-// cross-flow upserts; this variant asserts the value comes from the caller
-// (InsertBatch.ControlledStorageID), not a package constant. Classifier
-// is `len(GetURLs) == 0` per BR-META-07.
-func Test_SCN_META_29_ControlledStorageIDFromInsertBatch(t *testing.T) {
+// Companion to SCN-META-29 above. A new controlled object row takes
+// storage_id from its allocation row; InsertBatch.ControlledStorageID only
+// guards against a deployment with no controlled storage (BR-GC-17).
+func Test_SCN_META_29_ControlledStorageIDFromAllocationNotInsertBatch(t *testing.T) {
 	flID := seedFlow(t, false)
 	store := newStore(t)
-	const wantStorageID = "test-backend-xyz"
+	metastore.SeedAllocation(t, flID, "o-ctrl-from-alloc")
 	seg := domain.Segment{
-		ObjectID:     "o-ctrl-from-batch",
+		ObjectID:     "o-ctrl-from-alloc",
 		Timerange:    mustTR(t, "[0:0_10:0)"),
 		TimerangeRaw: "[0:0_10:0)",
-		// no GetURLs => controlled
 	}
 	if _, err := store.InsertSegments(context.Background(), metastore.InsertBatch{
 		FlowID:              flID,
 		Segments:            []domain.Segment{seg},
-		ControlledStorageID: wantStorageID,
+		ControlledStorageID: "test-backend-xyz",
 	}); err != nil {
 		t.Fatalf("insert: %v", err)
 	}
-	sid := queryStrPtr(t, `SELECT storage_id FROM objects WHERE id = 'o-ctrl-from-batch'`)
-	if sid == nil || *sid != wantStorageID {
-		t.Errorf("storage_id: got %v, want %q", sid, wantStorageID)
+	sid := queryStrPtr(t, `SELECT storage_id FROM objects WHERE id = 'o-ctrl-from-alloc'`)
+	if sid == nil || *sid != "default" {
+		t.Errorf("storage_id: got %v, want %q (from the allocation)", sid, "default")
 	}
 }
 
-// =============================================================================
-// SCN-META-31 — Controlled segment + empty ControlledStorageID fails loud
-// =============================================================================
 func Test_SCN_META_31_ErrControlledStorageNotConfigured(t *testing.T) {
 	flID := seedFlow(t, false)
 	store := newStore(t)
@@ -1615,37 +1665,5 @@ func Test_SCN_META_32_BYOSOnlyAllowsEmptyControlledStorageID(t *testing.T) {
 	sid := queryStrPtr(t, `SELECT storage_id FROM objects WHERE id = 'o-byos-no-cfg'`)
 	if sid != nil {
 		t.Errorf("storage_id: got %v, want NULL (BYOS)", sid)
-	}
-}
-
-// TestIsObjectRegistered covers the object-existence probe used by the
-// storage service to reject re-allocation of an already-registered object.
-func TestIsObjectRegistered(t *testing.T) {
-	flowID := seedFlow(t, false)
-	store := newStore(t)
-	ctx := context.Background()
-
-	if _, err := store.InsertSegments(ctx, metastore.InsertBatch{
-		FlowID:              flowID,
-		Segments:            []domain.Segment{makeSegment(t, "known-obj", "[0:0_1:0)")},
-		ControlledStorageID: "default",
-	}); err != nil {
-		t.Fatalf("InsertSegments: %v", err)
-	}
-
-	registered, err := store.IsObjectRegistered(ctx, "known-obj")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !registered {
-		t.Error("known-obj: want registered=true")
-	}
-
-	registered, err = store.IsObjectRegistered(ctx, "unknown-obj")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if registered {
-		t.Error("unknown-obj: want registered=false")
 	}
 }

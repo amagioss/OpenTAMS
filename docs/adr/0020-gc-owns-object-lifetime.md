@@ -45,6 +45,7 @@ to reap and which to leave for the next pass. Its only non-test caller is the GC
 The schema carries the GC's working state: `objects.ref_count`, the `reaping` claim flag,
 and two partial indexes, `objects_gc_claim_idx` for the claim path and
 `objects_gc_retry_idx` for rows already claimed.
+The column is `deleting` since migration 000006 ([ADR-0041](0041-track-storage-allocations-in-a-table.md)).
 
 BYOS Objects are outside this entirely. OpenTAMS records where the bytes are and never
 assumes ownership of them, so GC skips them.

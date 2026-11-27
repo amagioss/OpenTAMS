@@ -23,9 +23,9 @@ DeleteObjects(ctx context.Context, ids []string) ([]DeleteResult, error)
 
 `DeleteResult` is `{ID string; Error error}`, one entry per input position — duplicates are deduped before dispatch but still get their own result entry, so a caller can index results against the ids it passed. The returned top-level error is reserved for failures that invalidate the whole call: a credentials failure wraps `ErrAuth` and returns nil results. Everything else is per-id.
 
-The S3 `DeleteObjects` API accepts at most 1000 keys per call, so the deduped set is chunked. A chunk-level failure does not abort the remaining chunks: each id in the failed chunk is recorded as transient and the sweep continues. Cancellation is the exception — every id not yet processed is stamped with the cancellation error before returning, because a zero-valued (nil) result would read as success and let the GC reap an object whose bytes still exist.
+The S3 `DeleteObjects` API accepts at most 1000 keys per call, so the deduped set is chunked. A chunk-level failure does not abort the remaining chunks: each id in the failed chunk is recorded as transient and the sweep continues. Cancellation is the exception — every id not yet processed is stamped with the cancellation error before returning, because a zero-valued (nil) result would read as success and let the GC delete the row of an object whose bytes still exist.
 
-There is no internal retry. An id that failed keeps `objects.reaping = true` and is picked up by the next GC sweep, which is where the retry policy belongs.
+There is no internal retry. An id that failed keeps `deleting = true` (in `objects` or `allocations`) and is picked up by the next GC cycle, which is where the retry policy belongs. Migration 000006 renamed the flag from `reaping` to `deleting`.
 
 An empty input is `([]DeleteResult{}, nil)` with no backend call.
 
@@ -58,8 +58,8 @@ The distinction is what lets the GC decide between "try again" and "stop", which
 
 ## BR-OBJ-11: Object lifetime belongs to the GC, never to a request path
 
-Nothing on a user-visible request path deletes bytes. `DELETE /flows/{flowId}/segments` and `DELETE /flows/{flowId}` decrement `objects.ref_count` inside their metastore transaction and return; rows that reach zero stay in `objects` until the GC worker claims them via the `ref_count = 0 AND reaping = false` partial index, deletes the bytes, and reaps the rows.
+Nothing on a user-visible request path deletes bytes. `DELETE /flows/{flowId}/segments` and `DELETE /flows/{flowId}` decrement `objects.ref_count` inside their metastore transaction and return; rows that reach zero stay in `objects` until sweep 1 of the GC worker claims them via the `ref_count = 0 AND deleting = false` partial index, deletes the bytes, and deletes the rows.
 
 Two reasons the request path cannot do this. A remote object-store round trip inside a request that has already committed its transaction cannot be rolled back if it fails, so a partial delete would leave metadata and bytes disagreeing with no record of it. And a large delete would put thousands of object-store calls on a latency-bound request.
 
-The `internal/gc` worker that performs the sweep is not yet built; until it lands, zero-ref rows and their bytes accumulate. See [`docs/conformance.md`](../../../conformance.md).
+The `internal/gc` worker (`opentams gc`) performs the sweeps. See the [GC design](../../internal-gc/README.md) and [`docs/conformance.md`](../../../conformance.md).

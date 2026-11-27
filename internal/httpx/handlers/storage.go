@@ -2,11 +2,14 @@ package handlers
 
 import (
 	"context"
+	"errors"
+	"net/http"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
 	"github.com/amagioss/opentams/gen/api"
+	"github.com/amagioss/opentams/internal/apperror"
 	"github.com/amagioss/opentams/internal/service/storage"
 	"github.com/amagioss/opentams/pkg/logger"
 )
@@ -41,6 +44,11 @@ func (h *Handler) PostFlowStorage(ctx context.Context, req api.PostFlowStorageRe
 	if err != nil {
 		if isNotFound(err) {
 			return api.PostFlowStorage404ApplicationProblemPlusJSONResponse{}, nil
+		}
+		var ae *apperror.AppError
+		if errors.As(err, &ae) && ae.Status == http.StatusBadRequest {
+			log.Warn("AllocateStorage rejected", zap.Error(err))
+			return nil, err
 		}
 		log.Error("AllocateStorage failed", zap.Error(err))
 		return nil, err

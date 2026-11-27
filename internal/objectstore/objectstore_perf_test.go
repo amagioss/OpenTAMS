@@ -21,13 +21,10 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/testcontainers/testcontainers-go"
-	tcwait "github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/amagioss/opentams/internal/objectstore"
+	"github.com/amagioss/opentams/internal/objtest"
 	"github.com/amagioss/opentams/internal/perftest"
 )
 
@@ -46,74 +43,15 @@ func runObjPerfMain(m *testing.M) int {
 	if testing.Short() {
 		return m.Run()
 	}
-	cli, cleanup, err := setupMinIO(context.Background())
+	mn, err := objtest.StartMinIOE(context.Background(), objPerfBucket)
 	if err != nil {
 		fmt.Fprintf(os.Stderr,
 			"objectstore perf: MinIO setup failed: %v (perf tests will skip)\n", err)
 		return m.Run()
 	}
-	defer cleanup()
-	perfS3Client = cli
+	defer mn.Close()
+	perfS3Client = mn.Client
 	return m.Run()
-}
-
-// setupMinIO spins up a `minio/minio:latest` container, waits for it,
-// builds an S3 client pointed at it, and creates the test bucket.
-func setupMinIO(ctx context.Context) (*s3.Client, func(), error) {
-	const accessKey = "minioadmin"
-	const secretKey = "minioadmin"
-	req := testcontainers.ContainerRequest{
-		Image: "minio/minio:latest",
-		Cmd:   []string{"server", "/data"},
-		Env: map[string]string{
-			"MINIO_ROOT_USER":     accessKey,
-			"MINIO_ROOT_PASSWORD": secretKey,
-		},
-		ExposedPorts: []string{"9000/tcp"},
-		WaitingFor:   tcwait.ForListeningPort("9000/tcp").WithStartupTimeout(60 * time.Second),
-	}
-	ctr, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: req,
-		Started:          true,
-	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("start minio: %w", err)
-	}
-	host, err := ctr.Host(ctx)
-	if err != nil {
-		_ = ctr.Terminate(ctx)
-		return nil, nil, fmt.Errorf("host: %w", err)
-	}
-	port, err := ctr.MappedPort(ctx, "9000")
-	if err != nil {
-		_ = ctr.Terminate(ctx)
-		return nil, nil, fmt.Errorf("port: %w", err)
-	}
-	endpoint := "http://" + host + ":" + port.Port()
-
-	cfg, err := awsconfig.LoadDefaultConfig(ctx,
-		awsconfig.WithRegion("us-east-1"),
-		awsconfig.WithCredentialsProvider(
-			credentials.NewStaticCredentialsProvider(accessKey, secretKey, ""),
-		),
-	)
-	if err != nil {
-		_ = ctr.Terminate(ctx)
-		return nil, nil, fmt.Errorf("aws config: %w", err)
-	}
-	cli := s3.NewFromConfig(cfg, func(o *s3.Options) {
-		o.BaseEndpoint = aws.String(endpoint)
-		o.UsePathStyle = true
-	})
-	if _, err := cli.CreateBucket(ctx, &s3.CreateBucketInput{
-		Bucket: aws.String(objPerfBucket),
-	}); err != nil {
-		_ = ctr.Terminate(ctx)
-		return nil, nil, fmt.Errorf("create bucket: %w", err)
-	}
-
-	cleanup := func() { _ = ctr.Terminate(context.Background()) }
-	return cli, cleanup, nil
 }
 
 func requireS3(t *testing.T) *s3.Client {

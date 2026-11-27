@@ -26,6 +26,7 @@
 |---|---|
 | [`scale-test-plan.md`](scale-test-plan.md) | Load and scale test design. |
 | [`scale-test-runbook.md`](scale-test-runbook.md) | How to run a scale test. |
+| [`runbooks/`](runbooks/) | Operator runbooks. [`runbooks/gc.md`](runbooks/gc.md) covers the garbage collector (draft; it applies after the GC release). |
 | [`deployment/`](deployment/) | Released images and deployment notes. |
 | [`development/`](development/) | Codebase tour for new contributors. |
 | [`good-first-issues.md`](good-first-issues.md) | Curated starting points for a first contribution. |
@@ -60,8 +61,8 @@ divergence was deliberate, record it as an [ADR](adr/).
 ## Module numbers (`M1`–`M20`)
 
 Design and requirements documents refer to packages by a build-order number: `M4` is
-`internal/metastore`, `M9` is `internal/service/segment`, `M16` is the unbuilt garbage
-collector. The full mapping is the section headings of
+`internal/metastore`, `M9` is `internal/service/segment`, `M16` is the garbage
+collector (`internal/gc`). The full mapping is the section headings of
 [`implementation-spec.md`](implementation-spec.md). They are historical labels from the
 original build plan, not a versioning scheme.
 

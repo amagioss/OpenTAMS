@@ -45,7 +45,7 @@ type FlowCollectionRow struct {
 type ObjectRow struct {
 	ID       string
 	RefCount int32
-	Reaping  bool
+	Deleting bool
 }
 
 // SegmentRow is one row of the `segments` table. The `id` (BIGSERIAL),
@@ -132,7 +132,7 @@ func (g *Gen) Object(k int64) ObjectRow {
 	return ObjectRow{
 		ID:       detObjectID(g.seed, k),
 		RefCount: 1, // avg_refs ≈ 1 per docs/scale-test-plan.md §3.1
-		Reaping:  false,
+		Deleting: false,
 	}
 }
 

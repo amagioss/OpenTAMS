@@ -54,6 +54,8 @@ Three details carry weight:
   and the store raises `ErrSegmentObjectReaping`. The client retries with a fresh Object
   ID rather than adopting bytes that are about to be erased.
 
+The column is `deleting` since migration 000006 ([ADR-0041](0041-track-storage-allocations-in-a-table.md)).
+
 Allocating storage creates no row. A client that allocates and never registers leaves
 nothing behind in the database.
 

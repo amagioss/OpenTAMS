@@ -112,6 +112,30 @@ func seedRealFlow(t *testing.T, readOnly bool) uuid.UUID {
 	return flID
 }
 
+// seedAllocations writes one allocation on flowID for each ID, as
+// POST /flows/{flowId}/storage does. A controlled registration needs it
+// (BR-GC-12).
+func seedAllocations(t *testing.T, flowID uuid.UUID, ids ...string) {
+	t.Helper()
+	if _, err := integrationPool.Exec(context.Background(), `
+		INSERT INTO allocations (id, flow_id, storage_id, expires_at)
+		SELECT id, $2, 'default', now() + interval '1 hour' FROM unnest($1::text[]) AS id`,
+		ids, flowID); err != nil {
+		t.Fatalf("seed allocations: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = integrationPool.Exec(context.Background(), `DELETE FROM allocations WHERE id = ANY($1)`, ids)
+	})
+}
+
+func objectIDs(format string, n int) []string {
+	ids := make([]string, n)
+	for i := range ids {
+		ids[i] = fmt.Sprintf(format, i)
+	}
+	return ids
+}
+
 // newRealService wires the real metastore against the integration pool.
 // Each call gets a fresh prometheus registry so metric collisions don't
 // occur across tests.
@@ -151,6 +175,7 @@ func Test_SCN_SEG_CONC_01_ReadOnlyFlipDuringRegister(t *testing.T) {
 	const inserters = 25
 	const togglers = 25
 	const togglesPerWorker = 8
+	seedAllocations(t, flID, objectIDs("o-segc1-%d", inserters)...)
 
 	type outcome struct {
 		idx int
@@ -246,7 +271,8 @@ func Test_SCN_SEG_CONC_01_ReadOnlyFlipDuringRegister(t *testing.T) {
 // =============================================================================
 //
 // Trace: NFR-SEG-PERF-02, BR-SEG-03. All return AllAccepted, total
-// segment count = 1000, wall-clock ≤ 5s.
+// segment count = 1000, wall-clock ≤ 10s. The budget was 5s; the GC
+// allocation check adds work to each registration (NFR-GC-P5).
 func Test_SCN_SEG_CONC_02_DisjointConcurrentRegister(t *testing.T) {
 	requirePool(t)
 	flID := seedRealFlow(t, false)
@@ -254,6 +280,9 @@ func Test_SCN_SEG_CONC_02_DisjointConcurrentRegister(t *testing.T) {
 
 	const G = 100
 	const PerG = 10
+	for i := 0; i < G; i++ {
+		seedAllocations(t, flID, objectIDs(fmt.Sprintf("o-segc2-%d-%%d", i), PerG)...)
+	}
 	var wg sync.WaitGroup
 	errs := make(chan error, G)
 
@@ -305,7 +334,7 @@ func Test_SCN_SEG_CONC_02_DisjointConcurrentRegister(t *testing.T) {
 		t.Errorf("segments count = %d, want %d", count, G*PerG)
 	}
 
-	budget := perftest.EnvOverrideMS("OPENTAMS_PERF_SEG_CONC_DISJOINT_MS", 5000)
+	budget := perftest.EnvOverrideMS("OPENTAMS_PERF_SEG_CONC_DISJOINT_MS", 10000)
 	if elapsed > budget {
 		t.Errorf("elapsed = %v, want ≤ %v", elapsed, budget)
 	}
@@ -323,6 +352,7 @@ func Test_SCN_SEG_CONC_03_CollidingConcurrentRegister(t *testing.T) {
 	svc := newRealService(t)
 
 	const G = 50
+	seedAllocations(t, flID, objectIDs("o-segc3-%d", G)...)
 	type outcome struct {
 		res domain.RegisterResult
 		err error

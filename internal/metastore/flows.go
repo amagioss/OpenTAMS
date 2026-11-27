@@ -422,14 +422,14 @@ func (s *PostgresStore) ListFlows(ctx context.Context, p ListFlowsParams) (*Flow
 	return page, nil
 }
 
-// DeleteFlow removes the flow and all its segments and decrements the
-// ref counts of every distinct object the flow's segments pointed at.
+// DeleteFlow removes the flow and all its segments, and decreases the
+// ref_count of each object by the number of deleted segments on it
+// (BR-GC-20). The flow row lock serialises it with segment inserts and
+// timerange deletes on the same flow (BR-META-15). A read-only flow
+// returns ErrReadOnly and nothing changes.
 //
-// Object rows whose ref_count reaches zero are LEFT IN PLACE; the GC
-// worker reaps them asynchronously via the `WHERE ref_count = 0 AND
-// reaping = false` partial index (D-25, D-29, BR-OBJ-11). Inline S3
-// cleanup from the request path is deliberately avoided: the request must
-// not block on a remote object-store round trip it cannot roll back.
+// Object rows whose ref_count reaches zero stay in place for sweep 1 of
+// the GC worker. No request path deletes bytes (BR-GC-22, ADR-0020).
 func (s *PostgresStore) DeleteFlow(ctx context.Context, id uuid.UUID) error {
 	tx, err := s.begin(ctx)
 	if err != nil {
@@ -437,32 +437,85 @@ func (s *PostgresStore) DeleteFlow(ctx context.Context, id uuid.UUID) error {
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck // tx is rolled back implicitly by Commit; an explicit Rollback after Commit is a no-op whose error is uninteresting.
 
-	// Decrement ref counts on every distinct object referenced by this
-	// flow's segments. CTE keeps the read+update inside the same tx, so
-	// concurrent inserters that join after the SELECT will see the row
-	// locked by ON CONFLICT in InsertSegments and serialise behind us.
-	if _, err := tx.Exec(ctx, `
-		WITH refs AS (
-			SELECT DISTINCT object_id FROM segments WHERE flow_id = $1
-		)
-		UPDATE objects
-		   SET ref_count = ref_count - 1
-		  FROM refs
-		 WHERE objects.id = refs.object_id`, id); err != nil {
-		return fmt.Errorf("metastore: DeleteFlow: decrement refs: %w", err)
+	var readOnly bool
+	err = tx.QueryRow(ctx, `SELECT read_only FROM flows WHERE id = $1 FOR UPDATE`, id).Scan(&readOnly)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return apperror.New(apperror.ErrNotFound, "flow not found")
+	}
+	if err != nil {
+		return fmt.Errorf("metastore: DeleteFlow: lock flow: %w", err)
+	}
+	if readOnly {
+		return apperror.New(apperror.ErrReadOnly, "flow is read-only")
 	}
 
-	// Delete the flow (segments cascade via FK ON DELETE CASCADE).
-	tag, err := tx.Exec(ctx, `DELETE FROM flows WHERE id = $1`, id)
+	objectIDs, counts, err := deleteSegmentsCountedByObject(ctx, tx, `
+		WITH deleted AS (
+			DELETE FROM segments WHERE flow_id = $1 RETURNING object_id
+		)
+		SELECT object_id, count(*) FROM deleted GROUP BY object_id ORDER BY object_id COLLATE "C"`, id)
 	if err != nil {
-		return fmt.Errorf("metastore: DeleteFlow: delete: %w", err)
+		return fmt.Errorf("metastore: DeleteFlow: delete segments: %w", err)
 	}
-	if tag.RowsAffected() == 0 {
-		return apperror.New(apperror.ErrNotFound, "flow not found")
+	if err := decreaseRefCounts(ctx, tx, objectIDs, counts); err != nil {
+		return fmt.Errorf("metastore: DeleteFlow: %w", err)
+	}
+
+	if _, err := tx.Exec(ctx, `DELETE FROM flows WHERE id = $1`, id); err != nil {
+		return fmt.Errorf("metastore: DeleteFlow: delete: %w", err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("metastore: DeleteFlow: commit: %w", err)
+	}
+	return nil
+}
+
+// deleteSegmentsCountedByObject runs a segment DELETE that returns one
+// (object_id, count) row per object in ascending byte order of the ID,
+// and returns them as parallel slices.
+func deleteSegmentsCountedByObject(ctx context.Context, tx pgx.Tx, sql string, args ...any) (objectIDs []string, counts []int64, err error) {
+	rows, err := tx.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var objectID string
+		var count int64
+		if err := rows.Scan(&objectID, &count); err != nil {
+			return nil, nil, fmt.Errorf("scan: %w", err)
+		}
+		objectIDs = append(objectIDs, objectID)
+		counts = append(counts, count)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("rows: %w", err)
+	}
+	return objectIDs, counts, nil
+}
+
+// decreaseRefCounts locks the object rows in ascending byte order of the
+// ID (BR-GC-23) and then decreases each ref_count by its count in one
+// statement. objectIDs and counts are parallel slices.
+func decreaseRefCounts(ctx context.Context, tx pgx.Tx, objectIDs []string, counts []int64) error {
+	if len(objectIDs) == 0 {
+		return nil
+	}
+	if _, err := tx.Exec(ctx,
+		`SELECT id FROM objects WHERE id = ANY($1::text[]) ORDER BY id COLLATE "C" FOR UPDATE`,
+		objectIDs,
+	); err != nil {
+		return fmt.Errorf("lock objects: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE objects AS o
+		   SET ref_count = o.ref_count - d.n
+		  FROM unnest($1::text[], $2::int[]) AS d(id, n)
+		 WHERE o.id = d.id`,
+		objectIDs, counts,
+	); err != nil {
+		return fmt.Errorf("decrease ref_count: %w", err)
 	}
 	return nil
 }

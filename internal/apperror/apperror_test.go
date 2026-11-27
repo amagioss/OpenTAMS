@@ -23,7 +23,6 @@ func TestNew_StatusMapping(t *testing.T) {
 		{apperror.ErrFormatMismatch, 400},
 		{apperror.ErrMissingIdempotencyKey, 400},
 		{apperror.ErrStorageModeConflict, 400},
-		{apperror.ErrObjectIDExists, 400},
 		{apperror.ErrVFRFrameRateConflict, 400},
 		{apperror.ErrBatchTooLarge, 400},
 		{apperror.ErrUnauthorized, 401},
@@ -106,7 +105,6 @@ func TestToProblemDetails_Titles(t *testing.T) {
 		{apperror.ErrFormatMismatch, "Format Mismatch"},
 		{apperror.ErrMissingIdempotencyKey, "Missing Idempotency Key"},
 		{apperror.ErrStorageModeConflict, "Storage Mode Conflict"},
-		{apperror.ErrObjectIDExists, "Object ID Exists"},
 		{apperror.ErrVFRFrameRateConflict, "VFR Frame Rate Conflict"},
 		{apperror.ErrBatchTooLarge, "Batch Too Large"},
 		{apperror.ErrUnauthorized, "Unauthorized"},
@@ -156,14 +154,13 @@ func TestGeneric_ErrorString(t *testing.T) {
 	}
 }
 
-// TC-ERR-09: object-reaping (409) and request-too-large (413) catalogued
+// TC-ERR-09: request-too-large (413) catalogued
 func TestNew_NewlyCataloguedCodes(t *testing.T) {
 	cases := []struct {
 		code      apperror.ErrorCode
 		status    int
 		wantTitle string
 	}{
-		{apperror.ErrObjectReaping, 409, "Object Reaping"},
 		{apperror.ErrRequestTooLarge, 413, "Request Too Large"},
 	}
 	for _, tc := range cases {
@@ -178,6 +175,43 @@ func TestNew_NewlyCataloguedCodes(t *testing.T) {
 		wantType := "https://github.com/amagioss/opentams/problems/" + string(tc.code)
 		if pd.Type != wantType {
 			t.Errorf("New(%q) type = %q, want %q", tc.code, pd.Type, wantType)
+		}
+	}
+}
+
+// BR-GC-70 to BR-GC-73: each object-ID error is a 400 with the
+// catalogued title, so a client knows it must use a different object_id.
+func TestNew_ObjectErrorsAreBadRequestWithCataloguedTitles(t *testing.T) {
+	cases := []struct {
+		code      apperror.ErrorCode
+		slug      string
+		wantTitle string
+	}{
+		{apperror.ErrObjectExists, "object-exists", "Object Exists"},
+		{apperror.ErrObjectNotAllocated, "object-not-allocated", "Object Not Allocated"},
+		{apperror.ErrObjectWrongFlow, "object-wrong-flow", "Object Allocated to Another Flow"},
+		{apperror.ErrObjectDeleting, "object-deleting", "Object Being Deleted"},
+	}
+	for _, tc := range cases {
+		pd := apperror.New(tc.code, `object_id "obj-1"`).ToProblemDetails("/path", "rid")
+		if pd.Status != 400 {
+			t.Errorf("%s: status = %d, want 400", tc.slug, pd.Status)
+		}
+		if pd.Title != tc.wantTitle {
+			t.Errorf("%s: title = %q, want %q", tc.slug, pd.Title, tc.wantTitle)
+		}
+		if want := "https://github.com/amagioss/opentams/problems/" + tc.slug; pd.Type != want {
+			t.Errorf("%s: type = %q, want %q", tc.slug, pd.Type, want)
+		}
+	}
+}
+
+// BR-GC-74: the object-id-exists and object-reaping problem types are
+// removed; object-exists and object-deleting (400) replace them.
+func TestNew_RemovedObjectCodesAreNotCatalogued(t *testing.T) {
+	for _, code := range []apperror.ErrorCode{"object-id-exists", "object-reaping"} {
+		if e := apperror.New(code, "detail"); e.Status != 500 {
+			t.Errorf("New(%q).Status = %d, want 500 (uncatalogued)", code, e.Status)
 		}
 	}
 }

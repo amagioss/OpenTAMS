@@ -20,7 +20,7 @@ Last reviewed against TAMS v8.0 on 2026-06-09, against OpenTAMS HEAD `38570fc`.
 | Endpoint | Status | Notes |
 |---|---|---|
 | `GET /tams/v1/` | Implemented | Returns service metadata (name, API version, supported formats, link header for paginatable resources). |
-| `GET /tams/v1/service` | Implemented | Service info for capability discovery. Advertises `min_object_timeout` (from `OBJECT_STORE_PRESIGN_EXPIRY`). Does **not** advertise `min_presigned_url_timeout`, although OpenTAMS does issue presigned URLs — both fields are TAMS 8.1 additions carried into the vendored 8.0 schemas (see [`api/schemas/README.md`](../api/schemas/README.md)). |
+| `GET /tams/v1/service` | Implemented | Service info for capability discovery. Advertises `min_object_timeout` and `min_presigned_url_timeout`, both with the value of `OBJECT_STORE_PRESIGN_EXPIRY` (300 s or more). Both fields are TAMS 8.1 additions carried into the vendored 8.0 schemas (see [`api/schemas/README.md`](../api/schemas/README.md)). |
 | `POST /tams/v1/service` | Not implemented | Spec allows updating service metadata. OpenTAMS serves service metadata as read-only today. |
 | `GET /tams/v1/service/storage-backends` | Implemented | Lists configured storage backends; OpenTAMS exposes one (the configured S3-compatible bucket) per deployment. Multi-backend tenancy is Out of scope for v0.1.0. |
 | `GET /tams/v1/service/webhooks` | Not implemented | Webhook registration list/create. See [Real-time / streaming](#real-time--streaming). |
@@ -61,7 +61,7 @@ Last reviewed against TAMS v8.0 on 2026-06-09, against OpenTAMS HEAD `38570fc`.
 | `GET /tams/v1/flows/{flowId}` | Implemented, with a divergence | Supports `include_timerange` and `timerange` query params. **A `timerange` that does not parse returns 400 `invalid-timerange`. The upstream spec declares no 400 for this endpoint** (BR-CONV-09). Before this change, the server ignored the parameter and returned the flow unfiltered. |
 | `HEAD /tams/v1/flows/{flowId}` | Implemented | |
 | `PUT /tams/v1/flows/{flowId}` | Implemented | Create or replace. The Flow's `id` in the body must match the path. |
-| `DELETE /tams/v1/flows/{flowId}` | Implemented | Soft-delete: creates a `flow-delete-request`. Synchronous deletion of metadata; underlying object reaping happens via M16 GC (deferred). |
+| `DELETE /tams/v1/flows/{flowId}` | Implemented | Synchronous. One transaction deletes the flow and its segments, and decreases `objects.ref_count` once for each deleted segment. On a read-only flow it returns 403 `read-only` and deletes nothing. The server creates no `flow-delete-request`. The request does not delete media bytes. The garbage collector (`opentams gc`) deletes them later ([design](design/internal-gc/README.md)). |
 | `GET /tams/v1/flows/{flowId}/tags` | Implemented | |
 | `GET /tams/v1/flows/{flowId}/tags/{name}` | Implemented | |
 | `PUT /tams/v1/flows/{flowId}/tags/{name}` | Implemented | |
@@ -90,8 +90,8 @@ Last reviewed against TAMS v8.0 on 2026-06-09, against OpenTAMS HEAD `38570fc`.
 |---|---|---|
 | `GET /tams/v1/flows/{flowId}/segments` | Implemented, with a divergence | Query params: `timerange` (intersection filter), `object_id`, `reverse_order`, `verbose_storage`, `accept_get_urls`, `accept_storage_ids`, `presigned`, `include_object_timerange`, plus `page`/`limit` pagination. **On an unknown flow OpenTAMS returns 404, where the spec asks for an empty list** (REQ-BEH-16) — see below. `Accept: text/event-stream` for streamed reads is **Not implemented**. |
 | `HEAD /tams/v1/flows/{flowId}/segments` | Implemented | |
-| `POST /tams/v1/flows/{flowId}/segments` | Implemented, with a divergence | Requires `X-Idempotency-Key` (REQ-IDEM-01). Body is a single segment or a JSON array of up to 1000. Per-segment failures come back as `flow-segment-bulk-failure`. **Overlapping timeranges reject the whole batch with 422 and no `failed_segments`, rather than the spec's first-wins ordering** (REQ-BEH-15). See [Deliberate divergences on this path](#deliberate-divergences-on-this-path). **A segment timerange must be bounded, non-empty, and start-inclusive, or the segment is a per-segment `invalid-timerange` failure** (ADR-0040). See [Deliberate divergences on this path](#deliberate-divergences-on-this-path). |
-| `DELETE /tams/v1/flows/{flowId}/segments` | Implemented | Bulk delete by query params (`timerange`, `object_id`). Returns the count, and creates a `flow-delete-request` if the operation is asynchronous. Deletes only the segments that `timerange` covers completely, as the spec says. An empty `timerange` deletes nothing. |
+| `POST /tams/v1/flows/{flowId}/segments` | Implemented, with a divergence | Requires `X-Idempotency-Key` (REQ-IDEM-01). Body is a single segment or a JSON array of up to 1000. Per-segment failures come back as `flow-segment-bulk-failure`. **Overlapping timeranges reject the whole batch with 422 and no `failed_segments`, rather than the spec's first-wins ordering** (REQ-BEH-15). See [Deliberate divergences on this path](#deliberate-divergences-on-this-path). **A segment timerange must be bounded, non-empty, and start-inclusive, or the segment is a per-segment `invalid-timerange` failure** (ADR-0040). **A controlled segment (no `get_urls`) must use an object ID that `POST …/storage` allocated for the same flow, or one that is already registered, or the segment is a per-segment `object-not-allocated`, `object-wrong-flow`, or `object-deleting` failure** ([ADR-0041](adr/0041-track-storage-allocations-in-a-table.md)). See [Deliberate divergences on this path](#deliberate-divergences-on-this-path). |
+| `DELETE /tams/v1/flows/{flowId}/segments` | Implemented | Bulk delete by query params (`timerange`, `object_id`). Synchronous: returns 204, and creates no `flow-delete-request`. Deletes only the segments that `timerange` covers completely, as the spec says. An empty `timerange` deletes nothing. |
 
 ### Deliberate divergences on this path
 
@@ -138,16 +138,29 @@ batch. OpenTAMS accepts an inclusive end, so `[0:0]` is valid.
 as `[5:0_`, or a segment with an exclusive start such as `(0:0_10:0)`. That client gets
 the segment back in `failed_segments`. Send a bounded range with an inclusive start.
 
-**Objects are not reclaimed on delete.** `DELETE /segments` removes metadata and
-decrements the object ref-count inside its transaction; deleting the bytes is the
-garbage collector's job, and the GC is not built. See the note on garbage collection
-below.
+**A controlled segment must use an allocated object ID** ([ADR-0041](adr/0041-track-storage-allocations-in-a-table.md)).
+Upstream TAMS defines no allocation enforcement. OpenTAMS records each object ID that
+`POST /flows/{flowId}/storage` issues. A segment with no `get_urls` must use an object ID
+that has an allocation for the same flow, or an object ID that is already registered and
+that the garbage collector did not claim. Else OpenTAMS reports the segment in
+`failed_segments` with type `object-not-allocated`, `object-wrong-flow`, or
+`object-deleting`, and processes the other segments in the batch. If all segments fail,
+OpenTAMS changes nothing. A segment with `get_urls` (BYOS) needs no allocation.
+
+*What breaks for a conformant client:* a client that registers a controlled segment with
+an object ID that it did not get from `POST …/storage` on the same flow, or whose
+allocation expired and was deleted, gets the segment back in `failed_segments`. Allocate
+the ID on the flow, upload, then register. For `object-deleting`, use a new object ID.
+
+**Objects are not reclaimed on the delete request.** `DELETE /segments` removes metadata
+and decrements the object ref-count inside its transaction. The garbage collector
+(`opentams gc`) deletes the bytes later. See the note on garbage collection below.
 
 ## Storage allocation
 
 | Endpoint | Status | Notes |
 |---|---|---|
-| `POST /tams/v1/flows/{flowId}/storage` | Implemented | Two modes: `{"limit": N}` (server picks `object_id`s) and `{"object_ids": [...]}` (client picks; idempotent across retries). The two are mutually exclusive — supplying both is 400. Both modes are capped at 100 objects per request; above that the request is rejected with 400 rather than truncated, so ask again for the rest. `limit` below 1 is also 400. Presigned URL TTL is `OBJECT_STORE_PRESIGN_EXPIRY` (default 1h). |
+| `POST /tams/v1/flows/{flowId}/storage` | Implemented | Two modes: `{"limit": N}` (server picks `object_id`s) and `{"object_ids": [...]}` (client picks; idempotent across retries). The two are mutually exclusive — supplying both is 400. Both modes are capped at 100 objects per request; above that the request is rejected with 400 rather than truncated, so ask again for the rest. `limit` below 1 is also 400. Presigned URL TTL is `OBJECT_STORE_PRESIGN_EXPIRY` (default 1h). OpenTAMS records each issued object ID as an allocation, with the same lifetime as the URL. In `object_ids` mode, an ID that is registered is 400 `object-exists`, an ID allocated to a different flow is 400 `object-wrong-flow`, and an ID that the garbage collector claimed is 400 `object-deleting`. One such ID fails the whole request. A second request for the same ID on the same flow returns a new URL and a new expiry. After the expiry plus `GC_ALLOCATION_GRACE`, the garbage collector deletes the bytes of an allocation that no segment registered. Upstream TAMS defines no allocation record. |
 
 ## Media objects
 
@@ -162,9 +175,9 @@ below.
 
 | Endpoint | Status | Notes |
 |---|---|---|
-| `GET /tams/v1/flow-delete-requests` | Not implemented | Endpoint is routed and returns 200 with an empty list, but the underlying lifecycle (request → in-progress → done) is part of M16 GC, which is not yet built. Today, `DELETE /flows/{flowId}` synchronously removes metadata and the `flow-delete-request` row is bookkeeping only. |
+| `GET /tams/v1/flow-delete-requests` | Not implemented | The endpoint is routed and returns 200 with an empty list. The server creates no flow delete request, because both delete endpoints are synchronous. An asynchronous delete is later work. It is separate from the garbage collector ([design](design/internal-gc/README.md), out of scope). |
 | `HEAD /tams/v1/flow-delete-requests` | Not implemented | As above. |
-| `GET /tams/v1/flow-delete-requests/{requestId}` | Not implemented | Returns 404 because no records are ever created. The endpoint shape is correct so client code that handles 404 will work unchanged once GC lands. |
+| `GET /tams/v1/flow-delete-requests/{requestId}` | Not implemented | Returns 404 because no records are ever created. The endpoint shape is correct so client code that handles 404 will work unchanged once the asynchronous delete lands. |
 | `HEAD /tams/v1/flow-delete-requests/{requestId}` | Not implemented | As above. |
 
 ## Health and operations
@@ -295,7 +308,7 @@ The escaping originates in the oapi-codegen strict-server response encoders. It 
 | `service.json`, `service-post.json`, `storage-backend.json`, `storage-backends-list.json` | Implemented | |
 | `event-stream-common.json` | Not implemented | Used only by `text/event-stream` paths, none of which are built yet. |
 | `http-request.json` | Implemented | The HTTP-action descriptor type used by `flow-storage.json` for the `put_url` field (and by Phase 2 webhook delivery records once that surface lands). Carries the URL, method, and any required headers/body for a client-side HTTP action. |
-| `deletion-request.json` | Not implemented | Schema exists; the underlying garbage-collection lifecycle is not built. |
+| `deletion-request.json` | Not implemented | Schema exists; the asynchronous delete lifecycle that uses it is not built. |
 
 ## Error bodies
 
@@ -340,17 +353,19 @@ limiter, no content negotiation) or surface as a generic 500.
 
 OpenTAMS targets the full TAMS v8.0 surface. Two distinct kinds of "not done" appear above:
 
-- **`Not implemented`** — spec features we intend to build but haven't yet. Today this covers media objects (`/objects/{objectId}`, `/objects/{objectId}/instances`), webhook registration and event delivery (`/service/webhooks*`), `POST /service`, `text/event-stream` streamed reads, the flow-delete-request lifecycle (which depends on garbage collection), and the `url_token_auth` / `basic_auth` security schemes.
+- **`Not implemented`** — spec features we intend to build but haven't yet. Today this covers media objects (`/objects/{objectId}`, `/objects/{objectId}/instances`), webhook registration and event delivery (`/service/webhooks*`), `POST /service`, `text/event-stream` streamed reads, the flow-delete-request lifecycle (asynchronous delete), and the `url_token_auth` / `basic_auth` security schemes.
 - **`Out of scope`** — spec features we believe are genuinely outside what TAMS asks of an implementer, not "we didn't get to it" (e.g. authorisation/RBAC, multi-backend tenancy).
 
-Two operational capabilities are also absent, and neither is a TAMS surface, so neither
-appears in the tables above:
+Two operational capabilities are not TAMS surfaces, so neither appears in the tables
+above:
 
-- **Garbage collection.** `opentams gc` exits with an error and `GC_*` configuration is
-  ignored. Objects orphaned by partial failures accumulate until deleted by hand. Do not
-  substitute an S3 lifecycle policy — it cannot see cross-flow references and will delete
-  live data.
-- **Rate limiting and request body-size limits.** OpenTAMS has no rate limiter, returns
+- **Garbage collection.** `opentams gc` deletes the bytes of released objects and of
+  expired allocations ([configuration](configuration.md#garbage-collection-internalgc),
+  [runbooks](runbooks/gc.md)). It does not find bytes that have no row and no allocation,
+  for example bytes uploaded before the GC release. Such bytes stay until deleted by hand.
+  Do not substitute an S3 lifecycle policy — it cannot see cross-flow references and will
+  delete live data.
+- **Rate limiting and request body-size limits are absent.** OpenTAMS has no rate limiter, returns
   no 429, and sets no `Retry-After`. Put a limiter in front of the service (ingress
   controller or API gateway) if you need one.
 

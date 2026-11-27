@@ -175,7 +175,7 @@ func TestDeleteFlow_NotFound(t *testing.T) {
 // TC-META-FL-10: DeleteFlow removes the flow and decrements ref counts.
 // The GC worker (D-25 / D-29) is the sole reaper of zero-ref rows; this
 // test asserts the metastore leaves them intact with `ref_count = 0` and
-// `reaping = false` so the GC sweep can claim them.
+// `deleting = false` so sweep 1 of the GC can claim them.
 func TestDeleteFlow_DecrementsRefCounts(t *testing.T) {
 	store, tx := withTx(t)
 	srcID, flID := uuid.New(), uuid.New()
@@ -202,13 +202,13 @@ func TestDeleteFlow_DecrementsRefCounts(t *testing.T) {
 
 	// shared object still references count 1, exclusive sits at 0 awaiting GC
 	var sharedRC, exclusiveRC int64
-	var exclusiveReaping bool
+	var exclusiveDeleting bool
 	if err := tx.QueryRow(context.Background(),
 		`SELECT ref_count FROM objects WHERE id = $1`, sharedObj).Scan(&sharedRC); err != nil {
 		t.Fatalf("shared ref_count: %v", err)
 	}
 	if err := tx.QueryRow(context.Background(),
-		`SELECT ref_count, reaping FROM objects WHERE id = $1`, exclusiveObj).Scan(&exclusiveRC, &exclusiveReaping); err != nil {
+		`SELECT ref_count, deleting FROM objects WHERE id = $1`, exclusiveObj).Scan(&exclusiveRC, &exclusiveDeleting); err != nil {
 		t.Fatalf("exclusive ref_count: %v", err)
 	}
 	if sharedRC != 1 {
@@ -217,8 +217,8 @@ func TestDeleteFlow_DecrementsRefCounts(t *testing.T) {
 	if exclusiveRC != 0 {
 		t.Errorf("exclusive ref_count: got %d, want 0", exclusiveRC)
 	}
-	if exclusiveReaping {
-		t.Errorf("exclusive reaping: got true, want false (GC, not metastore, flips reaping=true)")
+	if exclusiveDeleting {
+		t.Errorf("exclusive deleting: got true, want false (only the GC sets deleting = true)")
 	}
 }
 

@@ -70,7 +70,7 @@ func seedNSegments(t *testing.T, flID string, startSec, n int) {
 		// ON CONFLICT increments not needed — each seg uses a distinct
 		// object_id.
 		var ob strings.Builder
-		ob.WriteString(`INSERT INTO objects (id, ref_count, reaping) VALUES `)
+		ob.WriteString(`INSERT INTO objects (id, ref_count, deleting) VALUES `)
 		oargs := make([]any, 0, size)
 		for i := 0; i < size; i++ {
 			s := startSec + base + i
@@ -99,18 +99,26 @@ func Test_SCN_META_PERF_01_InsertSinglePerf(t *testing.T) {
 	seedNSegments(t, flID, 0, perfFlowSegments)
 	store := newStore(t)
 
-	samples := make([]time.Duration, perfSamples)
-	for i := 0; i < perfSamples; i++ {
+	segs := make([]domain.Segment, perfSamples)
+	for i := range segs {
 		s := perfFlowSegments + i
-		seg := makeSegment(t, fmt.Sprintf("o-pf01-%d", i),
+		segs[i] = makeSegment(t, fmt.Sprintf("o-pf01-%d", i),
 			fmt.Sprintf("[%d:0_%d:0)", s, s+1))
+	}
+	allocate(t, flUUID, segs...)
+
+	samples := make([]time.Duration, perfSamples)
+	for i := range segs {
 		t0 := time.Now()
-		_, err := store.InsertSegments(context.Background(), metastore.InsertBatch{
-			FlowID: flUUID, Segments: []domain.Segment{seg}, ControlledStorageID: "default",
+		res, err := store.InsertSegments(context.Background(), metastore.InsertBatch{
+			FlowID: flUUID, Segments: segs[i : i+1], ControlledStorageID: "default",
 		})
 		samples[i] = time.Since(t0)
 		if err != nil {
 			t.Fatalf("InsertSegments[%d]: %v", i, err)
+		}
+		if len(res.RejectedIndices) != 0 {
+			t.Fatalf("InsertSegments[%d]: rejected %+v", i, res.RejectReasons)
 		}
 	}
 	got := perftest.P99(samples)
@@ -132,18 +140,27 @@ func Test_SCN_META_PERF_02_BulkThroughputPerf(t *testing.T) {
 	const batchSize = 100
 	total := batches * batchSize
 
-	t0 := time.Now()
-	for b := 0; b < batches; b++ {
-		segs := make([]domain.Segment, batchSize)
+	all := make([][]domain.Segment, batches)
+	for b := range all {
+		all[b] = make([]domain.Segment, batchSize)
 		for i := 0; i < batchSize; i++ {
 			s := b*batchSize + i
-			segs[i] = makeSegment(t, fmt.Sprintf("o-pf02-%d-%d", b, i),
+			all[b][i] = makeSegment(t, fmt.Sprintf("o-pf02-%d-%d", b, i),
 				fmt.Sprintf("[%d:0_%d:0)", s, s+1))
 		}
-		if _, err := store.InsertSegments(context.Background(), metastore.InsertBatch{
+		allocate(t, flUUID, all[b]...)
+	}
+
+	t0 := time.Now()
+	for b, segs := range all {
+		res, err := store.InsertSegments(context.Background(), metastore.InsertBatch{
 			FlowID: flUUID, Segments: segs, ControlledStorageID: "default",
-		}); err != nil {
+		})
+		if err != nil {
 			t.Fatalf("batch %d: %v", b, err)
+		}
+		if len(res.RejectedIndices) != 0 {
+			t.Fatalf("batch %d: rejected %+v", b, res.RejectReasons)
 		}
 	}
 	elapsed := time.Since(t0)

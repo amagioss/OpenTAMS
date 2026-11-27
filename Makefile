@@ -5,7 +5,7 @@
 # to run the underlying commands directly can do so without diverging from
 # CI behaviour.
 
-.PHONY: help compile build build-server build-cli install-cli vet test test-short coverage lint fmt vuln integration perf \
+.PHONY: help compile build build-server build-cli install-cli vet test test-short coverage lint fmt vuln integration perf helm-test \
         docker-build docker-build-local ci tools-install clean \
         release-check snapshot release-dry-run \
         api-lint api-bundle api-gen api-check notices notices-check \
@@ -130,6 +130,9 @@ perf: ## Performance budgets (testcontainers; runs nightly in CI)
 	# takes an OPENTAMS_PERF_*_MS override when a slower machine needs one;
 	# the defaults live next to the assertions.
 	$(GO) test -tags=perf -count=1 -timeout=20m ./...
+
+helm-test: ## Helm chart render and lint tests (needs helm on PATH)
+	$(GO) test -tags=helm -count=1 ./deployments/helm/...
 
 # --- docker ------------------------------------------------------------------
 docker-build: ## Multi-arch Docker build verification (no push, no load)

@@ -633,32 +633,17 @@ Build order is strictly bottom-up by dependency. Each module is independently te
 
 ### M16. `gc` package
 
-**Responsibility:** Garbage collection sweep logic (reclaim orphaned objects, purge soft-deleted segments, expired idempotency records).
+> This section is replaced by the design in [`design/internal-gc/`](design/internal-gc/README.md). The text before that design (a sweep that purges soft-deleted segments and idempotency records, a CronJob mode, and exit code 0 with errors) does not apply.
 
-**Owns:**
-- `Sweep(ctx, gcstore, objectstore) (SweepResult, error)` — single sweep unit
-- Daemon runner: sleep-after-sweep loop (prevents overlap naturally)
-- One-shot runner: single sweep → exit
-- Per-item failure handling: log + count, don't fail sweep
-- Expired idempotency record eviction (periodic)
+**Responsibility:** Delete the media bytes and the rows of released objects (sweep 1) and of expired allocations (sweep 2).
 
-**Does NOT own:**
-- Scheduling policy (Kubernetes CronJob, Docker daemon — deployment concern)
-- HTTP concerns
+**Owns:** `Worker`, `Run`, `RunOnce`, the two sweep loops, the retry phase, and the GC metrics.
 
-**Public API sketch:**
-- `Sweep(ctx, deps) (SweepResult, error)`
-- `RunDaemon(ctx, interval, sweepFn)`
-- `RunOnce(ctx, sweepFn) error`
+**Does NOT own:** idempotency record eviction (the API server does it), retention, asynchronous flow delete, HTTP API concerns.
 
-**Dependencies:** `metastore` (GC sub-interface), `objectstore`, `idempotency`, `apperror`
+**Dependencies:** `metastore` (through the interface `gc.Store`), `objectstore` (through `gc.Deleter`), `pkg/metrics`, `pkg/logger`.
 
-**Test surface:**
-- Sweep deletes dangling objects, purges segments
-- Partial failure: some objects fail delete → remain marked, logged, counted
-- Sweep cannot start (DB down) → returns error → exit 1
-- Daemon sleep-after-sweep prevents overlap
-- One-shot exits 0 even with ErrorCount > 0
+**Test surface:** [`design/internal-gc/functional-design/test-plan.md`](design/internal-gc/functional-design/test-plan.md).
 
 ---
 
