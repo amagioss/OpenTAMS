@@ -103,7 +103,6 @@ The service returns either an error or a `domain.RegisterResult` carrying an
 | `OutcomeAllRejected` | 200 | same shape, `accepted` empty |
 | `ErrInvalidRequest` | 400 | `schema-validation` |
 | `metastore.ErrSegmentOverlap` | 422 | `segment-overlap`, **no** `failed_segments` |
-| `metastore.ErrSegmentObjectReaping` | 409 | `object-reaping` — retry with a fresh `object_id` |
 | `ErrFlowReadOnly` | 403 | `read-only` |
 | `ErrFlowNotFound` | 404 | `not-found` |
 | anything else | error return → ErrorHandler | 500 ProblemDetails |
@@ -112,6 +111,14 @@ All-rejected is a 200 rather than a 4xx: the body already reports per-segment
 failures, and the batch itself was well-formed. The overlap path is the opposite
 case — the batch as a whole is refused, so it is a single ProblemDetails with no
 per-segment array (see [ADR-0024](../../../adr/0024-whole-batch-reject-on-segment-overlap.md)).
+
+An object that the GC claimed, an object ID with no allocation, and an object ID
+allocated to a different flow are per-segment failures. They come back in
+`failed_segments` with type `object-deleting`, `object-not-allocated`, or
+`object-wrong-flow` ([ADR-0041](../../../adr/0041-track-storage-allocations-in-a-table.md)).
+The earlier 409 `object-reaping` response is removed. A 409 from this endpoint now
+means only an idempotency conflict. A cached 409 body replays as stored; if a cached
+409 body is empty or not valid, the fallback type is `object-deleting`.
 
 An unparseable path UUID is answered by write and read paths differently, and the
 split is intentional. `POST` and `DELETE` return 404 `flow not found`: a
@@ -172,7 +179,8 @@ touches segments. See
 - `GetFlowDeleteRequest` → 404
 - HEAD variants → 200 with empty headers
 
-Updated in M16 when GC is built.
+The GC (M16) does not change these stubs. They stay until the asynchronous delete is
+built.
 
 ## Union Type Unwrapping
 
@@ -243,7 +251,7 @@ if req.Body.Limit != nil && req.Body.ObjectIds != nil {
 | GAP-M4a (InsertSourceIfNotExists) | Already in UpsertFlow store layer | Discovered during Code Generation prep |
 | pkg/httplog change | LoggerFromContext(ctx) added | Enables context-based logger access from strict handlers |
 | `ListQuery` (was `ListSegmentsParams`) | Carries Timerange, ObjectID, ReverseOrder, and the storage/URL accept filters | Required by GET /flows/{flowId}/segments spec params |
-| IsObjectRegistered | Added to PostgresStore | Required by StorageService.AllocateStorage |
+| AllocateObjects | Added to PostgresStore (replaces `IsObjectRegistered`) | Required by StorageService.AllocateStorage ([ADR-0041](../../../adr/0041-track-storage-allocations-in-a-table.md)) |
 | Store ErrNoRows audit | Already correct | All pgx.ErrNoRows paths return apperror.ErrNotFound |
 | FlowSegmentPostBody unwrap | Try AsFlowSegmentPostBody1() (array) first, then AsFlowSegmentPost() | oneOf union; single segment and array are the two variants |
 | FlowStoragePost mutual exclusivity | Explicit handler validation: limit AND object_ids both set → 400 | `not: allOf` constraint not enforced at JSON decode time |

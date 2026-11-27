@@ -36,6 +36,8 @@ Process entrypoint for OpenTAMS. Provides three subcommands: `serve` (API server
 
 **BR-CMD-08** `gc` and `migrate` subcommands return "not implemented" errors in Phase 1. Their `--help` text describes the full intended lifecycle role per REQ-USE-03.
 
+> Superseded for `gc`: `opentams gc [--once]` is the GC worker. Its contract is in the [GC interface specification](../../internal-gc/functional-design/interface-spec.md#2-cli-opentams-gc).
+
 ## Dep Wiring Order
 
 ```

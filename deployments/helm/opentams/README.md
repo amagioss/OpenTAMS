@@ -56,6 +56,7 @@ chart. Override these through `extraEnv` if needed:
 | `IDEMPOTENCY_KEY_TTL` | 1h |
 | `IDEMPOTENCY_STALE_THRESHOLD` | 60s |
 | `IDEMPOTENCY_REAPER_INTERVAL` | 1m |
+| `OPENTAMS_OBJECT_STORE_ID` | default |
 
 ```yaml
 extraEnv:
@@ -63,7 +64,10 @@ extraEnv:
     value: "5m"
 ```
 
-`GC_*` is not listed — the GC worker is not implemented and is not deployed.
+`extraEnv` applies to the API pods and to the GC pods. Thus an
+`OPENTAMS_OBJECT_STORE_ID` override gives the same value to both, as the GC
+requires. The `GC_*` variables are first-class values (see
+[Garbage collection](#garbage-collection)).
 `SERVER_RATE_LIMIT_RPS` / `SERVER_RATE_LIMIT_BURST` are read by the binary but
 ignored — OpenTAMS has no rate limiter. Put one in front of the service
 (ingress controller or API gateway) if you need one.
@@ -90,6 +94,7 @@ pod still starts and the AWS SDK falls back to its ambient credential chain
 
 ```bash
 kubectl rollout restart deployment/<release>-opentams
+kubectl rollout restart deployment/<release>-opentams-gc   # when gc.enabled
 ```
 
 ## Workload Identity
@@ -221,11 +226,31 @@ kubectl run opentams-migrate-down --rm -it --image=<image> -- migrate down 1
 See `values.yaml` for the complete annotated surface and `values.schema.json`
 for type/enum constraints.
 
+## Garbage collection
+
+When `gc.enabled` is true, the chart deploys the GC worker (`opentams gc`) as its
+own Deployment `<fullname>-gc`, with a Service, and a ServiceMonitor and a
+NetworkPolicy when `serviceMonitor.enabled` and `networkPolicy.enabled` are true.
+The GC pods use the same image, ServiceAccount, Secret, and `opentams.env`
+variables as the API pods. Their label is `app.kubernetes.io/name: <name>-gc`, so
+the API Service does not select them. The GC serves only `/healthz`, `/readyz`,
+and `/metrics` on `server.port`.
+
+| Key | Default | Maps to / notes |
+|-----|---------|-----------------|
+| `gc.enabled` | `true` | Deploys the GC resources |
+| `gc.replicaCount` | `1` | `0` stops the GC |
+| `gc.pollInterval` | `15m` | `GC_POLL_INTERVAL` |
+| `gc.batchSize` | `1000` | `GC_BATCH_SIZE` (1..1000) |
+| `gc.allocationGrace` | `5m` | `GC_ALLOCATION_GRACE` |
+| `gc.resources` | `{}` | Container resources of the GC pods |
+
+Operator procedures and alerts: [`docs/runbooks/gc.md`](../../../docs/runbooks/gc.md).
+
 ## Out of scope / known limitations
 
 - **In-cluster `kubernetes.default.svc` OIDC issuer is unsupported** — internal
   auth needs a published issuer.
-- **GC worker not deployed** (M16 unimplemented).
 - **DB rollback** is not automated by Helm rollback — run `migrate down N`.
 - **No bundled Postgres/MinIO** — bring your own managed services.
 - **Secret provisioning is out of scope** — the chart references a mandated

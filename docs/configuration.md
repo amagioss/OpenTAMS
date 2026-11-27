@@ -54,7 +54,8 @@ Schema migrations are applied via `opentams migrate up` (or [`golang-migrate`](h
 | `OBJECT_STORE_ENDPOINT` | (empty) | No | Override URL for non-AWS endpoints (`http://minio:9000`, etc.). Leave empty for AWS S3. |
 | `OBJECT_STORE_ACCESS_KEY_ID` | (empty) | No (pair) | Access key. **Both-or-neither pair with `OBJECT_STORE_SECRET_ACCESS_KEY`** — supplying exactly one is a startup error. Both can be left empty for workloads using IAM instance-profile or IRSA (EKS) credentials, in which case the AWS SDK's default credential chain takes over. |
 | `OBJECT_STORE_SECRET_ACCESS_KEY` | (empty) | No (pair) | Secret key. **Both-or-neither pair with `OBJECT_STORE_ACCESS_KEY_ID`.** Same IRSA/instance-profile escape hatch as above. |
-| `OBJECT_STORE_PRESIGN_EXPIRY` | `1h` | No | Presigned URL TTL handed out by `POST /flows/{flowId}/storage`. Longer = more retry tolerance, shorter = tighter security posture. |
+| `OBJECT_STORE_PRESIGN_EXPIRY` | `1h` | No | Presigned URL TTL handed out by `POST /flows/{flowId}/storage`. It is also the lifetime of an allocation, and `GET /service` advertises it as `min_object_timeout` and `min_presigned_url_timeout`. Must be at least `300s`; a smaller value is a startup error. Longer = more retry tolerance, shorter = tighter security posture. |
+| `OPENTAMS_OBJECT_STORE_ID` | `default` | No | Storage ID of the controlled object store. `serve` writes it on each allocation and each controlled object row; `gc` deletes bytes only for rows with this storage ID. Set the same value for `serve` and `gc`. An empty value gives the default. |
 | `STORAGE_BACKEND_PROVIDER` | (empty) | **Yes** | Free-form provider label exposed via `GET /service/storage-backends` (e.g. `aws`, `gcp`, `minio`). Required in all modes. Surface for capability-discovery clients; OpenTAMS itself doesn't switch on it. |
 | `STORAGE_BACKEND_PRODUCT` | `s3` | No | Free-form product label, same purpose. |
 
@@ -96,18 +97,23 @@ OpenTAMS — an ingress controller or API gateway — if you need one.
 
 ## Garbage collection (`internal/gc`)
 
-**The garbage collector is not implemented.** These variables are parsed and validated
-at startup and then ignored — no released build of OpenTAMS deletes media bytes, and
-`opentams gc` exits with an error. They are documented here so
-an operator who sets them is not surprised when nothing happens. Until the GC worker
-lands, objects orphaned by partial failures accumulate; plan for that in your storage
-sizing, and do **not** substitute an S3 lifecycle policy (it cannot see cross-flow
-references and will delete live data).
+These variables configure `opentams gc` ([design](design/internal-gc/README.md),
+[runbooks](runbooks/gc.md)). `serve` parses and validates them too, but does not use them.
+The GC deletes the bytes of released objects (`ref_count = 0`, sweep 1) and of expired
+allocations that no segment registered (sweep 2). It does not find bytes that have no row
+and no allocation, for example bytes uploaded before the GC release. Do **not** substitute
+an S3 lifecycle policy for the GC: a lifecycle rule cannot see that a segment on a
+different flow still refers to the bytes, and it will delete live data.
 
 | Variable | Default | Required | Description |
 |---|---|---|---|
-| `GC_POLL_INTERVAL` | `5m` | No | The idle time of the planned GC worker between two cycles ([design](design/internal-gc/README.md)). Currently ignored. |
-| `GC_BATCH_SIZE` | `100` | No | The maximum number of rows in one batch of the planned GC worker. Currently ignored. |
+| `GC_POLL_INTERVAL` | `15m` | No | The idle time of each sweep between two cycles. Must be positive. |
+| `GC_BATCH_SIZE` | `1000` | No | The maximum number of rows in one batch. Must be between 1 and 1000 (1000 is the maximum of one S3 `DeleteObjects` call). |
+| `GC_ALLOCATION_GRACE` | `5m` | No | The time after the expiry of an allocation before sweep 2 deletes its bytes. Must not be negative. |
+
+The GC also reads the database and object-store variables above, `OPENTAMS_OBJECT_STORE_ID`,
+`SERVER_PORT` (its admin listener for `/healthz`, `/readyz`, and `/metrics`), and
+`SERVER_GRACEFUL_SHUTDOWN_PERIOD`.
 
 ## Putting it together
 

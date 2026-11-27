@@ -14,7 +14,7 @@
 |---|---|---|
 | Logger | None | No WARN-log path exists; all errors propagate. Excluding logger keeps constructor minimal (D-SVC-STG-07) |
 | UUID generation | github.com/google/uuid.New() | Already a project dependency; used in M4/M6 |
-| FlowReader interface | Local (2 methods: GetFlow, IsObjectRegistered) | Interface segregation — same principle as M8/M9 |
+| FlowReader interface | Local (2 methods: GetFlow, AllocateObjects) | Interface segregation — same principle as M8/M9 |
 | ObjectStore interface | Local (1 method: GenerateUploadURL) | Narrower than internal/objectstore.ObjectStore |
 
 ## Testing
@@ -22,7 +22,7 @@
 | Decision | Choice | Rationale |
 |---|---|---|
 | Mocking strategy | Hand-rolled with function fields | Consistent with M8/M9; no gomock/testify dependency |
-| Mock: FlowReader | mockFlowReader{getFlow, isObjectRegistered func fields} | Covers all call paths |
+| Mock: FlowReader | mockFlowReader with one func field for each method (GetFlow, AllocateObjects) | Covers all call paths |
 | Mock: ObjectStore | mockObjectStore{generateUploadURL func field} | Covers success + error paths |
 | DB/network | None required | All dependencies injected via interfaces |
 

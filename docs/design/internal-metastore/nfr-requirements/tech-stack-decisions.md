@@ -52,7 +52,7 @@ pgx error codes map to `apperror` types at the store boundary — callers never 
 |---|---|---|
 | `23P01` | exclusion_violation | `ErrSegmentOverlap` |
 | `23503` | foreign_key_violation | `ErrNotFound` |
-| `23505` | unique_violation | `ErrObjectIDExists` (storage allocation) |
+| `23505` | unique_violation | Not mapped. `AllocateObjects` finds an existing ID with `SELECT … FOR SHARE` and `ON CONFLICT`, not with this code. It returns `metastore.ErrObjectExists`, and the storage service maps it to `apperror.ErrObjectExists` |
 | `pgx.ErrNoRows` | no row returned | `ErrNotFound` |
 
 Unmapped DB errors are wrapped as `apperror.Generic(500, ...)` with the original error logged.
