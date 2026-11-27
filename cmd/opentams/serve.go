@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 
@@ -19,6 +20,7 @@ import (
 	"github.com/amagioss/opentams/internal/httpx/health"
 	"github.com/amagioss/opentams/internal/idempotency"
 	"github.com/amagioss/opentams/internal/metastore"
+	"github.com/amagioss/opentams/internal/objectstore"
 	"github.com/amagioss/opentams/internal/server"
 	"github.com/amagioss/opentams/internal/service"
 	"github.com/amagioss/opentams/internal/service/flow"
@@ -26,6 +28,7 @@ import (
 	"github.com/amagioss/opentams/internal/service/storage"
 	"github.com/amagioss/opentams/pkg/jwtauth"
 	"github.com/amagioss/opentams/pkg/logger"
+	"github.com/amagioss/opentams/pkg/metrics"
 )
 
 func newServeCmd() *cobra.Command {
@@ -100,8 +103,10 @@ func serve(ctx context.Context) error {
 		return err
 	}
 
-	ms := metastore.New(pool)
-	idmStore := idempotency.NewStore(pool)
+	srv, idmStore, err := newAPIServer(cfg, log, reg, pool, obj)
+	if err != nil {
+		return err
+	}
 
 	// Clamp IDEMPOTENCY_STALE_THRESHOLD to >= http.Server.WriteTimeout. A
 	// running request can hold an idempotency row in_flight for the full
@@ -115,12 +120,37 @@ func serve(ctx context.Context) error {
 		staleThreshold = server.DefaultWriteTimeout
 	}
 
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+	defer signal.Stop(sigCh)
+
+	// Idempotency reaper: prunes expired keys (TTL) and reaps orphaned
+	// in_flight rows whose owning request crashed before Complete/Release.
+	// Stopped before serve returns so the deferred pool.Close cannot race
+	// with an in-flight DELETE.
+	reapCtx, reapCancel := context.WithCancel(ctx) //nolint:gosec // G118 false positive: reapCancel is invoked inside the deferred closure below; gosec's static analysis does not see through deferred anonymous functions.
+	reapDone := make(chan struct{})
+	go runIdempotencyReaper(reapCtx, log, idmStore, cfg.IdempotencyReaperInterval, staleThreshold, reapDone)
+	defer func() {
+		reapCancel()
+		<-reapDone
+	}()
+
+	log.Info("server ready", zap.String("addr", srv.Addr()))
+	return runServer(ctx, srv, cfg.ServerGracefulShutdownPeriod, sigCh)
+}
+
+// newAPIServer wires the TAMS API on pool and obj.
+func newAPIServer(cfg *config.Config, log *zap.Logger, reg *metrics.Registry, pool *pgxpool.Pool, obj *objectstore.S3Store) (*server.Server, *idempotency.PostgresStore, error) {
+	ms := metastore.New(pool)
+	idmStore := idempotency.NewStore(pool)
+
 	svcMetrics, err := service.NewAppServiceMetrics(reg.NamespacedRegisterer())
 	if err != nil {
 		log.Error("failed to register service metrics", zap.Error(err),
 			zap.Bool("retry_safe", false),
 			zap.String("check", "duplicate metric names"))
-		return fmt.Errorf("service metrics: %w", err)
+		return nil, nil, fmt.Errorf("service metrics: %w", err)
 	}
 
 	flowSvc := flow.New(ms, log, svcMetrics)
@@ -139,7 +169,7 @@ func serve(ctx context.Context) error {
 		log.Error("failed to initialize health checker", zap.Error(err),
 			zap.Bool("retry_safe", false),
 			zap.String("check", "internal configuration"))
-		return fmt.Errorf("health: %w", err)
+		return nil, nil, fmt.Errorf("health: %w", err)
 	}
 
 	authProvider, err := buildAuth(cfg)
@@ -147,7 +177,7 @@ func serve(ctx context.Context) error {
 		log.Error("failed to initialize auth provider", zap.Error(err),
 			zap.Bool("retry_safe", false),
 			zap.String("check", "AUTH_* variables"))
-		return fmt.Errorf("auth: %w", err)
+		return nil, nil, fmt.Errorf("auth: %w", err)
 	}
 
 	h := handlers.New(log, cfg, ms, flowSvc, segSvc, storSvc, idmStore, checker, obj)
@@ -169,27 +199,9 @@ func serve(ctx context.Context) error {
 		log.Error("failed to initialize HTTP server", zap.Error(err),
 			zap.Bool("retry_safe", false),
 			zap.String("check", "SERVER_TLS_* variables if TLS is configured"))
-		return fmt.Errorf("server: %w", err)
+		return nil, nil, fmt.Errorf("server: %w", err)
 	}
-
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
-	defer signal.Stop(sigCh)
-
-	// Idempotency reaper: prunes expired keys (TTL) and reaps orphaned
-	// in_flight rows whose owning request crashed before Complete/Release.
-	// Stopped before serve returns so the deferred pool.Close cannot race
-	// with an in-flight DELETE.
-	reapCtx, reapCancel := context.WithCancel(ctx) //nolint:gosec // G118 false positive: reapCancel is invoked inside the deferred closure below; gosec's static analysis does not see through deferred anonymous functions.
-	reapDone := make(chan struct{})
-	go runIdempotencyReaper(reapCtx, log, idmStore, cfg.IdempotencyReaperInterval, staleThreshold, reapDone)
-	defer func() {
-		reapCancel()
-		<-reapDone
-	}()
-
-	log.Info("server ready", zap.String("addr", srv.Addr()))
-	return runServer(ctx, srv, cfg.ServerGracefulShutdownPeriod, sigCh)
+	return srv, idmStore, nil
 }
 
 // runIdempotencyReaper runs Prune (TTL-expired) and ReapStale (orphaned
