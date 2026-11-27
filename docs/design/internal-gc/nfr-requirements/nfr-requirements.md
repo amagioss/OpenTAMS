@@ -1,7 +1,7 @@
 ---
 unit: M16 internal/gc
 stage: NFR Requirements
-status: Draft (not implemented)
+status: Complete
 ---
 
 # Requirements — object garbage collection (FURPS)
@@ -97,6 +97,8 @@ The functional rules are in [`../functional-design/business-rules.md`](../functi
 - **NFR-GC-P5**: The change must not move the API outside the budgets of `docs/scale-test-plan.md` §6.5. The scale cases S1, S3, S4, and S5 measure this. A result outside a budget goes to the maintainers for a decision. It does not change the design automatically.
 - **NFR-GC-P6**: A new index `segments_object_id_idx` on `segments (object_id)` makes the segment-count check and the foreign-key check of an `objects` delete use an index scan.
 
+*Decision: raise the budget of the integration test `SCN-SEG-CONC-02` (100 concurrent registrations of 10 segments) from 5 s to 10 s. Rationale: the allocation check adds up to 3 statements for each new controlled object ID. Measured: 5.1 s to 7.9 s with this change, 4.3 s to 5.0 s on `main`. The §6.5 budgets do not change until scale case S1 (TC-GC-190) measures them. Rejected: batch the registration statements now. Batching changes the lock order of BR-GC-23 to (table, id), requires the same order in `AllocateObjects`, and needs a retry for rows that appear after the first lock. Revisit: if S1 puts insert p99 or bulk segments each second outside §6.5, the maintainers decide on batching. A cheaper first step is one CTE for steps 2 to 4 of each object ID.*
+
 *Decision: a drain loop with no pause between batches. Rationale: one batch per cycle deletes too few objects (about 67 objects each minute at 1000 for each 15 minutes). Rejected: a pause setting between batches. The batch size and the replica count already control the load. A pause can be added later.*
 
 *Decision: poll interval 15m and batch size 1000, both configurable. Rationale: the idle cost is small at each value. 15m keeps the "GC is down" alert at about 40 minutes. Rejected: 30m (slower alert, and no reliable gain).*
@@ -110,8 +112,11 @@ The functional rules are in [`../functional-design/business-rules.md`](../functi
 - **NFR-GC-S5**: The runbooks R1 to R6 in [`../../../runbooks/gc.md`](../../../runbooks/gc.md) use the format of REQ-OBS-08. Each documented alert links to one runbook.
 - **NFR-GC-S6**: `opentams gc --once` does one cycle of each sweep and stops. It returns exit code 0 if no cycle stopped because of a batch-level error. It returns exit code 1 in the other case.
 - **NFR-GC-S7**: The release notes of this change must contain the upgrade procedure in BR-GC-50 and the list of breaking changes in BR-GC-53.
+- **NFR-GC-S8**: The handler of `DELETE /flows/{flowId}` logs the 403 `read-only` at ERROR (`internal/httpx/handlers/flows.go:413`), as the other flow handlers do.
 
 *Decision: an admin listener, not a push gateway. Rationale: the GC is a long-running process. Prometheus uses pull. Kubernetes probes need an HTTP endpoint because the image has no shell. Long-running workers in Kubernetes (controllers, kube-proxy, Envoy, Fluent Bit) use this pattern. Rejected: Pushgateway (it is for short jobs, and it hides a dead process). Rejected: OTLP push (it needs a collector in each deployment).*
+
+*Decision: keep ERROR for the 403 `read-only` of `DeleteFlow` (NFR-GC-S8). Rationale: the other flow handlers that return the `AppError` of `ErrReadOnly`, for example `PutFlowTag` (`flows.go:677`), also log it at ERROR. The GC change keeps them consistent. Rejected: WARN for `DeleteFlow` only. Revisit: a later change adds one shared helper that logs a client error (status below 500) at WARN and a server error at ERROR, and uses it in all handlers.*
 
 ## 8. Acceptance criteria
 
@@ -152,3 +157,5 @@ These items are not in this change. The last column names the document that reco
 | Mixed objects (`get_urls` on a controlled object) | The shape rule (ADR-0026) classifies such a segment as BYOS. Sweep 2 keeps the bucket bytes of such an ID (BR-GC-42). | ADR-0041 |
 | Re-request rule for `object_ids` | Rule (a) is the lenient reading of upstream. A change to "reject all" is breaking after v1.0.0. Examine it again before v1.0.0. | ADR-0041 |
 | Grace time for presigned URLs | URLs are signed with exactly the advertised time. The difference is milliseconds. No change. | — |
+| Batch the statements of segment registration | Needed only if S1 (TC-GC-190) is outside §6.5. Trade-offs in the decision note under NFR-GC-P5. | `docs/scale-test-plan.md` §8.1 (S1) |
+| Log level of client errors in handlers | `DeleteFlow` and the other flow handlers log a 4xx `AppError` such as 403 `read-only` at ERROR. All handlers must change together through one shared helper (WARN below 500, ERROR at 500 or more). | Decision note under NFR-GC-S8 |

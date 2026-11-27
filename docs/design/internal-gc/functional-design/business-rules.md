@@ -1,7 +1,7 @@
 ---
 unit: M16 internal/gc
 stage: Functional Design
-status: Draft (not implemented)
+status: Complete
 ---
 
 # Business Rules — object garbage collection

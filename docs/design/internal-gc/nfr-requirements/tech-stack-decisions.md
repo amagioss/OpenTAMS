@@ -1,7 +1,7 @@
 ---
 unit: M16 internal/gc
 stage: NFR Requirements
-status: Draft (not implemented)
+status: Complete
 ---
 
 # Tech Stack Decisions — object garbage collection

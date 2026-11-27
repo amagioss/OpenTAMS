@@ -1,7 +1,7 @@
 ---
 unit: M16 internal/gc
 stage: Functional Design
-status: Draft (not implemented)
+status: Complete
 ---
 
 # Test Plan — object garbage collection
@@ -404,6 +404,8 @@ In these tests, a "controlled segment" has no `get_urls`, and a "BYOS segment" h
 - Reason for the raw lock: in a mutation test, a version with two IDs and a barrier passed also when the row delete locked in collation order. The raw lock makes the overlap certain. In byte order, the row delete waits for `B<i>` and holds no lock. In collation order, it locks `a<i>` first, and the two transactions wait for each other.
 - Rules: BR-GC-23, BR-GC-36.
 
+## 5. Behaviour tests: sweep 2 store methods
+
 **TC-GC-080: An allocation after `expires_at + grace` is claimed.** Integration, `internal/metastore`.
 - Given: allocation `e1` with `expires_at = now() - interval '5 minutes' - interval '1 second'`.
 - When: `ClaimExpiredAllocations(ctx, "default", 5*time.Minute, 1000)`, then `DeleteClaimedAllocations(ctx, ["e1"])`.
@@ -588,6 +590,12 @@ The fake `Store` records each call. The fake `Deleter` returns results from a sc
 - When: one cycle.
 - Then: the deleter is not called. `DeleteClaimedObjects` is not called. One WARN line `gc batch skipped`. `BatchError = false`, `Failed = 0`.
 - Rules: BR-GC-65, AC-GC-18.
+
+**TC-GC-194: `RunOnce` stops claiming when `stop` closes.** Unit.
+- Given: `BatchSize = 1`. The first claim of sweep 1 returns `Selected 1`, `Claimed ["a"]`. Later claims return nothing. The deleter closes `stop` and then deletes `a`.
+- When: `RunOnce(ctx, stop)`.
+- Then: `ClaimReleasedObjects` is called one time. The `gc cycle completed` line of sweep 1 has `ended_by = shutdown`. `Released.Deleted = 1`, `Released.BatchError = false`.
+- Rules: BR-GC-67.
 
 ## 7. CLI and process tests (`cmd/opentams`)
 

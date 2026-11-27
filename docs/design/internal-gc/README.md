@@ -1,7 +1,7 @@
 ---
 unit: M16 internal/gc
 stage: Design index
-status: Draft (not implemented)
+status: Complete
 ---
 
 # Object garbage collection (GC) — design index

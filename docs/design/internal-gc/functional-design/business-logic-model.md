@@ -1,7 +1,7 @@
 ---
 unit: M16 internal/gc
 stage: Functional Design
-status: Draft (not implemented)
+status: Complete
 ---
 
 # Business Logic Model — object garbage collection
@@ -130,8 +130,9 @@ func NewMetrics(reg prometheus.Registerer) (*Metrics, error)
 // Run returns nil after a shutdown.
 func (w *Worker) Run(ctx context.Context, stop <-chan struct{}) error
 
-// RunOnce does one cycle of each sweep at the same time and returns.
-func (w *Worker) RunOnce(ctx context.Context) (Report, error)
+// RunOnce does one cycle of each sweep at the same time and returns. When
+// stop closes, each cycle starts no new batch (BR-GC-67).
+func (w *Worker) RunOnce(ctx context.Context, stop <-chan struct{}) (Report, error)
 ```
 
 `New` returns an error if `BatchSize` is outside 1 to 1000, if `PollInterval` is 0 or less, if `AllocationGrace` is less than 0, or if `StorageID` is empty.
@@ -408,6 +409,8 @@ Do steps (3) only if step (2) returned one or more rows. `$1` and `$2` of step (
 
 The handler (`internal/httpx/handlers/flows.go:400-415`) does not change. It returns the `*apperror.AppError` of `ErrReadOnly` as the error value, and the error middleware renders 403 `read-only`, as for `PutFlowTag`.
 
+The handler logs this 403 at ERROR. See NFR-GC-S8.
+
 ### 6.2 `DeleteSegmentsByTimerange` (`internal/metastore/segments.go:505-591`, BR-GC-21)
 
 Keep all steps. Change the decrease loop (`:572-580`) to step (3) of 6.1, with the counts of the `GROUP BY`.
@@ -638,8 +641,8 @@ loop(sweep):
         cycle(sweep)
         select: stop closed -> return; ctx done -> return; after PollInterval -> continue
 
-RunOnce(ctx):
-    run cycle(SweepReleased) and cycle(SweepAllocation) at the same time, wait for both
+RunOnce(ctx, stop):
+    run cycle(SweepReleased, stop) and cycle(SweepAllocation, stop) at the same time, wait for both
     return Report{...}, nil
 ```
 
@@ -677,7 +680,7 @@ The steps of `runGC`:
 2. Make the metrics registry, the database pool, and the object store as `serve.go` does (`cmd/opentams/serve.go:99-138`). Move the shared code to a function that both commands call. Do not copy it.
 3. Call `metastore.VerifySchema`. An error: exit code 1.
 4. Make the `gc.Worker` with `gc.Config` from the configuration, `metastore.New(pool)` as `Store`, and the `*objectstore.S3Store` as `Deleter`.
-5. With `--once`: call `RunOnce`. Write the report as one INFO line. Exit code 1 if `Released.BatchError` or `Allocation.BatchError` is true. Else exit code 0. Open no listener.
+5. With `--once`: call `RunOnce` with `stop`. A signal therefore stops the claims of `--once` as it does for the loop (BR-GC-67). Write the report as one INFO line. Exit code 1 if `Released.BatchError` or `Allocation.BatchError` is true. Else exit code 0. Open no listener.
 6. Without `--once`:
    1. Make `health.New(health.Options{DB: ms, Object: obj})` (as `serve.go:180`).
    2. Make a gin engine with three routes:
