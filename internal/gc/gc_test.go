@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -314,7 +315,7 @@ func TestCycle_TheSummaryLineNamesWhyTheCycleEnded(t *testing.T) {
 			return ClaimResult{}, ctx.Err()
 		}
 
-		report, err := h.w.RunOnce(ctx)
+		report, err := h.w.RunOnce(ctx, nil)
 		require.NoError(t, err)
 
 		assert.Equal(t, "shutdown", endedBy(t, h, SweepReleased))
@@ -338,4 +339,30 @@ func TestCycle_TheSummaryLineNamesWhyTheCycleEnded(t *testing.T) {
 		assert.Equal(t, [][]string{{"a"}}, h.deleter.callIDs())
 		assert.Equal(t, "shutdown", endedBy(t, h, SweepReleased))
 	})
+}
+
+// TC-GC-194: RunOnce stops claiming when stop closes.
+func TestRunOnce_StopDuringTheFirstBatchPreventsASecondClaim(t *testing.T) {
+	h := newHarness(t, func(c *Config) { c.BatchSize = 1 })
+	stop := make(chan struct{})
+	closeStop := closeOnce(stop)
+	var claims atomic.Int32
+	h.store.claimReleased = func(context.Context, string, int) (ClaimResult, error) {
+		if claims.Add(1) > 1 {
+			return ClaimResult{}, nil
+		}
+		return ClaimResult{Selected: 1, Claimed: []string{"a"}}, nil
+	}
+	h.deleter.deleteObjects = func(_ context.Context, ids []string) ([]objectstore.DeleteResult, error) {
+		closeStop()
+		return succeedAll(ids), nil
+	}
+
+	report, err := h.w.RunOnce(context.Background(), stop)
+	require.NoError(t, err)
+
+	assert.Len(t, h.store.callsNamed(callClaimReleased), 1)
+	assert.Equal(t, "shutdown", endedBy(t, h, SweepReleased))
+	assert.Equal(t, 1, report.Released.Deleted)
+	assert.False(t, report.Released.BatchError)
 }

@@ -152,7 +152,7 @@ func runGC(ctx context.Context, cfg *config.Config, log *zap.Logger, once bool, 
 	}
 
 	if once {
-		return runOnce(ctx, worker, log)
+		return runOnce(ctx, worker, log, stop)
 	}
 
 	checker, err := health.New(health.Options{DB: ms, Object: obj})
@@ -189,9 +189,9 @@ func runGC(ctx context.Context, cfg *config.Config, log *zap.Logger, once bool, 
 	return 0
 }
 
-func runOnce(ctx context.Context, worker *gc.Worker, log *zap.Logger) int {
+func runOnce(ctx context.Context, worker *gc.Worker, log *zap.Logger, stop <-chan struct{}) int {
 	start := time.Now()
-	report, _ := worker.RunOnce(ctx)
+	report, _ := worker.RunOnce(ctx, stop)
 	log.Info("gc once completed",
 		zap.Int("released_deleted", report.Released.Deleted),
 		zap.Int("released_row_only", report.Released.RowOnly),

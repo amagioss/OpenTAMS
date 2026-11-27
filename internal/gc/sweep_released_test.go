@@ -20,7 +20,7 @@ const (
 
 func runOnce(t *testing.T, h *harness) Report {
 	t.Helper()
-	report, err := h.w.RunOnce(context.Background())
+	report, err := h.w.RunOnce(context.Background(), nil)
 	require.NoError(t, err)
 	return report
 }

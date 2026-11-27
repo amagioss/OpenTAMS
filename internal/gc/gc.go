@@ -166,12 +166,13 @@ func (w *Worker) Run(ctx context.Context, stop <-chan struct{}) error {
 	return nil
 }
 
-// RunOnce does one cycle of each sweep at the same time and returns.
-func (w *Worker) RunOnce(ctx context.Context) (Report, error) {
+// RunOnce does one cycle of each sweep at the same time and returns. When
+// stop closes, each cycle starts no new batch (BR-GC-67).
+func (w *Worker) RunOnce(ctx context.Context, stop <-chan struct{}) (Report, error) {
 	var report Report
 	var wg sync.WaitGroup
-	wg.Go(func() { report.Released = w.cycle(ctx, nil, w.releasedSweep()) })
-	wg.Go(func() { report.Allocation = w.cycle(ctx, nil, w.allocationSweep()) })
+	wg.Go(func() { report.Released = w.cycle(ctx, stop, w.releasedSweep()) })
+	wg.Go(func() { report.Allocation = w.cycle(ctx, stop, w.allocationSweep()) })
 	wg.Wait()
 	return report, nil
 }
